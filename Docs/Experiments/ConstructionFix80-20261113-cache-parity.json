@@ -1,0 +1,93 @@
+{
+  "exactSaveBytes": true,
+  "exactFingerprints": true,
+  "runs": [
+    {
+      "name": "prior-direct",
+      "durations": [
+        5148.415828982181,
+        5106.639471000753,
+        5065.536986494061,
+        5025.092179625704,
+        4985.289369939944,
+        4946.113372007314
+      ],
+      "seasonExposure": [
+        7573.75,
+        7563.66937053611,
+        7565.917837513902,
+        7573.75
+      ],
+      "calendar": {
+        "Version": 1,
+        "Curve": 2,
+        "NeolithicStartYear": -5000,
+        "Started": true,
+        "EpochDays": 51100
+      },
+      "finalSaveSha256": "30eb65294162e9a1878be06e06ccb8a9e4a42f90b4a9be29911f2cfa7a650cc8",
+      "finalFingerprint": "6A952AEEA5AD7CE97A2B0E7F0FD95457D50E20D071F3B376BA7D2B1E789D6DF3",
+      "saveLoadPassed": true,
+      "continuationVerified": false,
+      "validationFailure": null
+    },
+    {
+      "name": "final-direct",
+      "durations": [
+        5148.415828982181,
+        5106.639471000753,
+        5065.536986494061,
+        5025.092179625704,
+        4985.289369939944,
+        4946.113372007314
+      ],
+      "seasonExposure": [
+        7573.75,
+        7563.66937053611,
+        7565.917837513902,
+        7573.75
+      ],
+      "calendar": {
+        "Version": 1,
+        "Curve": 2,
+        "NeolithicStartYear": -5000,
+        "Started": true,
+        "EpochDays": 51100
+      },
+      "finalSaveSha256": "30eb65294162e9a1878be06e06ccb8a9e4a42f90b4a9be29911f2cfa7a650cc8",
+      "finalFingerprint": "6A952AEEA5AD7CE97A2B0E7F0FD95457D50E20D071F3B376BA7D2B1E789D6DF3",
+      "saveLoadPassed": true,
+      "continuationVerified": false,
+      "validationFailure": null
+    },
+    {
+      "name": "final-draft",
+      "durations": [
+        5148.415828982181,
+        5106.639471000753,
+        5065.536986494061,
+        5025.092179625704,
+        4985.289369939944,
+        4946.113372007314
+      ],
+      "seasonExposure": [
+        7573.75,
+        7563.66937053611,
+        7565.917837513902,
+        7573.75
+      ],
+      "calendar": {
+        "Version": 1,
+        "Curve": 2,
+        "NeolithicStartYear": -5000,
+        "Started": true,
+        "EpochDays": 51100
+      },
+      "finalSaveSha256": "30eb65294162e9a1878be06e06ccb8a9e4a42f90b4a9be29911f2cfa7a650cc8",
+      "finalFingerprint": "6A952AEEA5AD7CE97A2B0E7F0FD95457D50E20D071F3B376BA7D2B1E789D6DF3",
+      "saveLoadPassed": true,
+      "continuationVerified": false,
+      "validationFailure": null
+    }
+  ]
+}

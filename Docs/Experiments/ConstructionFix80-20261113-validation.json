@@ -1,0 +1,51 @@
+{
+  "fullHeadlessSuites": 69,
+  "fullHeadlessPassed": true,
+  "agriculturalTechnologyAssertions": 283,
+  "demandControlAssertions": 163,
+  "housingMaterialRecipeAssertions": 154,
+  "goodsStorageAssertions": 64,
+  "productionOrderAssertions": 184,
+  "calendar": {
+    "status": "passed",
+    "checks": 28787,
+    "worlds": [
+      {
+        "seed": 11,
+        "opening": 7,
+        "elapsedYears": 517.3770300505189,
+        "checks": 28527
+      },
+      {
+        "seed": 23,
+        "opening": 7,
+        "elapsedYears": 517.3770300505189,
+        "checks": 28636
+      },
+      {
+        "seed": 47,
+        "opening": 8,
+        "elapsedYears": 517.3770300505189,
+        "checks": 28746
+      }
+    ],
+    "scope": "Curve anchors, monotonicity/C1 joins, save compatibility, cache invalidation, native auto-cadence, deterministic continuation; daily native smoke only. No demographic retuning or historical-era validation."
+  },
+  "contract": {
+    "configValues": 92,
+    "testClaims": 21,
+    "passed": true
+  },
+  "unityInteractions": "Not run; Unity 6000.5.10f1 is unavailable.",
+  "longRunFinalSave": "Not validated; separate known 512 MiB metadata loader limit remains.",
+  "calendarFixtureCorrection": "When disabling the calendar in the compatibility fixture, retain the last committed duration rather than shrinking hunter carrying capacity below already carried provisions. Production calendar unchanged.",
+  "logsSha256": {
+    "/tmp/construction-full-tests.log": "59d67ce30b47264682bc8e1d45f156b7a6486a32075641a9d9994d48e4958bf6",
+    "/tmp/construction-focused.log": "af527f485416bca310314a6740ee9fa25e26a39ac466f2a685fd1dac9302753a",
+    "/tmp/construction-mixed-test.log": "c0064674a08227bceed2825b9e4654e6896b053f8510fde0d9ee6f57c21c1721",
+    "/tmp/construction-calendar-tests.log": "65d863f89a42c89c3d1ce5d1be8ae1a85cfaf1f1926689c2ff0a8cac28d23ee8",
+    "/tmp/construction-final-full-tests.log": "8dc6d5026b33c2d959ff4bcd2dfed49ce566b1e59963971e4ae476ffcd5e1712"
+  },
+  "cacheParity": "Exact saved bytes and fingerprints: runtime build with direct preparation, final build with direct preparation, final build with cached preparation; native mature checkpoint over 80+ physical years.",
+  "fullHeadlessNote": "All 69 suites passed again after cached-draft isolation; this final full run contains all 283 agricultural assertions."
+}

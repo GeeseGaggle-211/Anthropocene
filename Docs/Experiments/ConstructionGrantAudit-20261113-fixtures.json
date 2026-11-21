@@ -1,0 +1,109 @@
+[
+  {
+    "builders": 4,
+    "storage": false,
+    "years": 10.373449306446295,
+    "materialRequired": 11.037344930644629,
+    "sameMaterialForHousing": 11.037344930644629,
+    "materialForecast": 10.373449306446295,
+    "canalForecast": 0.9398500610092323,
+    "receipts": [
+      {
+        "Camp": 1,
+        "Good": "HousingMaterial",
+        "Role": "Builder",
+        "Output": 10.373449306446295,
+        "WorkerIntervals": 110.65012593542714,
+        "Stone": 0,
+        "Clay": 5.1867246532231475,
+        "Wood": 5.1867246532231475,
+        "PlantFood": 0,
+        "EquipmentWorkerIntervals": 0,
+        "HandToolsConsumed": 0,
+        "ToolsConsumed": 0,
+        "CopperToolsConsumed": 0,
+        "AnimalFood": 0,
+        "AnimalFabric": 0,
+        "HousingMaterial": 0
+      },
+      {
+        "Camp": 1,
+        "Good": "CanalConstruction",
+        "Role": "Builder",
+        "Output": 0.9398500610092323,
+        "WorkerIntervals": 28.546488183724378,
+        "Stone": 0,
+        "Clay": 0,
+        "Wood": 0,
+        "PlantFood": 0,
+        "EquipmentWorkerIntervals": 28.546488183724378,
+        "HandToolsConsumed": 0,
+        "ToolsConsumed": 0.23496251525230807,
+        "CopperToolsConsumed": 0,
+        "AnimalFood": 0,
+        "AnimalFabric": 0,
+        "HousingMaterial": 10.373449306446295
+      }
+    ],
+    "unusedBuilderYears": 6.694643695997301
+  },
+  {
+    "builders": 5,
+    "storage": false,
+    "years": 10.373449306446295,
+    "materialRequired": 11.037344930644629,
+    "sameMaterialForHousing": 11.037344930644629,
+    "materialForecast": 11.037344930644629,
+    "canalForecast": 1,
+    "receipts": [
+      {
+        "Camp": 1,
+        "Good": "HousingMaterial",
+        "Role": "Builder",
+        "Output": 11.037344930644629,
+        "WorkerIntervals": 117.73167926020938,
+        "Stone": 0,
+        "Clay": 5.5186724653223145,
+        "Wood": 5.5186724653223145,
+        "PlantFood": 0,
+        "EquipmentWorkerIntervals": 0,
+        "HandToolsConsumed": 0,
+        "ToolsConsumed": 0,
+        "CopperToolsConsumed": 0,
+        "AnimalFood": 0,
+        "AnimalFabric": 0,
+        "HousingMaterial": 0
+      },
+      {
+        "Camp": 1,
+        "Good": "CanalConstruction",
+        "Role": "Builder",
+        "Output": 1,
+        "WorkerIntervals": 30.373449306446297,
+        "Stone": 0,
+        "Clay": 0,
+        "Wood": 0,
+        "PlantFood": 0,
+        "EquipmentWorkerIntervals": 30.373449306446297,
+        "HandToolsConsumed": 0,
+        "ToolsConsumed": 0.25,
+        "CopperToolsConsumed": 0,
+        "AnimalFood": 0,
+        "AnimalFabric": 0,
+        "HousingMaterial": 11.037344930644629
+      }
+    ],
+    "unusedBuilderYears": 14.840964390567557
+  },
+  {
+    "builders": 5,
+    "storage": true,
+    "years": 10.373449306446295,
+    "materialRequired": 11.037344930644629,
+    "sameMaterialForHousing": 11.037344930644629,
+    "materialForecast": 5.683710173797378e-14,
+    "canalForecast": 5.149526638437152e-15,
+    "receipts": [],
+    "unusedBuilderYears": 51.867246532231476
+  }
+]

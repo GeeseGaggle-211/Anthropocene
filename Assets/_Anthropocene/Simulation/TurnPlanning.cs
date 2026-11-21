@@ -242,9 +242,12 @@ namespace Anthropocene.Simulation
             var aiEconomicRequests = new HashSet<int>(prepared.Orders.Where(o => o.RequestAutomaticEconomy).Select(o => o.Entity));
             var acceptedActions = prepared.Orders.Where(o => o.Kind != OrderKind.Economy && o.Kind != OrderKind.FissionPolicy).ToDictionary(o => o.Entity);
             var acceptedEconomy = prepared.Orders.Where(o => o.Kind == OrderKind.Economy).ToDictionary(o => o.Entity);
+            var submittedAutomated = acceptedEconomy.Where(p => p.Value.Economy != null && p.Value.Economy.AutomationTurns != 0)
+                .ToDictionary(p => p.Key, p => p.Value);
             var automated = world.Camps.Where(c => c.Population > 0 &&
-                (c.EconomyAutomationTurns != 0 || aiEconomicRequests.Contains(c.Id)) &&
-                CultivationEconomy.EconomyEnabled(world, c) && !acceptedEconomy.ContainsKey(c.Id))
+                (c.EconomyAutomationTurns != 0 || aiEconomicRequests.Contains(c.Id) || submittedAutomated.ContainsKey(c.Id)) &&
+                CultivationEconomy.EconomyEnabled(world, c) &&
+                (!acceptedEconomy.ContainsKey(c.Id) || submittedAutomated.ContainsKey(c.Id)))
                 .OrderBy(c => c.Id).ToArray();
             // Each forecast owns a private camp preview and reads only the
             // committed world plus prewarmed indexes. Evaluate in parallel,
@@ -264,17 +267,21 @@ namespace Anthropocene.Simulation
             {
                 int effectiveTile = prepared.Placement.Destinations[camp.Id];
                 bool abandoning = prepared.AbandoningVillages.Contains(camp.Id);
-                if (useDraft && draft.Intents.TryGetValue(camp.Id, out var cached) &&
+                bool hasSubmitted = submittedAutomated.TryGetValue(camp.Id, out var submittedOrder);
+                if (!hasSubmitted && useDraft && draft.Intents.TryGetValue(camp.Id, out var cached) &&
                     cached.Tile == effectiveTile && cached.Abandoning == abandoning)
                 {
                     Interlocked.Increment(ref diagnostics.DraftIntentsReused);
-                    return new AutomaticPlan { Order = cached.Order.Copy(), Production = cached.Production,
+                    // Reconciliation belongs to this prepared turn, never to
+                    // the reusable draft displayed while the player plans.
+                    bool construction = cached.Production?.Irrigation != null;
+                    return new AutomaticPlan { Order = cached.Order.Copy(), Production = construction ? cached.Production.CopyForPreparation() : cached.Production,
                         FishingAccess = fishingAccess.TryGetValue(camp.Id, out var cachedAccess) ? cachedAccess : null,
-                        DemandAllocation = cached.DemandAllocation };
+                        DemandAllocation = construction ? cached.DemandAllocation?.CopyForPreparation() : cached.DemandAllocation };
                 }
                 if (useDraft) Interlocked.Increment(ref diagnostics.DraftIntentsRecomputed);
                 fishingAccess.TryGetValue(camp.Id, out var access);
-                return AutomaticIntent(world, camp, effectiveTile, abandoning, index, trade, access);
+                return AutomaticIntent(world, camp, effectiveTile, abandoning, index, trade, access, hasSubmitted ? submittedOrder.Economy : null);
             });
             intentsScope.Dispose();
             for (int i = 0; i < automated.Length; i++)
@@ -282,7 +289,13 @@ namespace Anthropocene.Simulation
                 var camp = automated[i]; var order = automaticOrders[i].Order;
                 if (automaticOrders[i].Production != null) prepared.ProductionOrders[camp.Id] = automaticOrders[i].Production;
                 if (automaticOrders[i].DemandAllocation != null) prepared.DemandAllocations[camp.Id] = automaticOrders[i].DemandAllocation;
-                prepared.Orders.Add(order); prepared.AutomatedCamps.Add(camp.Id);
+                prepared.AutomatedCamps.Add(camp.Id);
+                if (submittedAutomated.TryGetValue(camp.Id, out var submittedOrder))
+                {
+                    submittedOrder.Economy = order.Economy;
+                    continue;
+                }
+                prepared.Orders.Add(order);
                 acceptedEconomy.Add(camp.Id, order);
                 prepared.OrderReceipts.Add(camp.Player + ":automation:" + order + ":accepted");
             }
@@ -297,7 +310,11 @@ namespace Anthropocene.Simulation
                 needsResults = (execution ?? new PhaseExecution()).Map(camps, c =>
                     ComputeNeeds(world, c, prepared, acceptedActions, acceptedEconomy, huntersByCamp));
             for (int i = 0; i < camps.Length; i++)
+            {
                 prepared.Needs[camps[i].Id] = needsResults[i];
+                prepared.DemandAllocations.TryGetValue(camps[i].Id, out var allocation);
+                ReconcileInfrastructure(needsResults[i], allocation);
+            }
             foreach (var camp in camps.Where(c => FishingEconomy.FeatureEnabled(world, c)))
             {
                 fishingAccess.TryGetValue(camp.Id, out var access);
@@ -321,12 +338,12 @@ namespace Anthropocene.Simulation
         // Dispatch does not suppress automation. Shared by Prepare and Draft
         // so both run literally the same code. Pure over the committed world.
         private static AutomaticPlan AutomaticIntent(WorldState world, Camp camp, int effectiveTile, bool abandoning,
-            PlanningIndex index, TradePlan trade, FishingAccessPlan fishingAccess)
+            PlanningIndex index, TradePlan trade, FishingAccessPlan fishingAccess, EconomicIntent overrideSettings = null)
         {
             using var profile = PhaseProfile.Scope("Intent");
             var planningCamp = PlanningCampAt(camp, effectiveTile, trade);
-            var settings = EconomicIntent.From(camp);
-            if (CultivationEconomy.HusbandryEnabled(camp) &&
+            var settings = overrideSettings != null ? overrideSettings.Copy() : EconomicIntent.From(camp);
+            if (overrideSettings == null && CultivationEconomy.HusbandryEnabled(camp) &&
                 HerdingTooling.DomesticAnimals(world, camp) > 0)
                 settings.ManagedBreedingIntensity = ManagedBreedingPolicy.Recommend(world, camp, effectiveTile, index);
             // Relocating a village abandons field work for this turn. The
@@ -435,6 +452,26 @@ namespace Anthropocene.Simulation
             var draft = new PlanningDraft(world, excludedPlayer, ai) { Trade = trade };
             foreach (var result in results) draft.Intents[result.Camp] = result;
             return draft;
+        }
+
+        // Compilation reserves the inputs; the prepared physical forecast is the
+        // final output commitment. Retain the original grant in diagnostics so a
+        // reduction is visible rather than reported as successfully delivered work.
+        internal static void ReconcileInfrastructure(TurnNeeds needs, DemandController.Allocation allocation)
+        {
+            var order = needs?.Order;
+            if (order?.Irrigation == null || needs.Production == null) return;
+            foreach (var good in new[] { CraftGood.CanalConstruction, CraftGood.CanalMaintenance })
+            {
+                double authorized = IrrigationEconomy.Demand(order, good);
+                double output = Math.Min(authorized, Math.Max(0, needs.Production.TryGetValue(good, out double q) ? q : 0));
+                if (output >= authorized - 1e-9) continue;
+                order.Cap(good, output);
+                if (good == CraftGood.CanalConstruction) order.Irrigation.Construction = output;
+                else order.Irrigation.Upkeep = output;
+                if (allocation != null) foreach (var request in allocation.Requests.Where(r => r.Good == good))
+                { request.Granted = Math.Min(request.Granted, output); request.Unmet = "prepared production capacity"; }
+            }
         }
 
         private static TurnNeeds ComputeNeeds(WorldState world, Camp camp, PreparedTurn prepared,

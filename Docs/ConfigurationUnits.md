@@ -149,3 +149,25 @@ binary and distinct from `Domesticable`; goats, cattle, horses and camels opt in
 for new worlds. Owned field intensity q supplies the
 whole movement-score amplitude. `FieldDomesticationEnabled` is true for new
 worlds and false when absent from a save. See [FieldDomestication.md](FieldDomestication.md).
+
+## Opt-in Plough and irrigation
+
+`Agriculture == null` preserves prior behavior. The explicit
+`AgriculturalTechnologyOpeningConfig.json` profile uses the smoothed calendar.
+`PloughMaintenance=1.50` is an absolute equipped maintenance tier;
+`PloughHarvest=1.25` multiplies crop productivity only. Farm Tools retain their
+existing 20 Farmer-year service life and production inputs.
+
+`DevelopmentQ=.30`, `FertileMoisture=.50`, and `TargetMoisture=.50` are dimensionless.
+`CanalBuilderYears=5` and `CanalHousingMaterials=10` are per completed segment;
+commissioning also prepays one construction-horizon service period.
+`UpkeepBuilderYears=.25` and `UpkeepHousingMaterials=.10` are per segment-year.
+`AnnualDrinkingPerPerson=.10`, `AnnualApplication=1000` per full serviced tile,
+and `AnnualThroughput=5000` per segment use abstract water units per physical
+year. `Retention=.80` is the delivered fraction per segment. `SoilYears=500`,
+`SoilReferenceQ=.40`, and `SoilCapacityGain=.50` define the capped soil clock and
+maximum additive capacity advantage. `HydraulicTolerance=.00001` uses the
+existing normalized elevation scale. These are provisional engineering
+coefficients, not measured historical quantities. The [mechanics and save
+contract](AgriculturalTechnology.md) and [smoothed-calendar validation](AgriculturalTechnologyValidation.md)
+record their interpretation and evidence.

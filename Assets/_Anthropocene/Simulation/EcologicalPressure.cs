@@ -54,7 +54,7 @@ namespace Anthropocene.Simulation
             double? operatingFraction = null, bool projectWood = true,
             Action profileEvaluated = null, EcologyView? openingEcology = null,
             bool captureGrossForcing = false,
-            AquaticEcologyOverlay? aquaticOverlay = null)
+            AquaticEcologyOverlay? aquaticOverlay = null, IrrigationOverlay? irrigationOverlay = null)
         {
             if (duration < 0) throw new ArgumentOutOfRangeException(nameof(duration));
             var tile = w.Tiles[tileId];
@@ -69,6 +69,7 @@ namespace Anthropocene.Simulation
             // prior snapshot, without cloning or rewinding the world.
             var v = openingEcology ?? LazyEcology.ProjectEcology(w, tileId, start,
                 true, wood == null ? null : wood.Recover);
+            if (irrigationOverlay.HasValue) irrigationOverlay.Value.Apply(ref v);
             var result = new TileEcologyResult { Balance = new EcologyBalance { Tile = tileId, StartingBiomass = v.PotentialFood, StartingFood = v.Food, StartingWater = v.Freshwater } };
             var requests = CanonicalRequests(claims);
             if (duration == 0)

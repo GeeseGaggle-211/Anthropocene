@@ -338,6 +338,9 @@ namespace Anthropocene.Simulation
             int residents = Math.Max(0, camp.Population);
             double farmRate = demand.HarvestProductivity * cfg.GatherPerPerson * intervals;
             double gatherRate = cfg.GatherPerPerson * intervals;
+            bool plough = AgriculturalTechnology.Plough(world, camp);
+            double ploughHarvest = plough ? cfg.Agriculture.PloughHarvest : 1;
+            CultivationEconomy.HarvestProductivityRates(world, camp, demand.Footprint, out double uncoveredFarmProd, out double coveredFarmProd);
             double annualGatherRate = cfg.GatherPerPerson * cfg.DaysPerYear /
                 cfg.BaseDays;
             TurnResolver.FoodBucketTargets(world, camp, intervals, years,
@@ -383,8 +386,14 @@ namespace Anthropocene.Simulation
             double toolWorkers = years > 0 ? Math.Max(0,
                 camp.Inventory.FarmTools) * cfg.Neolithic.FarmToolFarmerYearsPerUnit /
                 years : 0;
-            double fieldEfficiency = CultivationEconomy.FarmToolFieldWorkEfficiency(
-                cfg.Neolithic);
+            double fieldEfficiency = AgriculturalTechnology.MaintenanceEfficiency(world, camp);
+            double FarmHarvestCapacity(int count)
+            {
+                if (count <= 0) return 0;
+                if (!plough) return count * farmRate;
+                double cov = Math.Min(count, toolWorkers);
+                return (cov * coveredFarmProd + Math.Max(0, count - cov) * uncoveredFarmProd) * gatherRate;
+            }
             double WorkersFor(double fraction)
             {
                 double required = rawMaintenance * Numbers.Clamp(fraction, 0, 1);
@@ -411,9 +420,21 @@ namespace Anthropocene.Simulation
                 // tools and food service.  A recipe exposed by a secondary
                 // capability must not move this breakpoint when it has no
                 // demanded use.
-                farmerBreaks.Add(Math.Min(maximumFarmers,
-                    Math.Max(0, (int)Math.Ceiling(Math.Min(site.Survey.HumanFood,
-                        survivalFood) / Math.Max(Epsilon, farmRate) - Epsilon))));
+                int survivalBreak = 0;
+                if (gatherRate > Epsilon)
+                {
+                    double need = Math.Min(site.Survey.HumanFood, survivalFood);
+                    if (plough && cfg.Agriculture.PloughHarvest > 1 + 1e-9 && toolWorkers > Epsilon)
+                    {
+                        double covYield = toolWorkers * coveredFarmProd * gatherRate;
+                        double take = Math.Min(need, covYield);
+                        double needed = take / Math.Max(Epsilon, coveredFarmProd * gatherRate)
+                            + Math.Max(0, need - take) / Math.Max(Epsilon, uncoveredFarmProd * gatherRate);
+                        survivalBreak = (int)Math.Ceiling(needed - Epsilon);
+                    }
+                    else survivalBreak = (int)Math.Ceiling(need / Math.Max(Epsilon, farmRate) - Epsilon);
+                }
+                farmerBreaks.Add(Math.Min(maximumFarmers, Math.Max(0, survivalBreak)));
                 double toolKink = Math.Min(toolWorkers,
                     rawMaintenance / Math.Max(Epsilon, fieldEfficiency));
                 int beforeKink = Math.Min(maximumFarmers, Math.Max(0,
@@ -450,7 +471,8 @@ namespace Anthropocene.Simulation
                     id => LazyEcology.ProjectEcology(world, id, world.Days));
             var fixedLand = new Dictionary<(int, long), (double current,
                 double future, double residual, double harvestWork)>();
-            bool cropRate = cfg.CropHarvestingOnly && cfg.FarmerProductivity > 1;
+            bool cropRate = (cfg.CropHarvestingOnly && cfg.FarmerProductivity > 1) || ploughHarvest > 1 + 1e-9;
+            double futureWildRate = cfg.CropHarvestingOnly ? 1 : cfg.FarmerProductivity;
             int season = (int)Math.Floor(world.Days / cfg.BaseDays) % 4;
             var footprint = new HashSet<int>(demand.Footprint);
             var fields = new List<FieldOption>();
@@ -519,8 +541,8 @@ namespace Anthropocene.Simulation
                                 Math.Max(0, capacity.Food - capacity.WildFood);
                             double share = capacity.Food > 0
                                 ? crop / capacity.Food : 0;
-                            harvestWork = refill.ClosingFood * (1 - share +
-                                share / cfg.FarmerProductivity);
+                            harvestWork = refill.ClosingFood * ((1 - share) / futureWildRate +
+                                share / (cfg.FarmerProductivity * ploughHarvest));
                         }
                         forecast = (current.HumanFoodReceipts,
                             refill.ClosingFood, refill.ClosingFood, harvestWork);
@@ -563,7 +585,7 @@ namespace Anthropocene.Simulation
                 }
                 double futureProductivity = !demand.CultivationEnabled ? 1 :
                     !cropRate ? cfg.FarmerProductivity : futureFieldWork > 0
-                        ? futureFieldFood / futureFieldWork : 1;
+                        ? futureFieldFood / futureFieldWork : futureWildRate;
                 var option = new FieldOption
                 {
                     Farmers = farmers, Operation = operation,
@@ -678,7 +700,7 @@ namespace Anthropocene.Simulation
                 double target = Math.Max(0, survivalFood - herd.CurrentFood -
                     herd.SlaughterFood);
                 double harvest = Math.Min(target,
-                    Math.Min(land, field.Farmers * farmRate));
+                    Math.Min(land, FarmHarvestCapacity(field.Farmers)));
                 int wantedGatherers = gatherRate > 0
                     ? (int)Math.Ceiling(Math.Max(0, Math.Min(human, target) -
                         harvest) / gatherRate - Epsilon) : 0;

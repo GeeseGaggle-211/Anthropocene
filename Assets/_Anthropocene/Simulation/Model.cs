@@ -24,6 +24,7 @@ namespace Anthropocene.Simulation
     public sealed class SimulationConfig
     {
         [System.Runtime.Serialization.OptionalField] public NeolithicConfig Neolithic = new NeolithicConfig();
+        [System.Runtime.Serialization.OptionalField] public AgriculturalTechnologySettings Agriculture;
         // Absent/null is legacy fixed timing. Enabled only by an explicit new-game profile.
         [System.Runtime.Serialization.OptionalField] public SmoothCalendarSettings SmoothCalendar;
         public SimulationConfig()
@@ -307,6 +308,7 @@ namespace Anthropocene.Simulation
                 double.IsNaN(CropMoistureExponent) || double.IsInfinity(CropMoistureExponent) || CropMoistureExponent <= 0)
                 throw new ArgumentException("Invalid crop moisture response.");
             Neolithic.Validate();
+            Agriculture?.Validate();
             if (double.IsNaN(LandFoodRegeneration) || double.IsInfinity(LandFoodRegeneration)
                 || LandFoodRegeneration < 0 || LandFoodRegeneration >= 1)
                 throw new ArgumentException("Invalid land food regeneration fraction.");
@@ -713,6 +715,8 @@ namespace Anthropocene.Simulation
         // Diagnostic only: the authorized reward is unchanged. These records separate local welfare from lineage-wide
         // population-weighted welfare and make migration/fission transfer effects explicit.
         [System.Runtime.Serialization.OptionalField] public List<SettlementWelfareReport> SettlementWelfare = new List<SettlementWelfareReport>();
+        [System.Runtime.Serialization.OptionalField] public List<IrrigationWaterReceipt> IrrigationWater;
+        [System.Runtime.Serialization.OptionalField] public List<AgriculturalFoodReceipt> AgriculturalFood;
         [System.Runtime.Serialization.OptionalField] public List<LineageWelfareReport> LineageWelfare = new List<LineageWelfareReport>();
         public void Log(string message) => Events.Add(message);
     }
@@ -844,6 +848,8 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public List<MaterialKnowledge> MaterialKnowledge = new List<MaterialKnowledge>();
         [System.Runtime.Serialization.OptionalField] public List<FixedHousingStock> FixedHousing = new List<FixedHousingStock>();
         [System.Runtime.Serialization.OptionalField] public List<FisherySite> FisherySites = new List<FisherySite>();
+        [System.Runtime.Serialization.OptionalField] public List<CanalSegment> Canals;
+        [System.Runtime.Serialization.OptionalField] public List<IrrigatedField> IrrigatedFields;
         // Explicit provenance only. Loading an old save never appends this list or changes Config.DemographicModel.
         [System.Runtime.Serialization.OptionalField] public List<DemographicMigrationRecord> DemographicMigrations = new List<DemographicMigrationRecord>();
         [System.Runtime.Serialization.OnDeserializing]
@@ -870,6 +876,11 @@ namespace Anthropocene.Simulation
         public SeasonData Ecology(int tile) => Tiles[tile].Seasons[Season];
         // The opening ends when every founding Society has made its breakthrough. A fission daughter (ParentSociety > 0) inherits its
         // parent's progression but never delays this: fission shrinks neither the rule nor the clock, it only adds settlements.
+        internal WorldState WithIrrigationNetwork(List<CanalSegment> canals, List<IrrigatedField> fields)
+        {
+            var copy = (WorldState)MemberwiseClone(); copy.Canals = canals; copy.IrrigatedFields = fields;
+            return copy; // Forecast-only overlay; shared geography and societies are read-only.
+        }
         public bool Finished => Camps.All(c => c.People.ParentSociety > 0 || c.People.Progression.Era != Era.Paleolithic || LinkedPopulation(c) == 0);
         public int LinkedPopulation(Camp camp) => camp.Population + Hunters.Where(h => h.SourceCamp == camp.Id).Sum(h => h.Population);
         public bool CanEnter(int tile, bool hunter, Camp camp = null) => tile >= 0 && tile < Tiles.Length &&

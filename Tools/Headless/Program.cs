@@ -407,6 +407,7 @@ internal static class Program
             var fixedChecks = new[]
             {
                 new ParallelChecks.Entry { Name = "Program.Tests", Run = () => Tests() },
+                new ParallelChecks.Entry { Name = "SaveCodecChecks", Run = () => SaveCodecChecks.Run() },
                 new ParallelChecks.Entry { Name = "Milestone2Checks", Run = () => Milestone2Checks.Run() },
                 new ParallelChecks.Entry { Name = "Milestone3Checks", Run = () => Milestone3Checks.Run() },
                 new ParallelChecks.Entry { Name = "FoundationChecks", Run = () => Console.WriteLine("PASS: " + FoundationChecks.Run() + " foundation assertions") },
@@ -450,6 +451,7 @@ internal static class Program
                 new ParallelChecks.Entry { Name = "FarmPlannerChecks", Cost = 1.2, Run = () => FarmPlannerChecks.Run() },
                 new ParallelChecks.Entry { Name = "FarmFoodPhaseChecks", Run = () => FarmFoodPhaseChecks.Run() },
                 new ParallelChecks.Entry { Name = "CultivationCacheChecks", Run = () => CultivationCacheChecks.Run() },
+                new ParallelChecks.Entry { Name = "AgriculturalTechnologyChecks", Run = () => AgriculturalTechnologyChecks.Run() },
                 new ParallelChecks.Entry { Name = "HorizonCultivationChecks", Run = () => HorizonCultivationChecks.Run() },
                 new ParallelChecks.Entry { Name = "HorizonEcologyChecks", Run = () => HorizonEcologyChecks.Run() },
                 new ParallelChecks.Entry { Name = "HorizonExecutionChecks", Run = () => HorizonExecutionChecks.Run() },

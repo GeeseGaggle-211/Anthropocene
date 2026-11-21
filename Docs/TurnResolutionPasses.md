@@ -194,3 +194,21 @@ The accepted prior-cohort economy remains the behavioral baseline for
 demographic semantics. The new horizon equations intentionally change some
 ecological and field outcomes relative to seasonal stepping; differences are
 calibrated and reported rather than hidden by old partition-equality tests.
+
+## Opt-in agricultural infrastructure
+
+When `Agriculture` is enabled, preparation allows only the Elder to authorize
+canal construction and continuity bundles, sharing materials, tool service and
+Builder labor with housing. Plough forecasts and execution reserve one shared
+operating-Farmer tool budget for overlapping maintenance and crop harvest.
+
+The resource pass locks drinking and herd claims before allocating optional
+irrigation. Sparse network overlays and analytical soil means feed the same
+single tile integration used by forecasting. Each source is debited once;
+water/soil receipts and funded-service consumption commit with ecology.
+Construction and prepaid first-period service are produced afterward and become
+usable at the next boundary. Useful craft practice commits Plough/Irrigation
+attainment at Close. Legal successor ownership transfers preserve field soil.
+See [AgriculturalTechnology.md](AgriculturalTechnology.md) for the complete
+state, unit and compatibility contract. No new pass repeats the economy or
+iterates over individual people or elapsed years.

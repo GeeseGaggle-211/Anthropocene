@@ -109,7 +109,7 @@ namespace Anthropocene.Simulation
             double? averageCultivationCapital = null, double? endingCultivationCapital = null,
             double? operatingFraction = null, bool allCompetitionKnown = false,
             EcologyView? openingEcology = null, bool countRecoveryProfiles = false,
-            AquaticEcologyOverlay? aquaticOverlay = null)
+            AquaticEcologyOverlay? aquaticOverlay = null, IrrigationOverlay? irrigationOverlay = null)
         {
             if (snapshot == null) throw new ArgumentNullException(nameof(snapshot));
             if (tileId < 0 || tileId >= snapshot.Tiles.Length) throw new ArgumentOutOfRangeException(nameof(tileId));
@@ -127,7 +127,7 @@ namespace Anthropocene.Simulation
                 projectWood: false,
                 profileEvaluated: profileCounter == null ? null : new Action(profileCounter.Increment),
                 openingEcology: openingEcology, captureGrossForcing: true,
-                aquaticOverlay: aquaticOverlay);
+                aquaticOverlay: aquaticOverlay, irrigationOverlay: irrigationOverlay);
             var forecast = new FoodTileForecast
             {
                 Tile = tileId,
@@ -235,6 +235,21 @@ namespace Anthropocene.Simulation
                     if (PassiveGathering.Eligible(snapshot, location, id)) localTiles.Add(id);
             }
             foreach (int id in labor.Footprint ?? Array.Empty<int>()) localTiles.Add(id);
+            foreach (int id in cultivation?.Tiles ?? Array.Empty<int>()) localTiles.Add(id);
+            // One shared water forecast, using the caller's known claims. Like
+            // food competition this remains an optimistic envelope when the
+            // caller cannot observe all competing water users.
+            IrrigationAllocation irrigation;
+            var localWaterSources = IrrigationEconomy.LocalSources(snapshot, localTiles);
+            if (localWaterSources.Count > 0)
+            {
+                var waterClaims = (knownCompetingClaims ?? Array.Empty<Demand>()).ToList();
+                bool hasDrinking = waterClaims.Any(d => d.Kind == "Drinking"), hasHerds = waterClaims.Any(d => d.Kind == "Herd" && d.Freshwater > 0);
+                waterClaims.AddRange(IrrigationEconomy.EssentialForecastClaimsForSources(snapshot, durationDays / snapshot.Config.DaysPerYear, localWaterSources, tileKnown)
+                    .Where(d => d.Kind == "Drinking" ? !hasDrinking : !hasHerds));
+                irrigation = IrrigationEconomy.AllocateLocal(snapshot, waterClaims, startDays, durationDays, localWaterSources, location);
+            }
+            else irrigation = new IrrigationAllocation();
             var allClaims = ownClaims.Concat(knownCompetingClaims ?? Array.Empty<Demand>())
                 .Where(d => localTiles.Contains(d.Tile) &&
                     (tileKnown == null || tileKnown(d.Tile)))
@@ -270,7 +285,8 @@ namespace Anthropocene.Simulation
                 var requested = allClaims.TryGetValue(tileId, out Demand[] claims)
                     ? claims : Array.Empty<Demand>();
                 var tileForecast = Tile(snapshot, tileId, startDays, durationDays,
-                    requested, average, end, operation, allCompetitionKnown);
+                    requested, average, end, operation, allCompetitionKnown,
+                    irrigationOverlay: irrigation.Fields.TryGetValue(tileId, out var overlay) ? overlay : (IrrigationOverlay?)null);
                 tiles.Add(tileForecast);
                 for (int i = 0; i < requested.Length; i++)
                 {

@@ -64,9 +64,12 @@ internal static class Program
             Reject(()=>new TurnResolver().Resolve(w,prepared),"prepared calendar config frozen");
             c.SmoothCalendar.Curve=SmoothCalendarCurve.HistoricalExponential;
             // Null config is deliberate legacy fixed mode, not implicit migration on load.
-            c.SmoothCalendar=null;c.TurnDays=3650;var fixedSave=SaveCodec.Save(w);var fixedWorld=SaveCodec.Load(fixedSave);
+            // Disabling the calendar is the compatibility test. Do not also
+            // shrink the carrying capacity under already committed provisions.
+            double fixedDays=Math.Max(c.TurnDays,w.History.Last().Duration);
+            c.SmoothCalendar=null;c.TurnDays=fixedDays;var fixedSave=SaveCodec.Save(w);var fixedWorld=SaveCodec.Load(fixedSave);
             Check(fixedWorld.Config.SmoothCalendar==null,"legacy save stays disabled");
-            Step(fixedWorld);Near(fixedWorld.Config.TurnDays,3650,"legacy next duration fixed");
+            Step(fixedWorld);Near(fixedWorld.Config.TurnDays,fixedDays,"legacy next duration fixed");
             outputs.Add(new{seed,opening,elapsedYears=(w.Days-epoch)/365,checks});
         }
         // Daily boundary/inventory smoke uses a mature Neolithic fixture, not a modern economy.

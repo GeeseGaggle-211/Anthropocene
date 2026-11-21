@@ -219,7 +219,7 @@ namespace Anthropocene.Simulation
                     fieldWork.OperatingFarmerReservationWorkerYears = labor.OperatingFarmers * horizon.Years;
                     fieldWork.ExpansionFarmerWorkerYears = labor.ExpansionFarmers * horizon.Years;
                     fieldWork.MaintenanceWorkerYears = labor.MaintenanceFarmerWorkerYears;
-                    fieldWork.FarmToolCoveredWorkerYears = labor.MaintenanceCoveredWorkerYears;
+                    fieldWork.FarmToolCoveredWorkerYears = Math.Max(labor.MaintenanceCoveredWorkerYears, labor.OperatingCoveredWorkerYears);
                 }
 
                 // The first bridge estimate is limited by available terrestrial
@@ -301,6 +301,21 @@ namespace Anthropocene.Simulation
                     claim.Food *= claim.Manufacturing ? feedstockScale : biologicalScale;
             }
 
+            if (w.Config.Agriculture != null)
+            {
+                claims.AddRange(IrrigationEconomy.DrinkingClaims(w, horizon.Years));
+                foreach (int id in claims.Where(d => d.Kind == "Drinking").Select(d => d.Tile).Distinct())
+                { LazyEcology.MaterializeEcology(w, id, horizon.StartDays); activeTiles.Add(id); touch(id); }
+            }
+            var irrigation = IrrigationEconomy.Allocate(w, claims, horizon.StartDays, horizon.Days);
+            claims.AddRange(irrigation.Withdrawals);
+            if (IrrigationEconomy.Enabled(w)) record.IrrigationWater = irrigation.Receipts;
+            foreach (int id in irrigation.Fields.Where(p => p.Value.Water > 0 || w.Tiles[p.Key].Irrigated).Select(p => p.Key)
+                .Concat(irrigation.Withdrawals.Select(d => d.Tile)).Distinct())
+            { LazyEcology.MaterializeEcology(w, id, horizon.StartDays); activeTiles.Add(id); touch(id); }
+            IrrigationOverlay? IrrigationOverlayAt(int id)
+                => irrigation.Fields.TryGetValue(id, out var overlay) ? overlay : (IrrigationOverlay?)null;
+
             // Empty field tiles still need one ecology transition for their
             // capital/condition/wood endpoint even without a food claim.
             var byTile = claims.GroupBy(d => d.Tile).ToDictionary(g => g.Key,
@@ -315,17 +330,32 @@ namespace Anthropocene.Simulation
             LastMetrics.TileIntegrations = groups.Length;
             LastMetrics.ClaimsAllocated = claims.Count;
             LastMetrics.HorizonPreparationMilliseconds = timer.Elapsed.TotalMilliseconds;
+            var cropShares = new Dictionary<int, double>();
+            if (w.Config.Agriculture != null)
+            {
+                record.AgriculturalFood = new List<AgriculturalFoodReceipt>();
+                foreach (var group in groups)
+                {
+                    var tile = w.Tiles[group.Tile];
+                    if (!tile.Land) continue;
+                    var opening = LazyEcology.ProjectEcology(w, tile.Id, horizon.StartDays);
+                    var cap = new EcologyCapacity(w, tile, opening, (int)Math.Floor(horizon.StartDays / w.Config.BaseDays) % 4);
+                    cropShares[tile.Id] = cap.Food > 0 ? Numbers.Clamp((cap.Food - cap.WildFood) / cap.Food, 0, 1) : 0;
+                }
+            }
             var integrationTimer = System.Diagnostics.Stopwatch.StartNew();
             var results = fishingEnabled
                 ? execution.Map(groups, group => EcologicalPressure.Integrate(w, group.Tile,
                     group.Claims, horizon.StartDays, horizon.Days,
                     averageCapital.TryGetValue(group.Tile, out double average) ? average : (double?)null,
                     endingCapital.TryGetValue(group.Tile, out double end) ? end : (double?)null,
-                    aquaticOverlay: FisheryOverlay(group.Tile)))
+                    aquaticOverlay: FisheryOverlay(group.Tile), irrigationOverlay: IrrigationOverlayAt(group.Tile)))
                 : execution.Map(groups, group => EcologicalPressure.Integrate(w, group.Tile,
                     group.Claims, horizon.StartDays, horizon.Days,
                     averageCapital.TryGetValue(group.Tile, out double average) ? average : (double?)null,
-                    endingCapital.TryGetValue(group.Tile, out double end) ? end : (double?)null));
+                    endingCapital.TryGetValue(group.Tile, out double end) ? end : (double?)null,
+                    irrigationOverlay: IrrigationOverlayAt(group.Tile)));
+            IrrigationEconomy.Commit(w, irrigation, horizon.StartDays + horizon.Days, horizon.Years);
             LastMetrics.FullTurnIntegrationMilliseconds = integrationTimer.Elapsed.TotalMilliseconds;
             var commitTimer = System.Diagnostics.Stopwatch.StartNew();
             for (int i = 0; i < groups.Length; i++)
@@ -388,6 +418,10 @@ namespace Anthropocene.Simulation
                 foreach (var transfer in result.Transfers)
                 {
                     transfers.Add(transfer);
+                    if (record.AgriculturalFood != null && transfer.Food > 0 &&
+                        (transfer.Kind == "Cultivation" || transfer.Kind == "Gathering") && cropShares.TryGetValue(tile, out double cropShare))
+                        record.AgriculturalFood.Add(new AgriculturalFoodReceipt { Camp = transfer.Entity, Tile = tile,
+                            CropFood = transfer.Food * cropShare, WildFood = transfer.Food * (1 - cropShare) });
                     if (transfer.Kind == "Gathering" &&
                         w.Tiles[tile].Land && camps.ContainsKey(transfer.Entity))
                         terrestrialGathered[transfer.Entity] =
@@ -501,7 +535,8 @@ namespace Anthropocene.Simulation
             LastMetrics.HorizonCommitMilliseconds = commitTimer.Elapsed.TotalMilliseconds;
             foreach (var transfer in transfers)
             {
-                if (transfer.Kind == "Herd")
+                if (transfer.Kind == "Drinking" || transfer.Kind == "Irrigation") { /* Water-only receipt; already debited at its source. */ }
+                else if (transfer.Kind == "Herd")
                 {
                     var herd = herds[transfer.Entity];
                     herd.UnmetFood = Math.Max(0, herd.UnmetFood - transfer.PotentialFood);
