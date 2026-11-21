@@ -23,7 +23,7 @@ internal static class AgriculturalTechnologyChecks
         {
             var t = w.Tiles[id]; t.Elevation = .1f;
             t.CultivationCapital = 1; t.Cultivation = .4f; t.Cultivated = true;
-            t.CultivationOperator = c.Id; t.CultivationOperatingFraction = 1;
+            t.CultivationOperator = c.Id; t.CultivationOperatingFraction = 0;
         }
         int source = w.Map.Neighbors(c.Tile).First(); w.Tiles[source].FreshwaterSource = FreshwaterSource.River;
         w.Tiles[source].Elevation = .2f;
@@ -43,8 +43,9 @@ internal static class AgriculturalTechnologyChecks
                 var labor = CultivationEconomy.PrepareHorizon(w, c, w.Days, years, budget);
                 Near(labor.OperatingCoveredWorkerYears, 40 * years * fraction, "service is actual covered worker time");
                 Near(budget.ReservedMaintenanceWorkerYears, labor.OperatingCoveredWorkerYears, "overlap charged once");
-                Check(labor.HarvestProductivity >= primitiveHarvest - 1e-10, "crop labor benefits with tools");
-                if (fraction == 0) Near(labor.HarvestProductivity, primitiveHarvest, "knowledge without tools has no harvest benefit");
+                Near(AgriculturalTechnology.MaintenanceEfficiency(w, c), w.Config.Agriculture.PloughMaintenance, "plough sets maintenance efficiency to 1.50");
+                if (fraction > 0) Check(labor.HarvestProductivity > primitiveHarvest + 1e-4, "crop labor strictly benefits with tools");
+                else Near(labor.HarvestProductivity, primitiveHarvest, "knowledge without tools has no harvest benefit");
                 var allocation = CultivationEconomy.PlanHorizonExpansion(w, c, years, 0, 0, budget, labor.Footprint);
                 CultivationEconomy.CommitHorizonExpansion(w, c, allocation, new TurnRecord(), budget);
                 Near(c.Inventory.FarmTools, 0, "service debits once and remains nonnegative");
@@ -248,6 +249,7 @@ internal static class AgriculturalTechnologyChecks
         c.PlantFood = 0;
         var copy = SaveCodec.Load(SaveCodec.Save(w));
         var resolver = new TurnResolver();
+        double totalDelivered = 0;
         for (int turn = 0; turn < 4; turn++)
         {
             var record = resolver.Resolve(w, new Dictionary<int, List<Order>>());
@@ -256,9 +258,13 @@ internal static class AgriculturalTechnologyChecks
             Check(c.Inventory.HousingMaterial >= -1e-8 && c.Inventory.Tools >= -1e-8, "shared infrastructure budgets nonnegative");
             Check(record.Production.Sum(p => p.WorkerIntervals) <= c.Population * record.Duration / w.Config.BaseDays + 1e-8, "shared manufacturing workforce bounded");
             foreach (var receipt in record.IrrigationWater ?? new List<IrrigationWaterReceipt>())
+            {
                 Near(receipt.Withdrawal, receipt.Delivery + receipt.Loss, "complete-turn water conservation");
+                totalDelivered += receipt.Delivery;
+            }
         }
         TurnResolver.Invariants(w);
+        Check((w.Canals?.Count ?? 0) > 0 && totalDelivered > 0, "complete turns build and operate irrigation canals");
         Console.WriteLine("Agricultural complete-turn canals=" + (w.Canals?.Count ?? 0));
     }
     private static void CommissioningMaterialChain()
@@ -372,9 +378,281 @@ internal static class AgriculturalTechnologyChecks
             Near(closing.Limit(c, CraftGood.HousingMaterial, 1), 0, "closing storage does not retain the temporary construction exemption");
         }
     }
+    private static void ReviewFixContracts()
+    {
+        // B2: Tight tool budget (exact 1.0 tool output = 0.25 Regular Tools) must not cap non-equipment HousingMaterial to 1 unit.
+        {
+            var w = Fixture(); var c = w.Camps[0];
+            c.People.NeolithicTechnologies.Add(NeolithicTech.Irrigation);
+            c.Workforce.Assign(WorkforceRoles.Farmer, 0, c.Population);
+            c.Workforce.Assign(WorkforceRoles.Builder, 8, c.Population);
+            c.Inventory.HousingUnits = 10000;
+            c.Inventory.HousingMaterial = 0;
+            c.Inventory.HandTools = 0;
+            c.Inventory.Tools = 0.25; // exact 1.0 tool output for 1.0 canal segment
+            c.Inventory.Wood = c.Inventory.Clay = 10000;
+            var recipes = NeolithicProduction.Recipes(w.Config);
+            var canal = recipes.Single(r => r.Good == CraftGood.CanalConstruction);
+            var material = recipes.Single(r => r.Good == CraftGood.HousingMaterial);
+            double years = w.Config.TurnDays / w.Config.DaysPerYear, intervals = w.Config.GenerationIntervals, equipment = 10000;
+            var project = IrrigationEconomy.Opportunity(w, c);
+            var order = new ProductionOrder(new[] { CraftGood.HousingMaterial, CraftGood.CanalConstruction },
+                new Dictionary<CraftGood, double> { [CraftGood.HousingMaterial] = canal.HousingMaterial, [CraftGood.CanalConstruction] = 1 })
+                { Irrigation = new IrrigationOrder { Project = project, Construction = 1 } };
+            var forecast = MaterialEconomy.Forecast(w, c, recipes, intervals, years, equipment, false, c.Population, false, false, order: order);
+            Near(forecast[CraftGood.HousingMaterial], canal.HousingMaterial, "tight tool budget forecasts full canal housing materials");
+            Near(forecast[CraftGood.CanalConstruction], 1, "tight tool budget forecasts full 1.0 canal segment");
+            var record = new TurnRecord { StartDays = w.Days, Duration = w.Config.TurnDays };
+            var coverage = new ToolCoverageBudget(w, c, intervals);
+            double used = NeolithicProduction.Produce(w, c, material, WorkforceRoles.Builder, 8 * intervals, intervals, canal.HousingMaterial, ref equipment, record, coverage, order: order);
+            NeolithicProduction.Produce(w, c, canal, WorkforceRoles.Builder, 8 * intervals - used, intervals, 1, ref equipment, record, coverage, order: order);
+            Near(record.Production.Where(p => p.Good == CraftGood.CanalConstruction).Sum(p => p.Output), 1, "tight tool budget completes full 1.0 canal segment");
+            Near(c.Inventory.Tools, 0, "exact 1.0 tool output consumed by canal assembly");
+            Near(c.Inventory.HousingMaterial, 0, "all manufactured canal materials consumed");
+
+            // Zero tools must still prevent building without tools.
+            var zero = Fixture(); var zc = zero.Camps[0];
+            zc.People.NeolithicTechnologies.Add(NeolithicTech.Irrigation);
+            zc.Workforce.Assign(WorkforceRoles.Builder, 8, zc.Population);
+            zc.Inventory.HousingMaterial = zc.Inventory.HandTools = zc.Inventory.Tools = 0;
+            zc.Inventory.Wood = zc.Inventory.Clay = 10000;
+            var zf = MaterialEconomy.Forecast(zero, zc, recipes, intervals, years, equipment, false, zc.Population, false, false, order: order);
+            Near(zf[CraftGood.HousingMaterial], 0, "zero tools cannot manufacture irrigation materials");
+            Near(zf[CraftGood.CanalConstruction], 0, "zero tools cannot assemble canals");
+        }
+
+        // B1 & A1: Maintenance-capped village under Plough staffs harvest Farmers above maintenance cap
+        // instead of shedding crop harvest to 1.0x Gatherers, and sustains FarmTools continuity on mature fields.
+        {
+            void MakeMaintenanceCappedHighYield(WorldState world, Camp camp)
+            {
+                world.Config.EconomicAllocation = EconomicAllocationStrategy.DemandControl;
+                camp.Population = 250; camp.PlantFood = 0;
+                camp.Inventory.Wood = camp.Inventory.Stone = 10000;
+                var fp = CultivationEconomy.Footprint(world, camp);
+                for (int i = 0; i < fp.Length; i++)
+                {
+                    var t = world.Tiles[fp[i]];
+                    if (i == 0)
+                    {
+                        t.CultivationCapital = 1; t.Cultivation = .4f; t.Cultivated = true;
+                        t.CultivationOperator = camp.Id; t.CultivationOperatingFraction = 0;
+                        t.PotentialFood = 25000; t.Food = 12000;
+                        for (int s = 0; s < 4; s++) { t.Seasons[s].MaxPotentialFood = 25000; t.Seasons[s].MaxFood = 12000; t.Seasons[s].Moisture = .5f; }
+                    }
+                    else
+                    {
+                        t.CultivationCapital = 0; t.Cultivation = 0; t.Cultivated = false;
+                        t.CultivationOperator = -1; t.CultivationOperatingFraction = 0;
+                        t.PotentialFood = 0; t.Food = 0;
+                        for (int s = 0; s < 4; s++) { t.Seasons[s].MaxPotentialFood = 0; t.Seasons[s].MaxFood = 0; }
+                    }
+                }
+            }
+            var baseWorld = Fixture(); var bc = baseWorld.Camps[0];
+            MakeMaintenanceCappedHighYield(baseWorld, bc);
+            baseWorld.Config.Agriculture.PloughEnabled = false;
+            bc.Inventory.FarmTools = 200;
+            var baseIntent = DemandController.Plan(baseWorld, bc, EconomicIntent.From(bc), out _, out var baseAlloc);
+
+            var ploughWorld = Fixture(); var pc = ploughWorld.Camps[0];
+            MakeMaintenanceCappedHighYield(ploughWorld, pc);
+            pc.People.NeolithicTechnologies.Add(NeolithicTech.Plough);
+            pc.Inventory.FarmTools = 200;
+            var ploughIntent = DemandController.Plan(ploughWorld, pc, EconomicIntent.From(pc), out _, out var ploughAlloc);
+
+            double ploughMaint = CultivationEconomy.MaintenanceFarmersForPlanning(ploughWorld, pc, ploughWorld.Config.TurnDays / ploughWorld.Config.DaysPerYear);
+            int ploughFarmers = ploughIntent.Assignments.Where(a => a.Role == WorkforceRoles.Farmer).Sum(a => a.Population);
+            double ploughOp = ploughFarmers - (ploughIntent.Labor?.ExpansionFarmers ?? 0);
+            int baseFarmers = baseIntent.Assignments.Where(a => a.Role == WorkforceRoles.Farmer).Sum(a => a.Population);
+            double baseOp = baseFarmers - (baseIntent.Labor?.ExpansionFarmers ?? 0);
+            Check(ploughOp > ploughMaint + 1, $"maintenance-capped Plough village staffs harvest Farmers above maintenance floor (ploughOp={ploughOp:F2}, ploughMaint={ploughMaint:F2}, baseOp={baseOp:F2}, ploughFarmers={ploughFarmers}, exp={ploughIntent.Labor?.ExpansionFarmers ?? 0:F2}, gatherers={ploughAlloc.FoodGatherers})");
+            Check(ploughOp < baseOp, $"Plough uses strictly fewer operating Farmers than non-Plough for the same survival food (ploughOp={ploughOp:F2}, baseOp={baseOp:F2})");
+            Check(ploughAlloc.FoodGatherers == 0, $"maintenance-capped Plough village does not shed crop harvest to survival Gatherers (gatherers={ploughAlloc.FoodGatherers})");
+
+            // A1: FarmTools continuity on a mature village with operating Farmers > maintenance floor
+            // must size for operating Farmers (via staffed.Labor.ExpansionFarmers = 0), not collapse to maintenanceFarmers.
+            var matWorld = Fixture(); var mc = matWorld.Camps[0];
+            MakeMaintenanceCappedHighYield(matWorld, mc);
+            mc.People.NeolithicTechnologies.Add(NeolithicTech.Plough);
+            mc.Inventory.FarmTools = 0;
+            // Make all non-cultivated footprint tiles uncultivable (Elevation/Mountain or aquatic) so no expansion is possible.
+            foreach (int id in CultivationEconomy.Footprint(matWorld, mc))
+                if (matWorld.Tiles[id].CultivationCapital <= 0) matWorld.Tiles[id].Environment = EnvironmentKind.Ocean;
+            double matYears = matWorld.Config.TurnDays / matWorld.Config.DaysPerYear;
+            double matMaint = CultivationEconomy.MaintenanceWorkerRequirement(matWorld, mc) / matWorld.Config.Agriculture.PloughMaintenance;
+            DemandController.Plan(matWorld, mc, EconomicIntent.From(mc), out _, out var matAlloc);
+            var ftReq = matAlloc.Requests.FirstOrDefault(r => r.Good == CraftGood.FarmTools);
+            double maintTools = matMaint * matYears / matWorld.Config.Neolithic.FarmToolFarmerYearsPerUnit;
+            Check(ftReq != null && ftReq.Units > maintTools * 2, $"Plough FarmTools continuity counts operating Farmers above maintenance on mature fields (req={ftReq?.Units ?? 0:F2}, maintTools={maintTools:F2})");
+        }
+
+        // B3, M1 & B2-adv: CommitHorizonExpansion preserves irrigated biomass/food; ReclassifyLandFood
+        // neither destroys food expanding above q=0.50 nor destroys standing wild food across q=0 -> q>0.
+        {
+            var w = Fixture(); var c = w.Camps[0];
+            var project = IrrigationEconomy.Opportunity(w, c);
+            var order = new ProductionOrder(Array.Empty<CraftGood>(), new Dictionary<CraftGood, double>())
+                { Irrigation = new IrrigationOrder { Project = project, Construction = project.Remaining } };
+            IrrigationEconomy.Produce(w, c, CraftGood.CanalConstruction, project.Remaining, order, 0);
+            foreach (var s in w.Canals) { s.ActiveDays = 0; s.FundedYears = 100; }
+            var tile = w.Tiles[project.Target];
+            double lowCapital = Math.Pow(0.15 / w.Config.ReferenceIntensity, 2);
+            tile.CultivationCapital = lowCapital; tile.Cultivation = 0.15f; tile.Cultivated = true;
+            double turnDays = w.Config.TurnDays, turnYears = turnDays / w.Config.DaysPerYear;
+            var alloc = IrrigationEconomy.Allocate(w, Array.Empty<Demand>(), 0, turnDays);
+            var overlay = alloc.Fields[project.Target];
+            var integrated = EcologicalPressure.Integrate(w, project.Target, Array.Empty<Demand>(), 0, turnDays, irrigationOverlay: overlay);
+            IrrigationEconomy.Commit(w, alloc, turnDays, turnYears);
+            integrated.View.Commit(tile);
+            double irrigatedFoodBefore = tile.Food, irrigatedBiomassBefore = tile.PotentialFood;
+            var dryCap = new EcologyCapacity(w, tile, new EcologyView(tile), 0);
+            Check(irrigatedBiomassBefore > dryCap.Biomass * 1.5 && irrigatedFoodBefore > dryCap.Food + 1e-3,
+                "irrigated arid tile grows well above dryland biomass and food capacity");
+            var exp = new HorizonCultivationAllocation
+            {
+                CampId = c.Id,
+                Tiles = new[] { project.Target },
+                StartCapital = new[] { lowCapital },
+                StartOperators = new[] { c.Id },
+                EndCapital = new[] { Math.Pow(0.18 / w.Config.ReferenceIntensity, 2) },
+                BridgeWorkerYearsUsed = 0.1
+            };
+            CultivationEconomy.CommitHorizonExpansion(w, c, exp, new TurnRecord(), new FarmToolWorkBudget(w, c));
+            Check(tile.Food >= irrigatedFoodBefore - 1e-6 && tile.PotentialFood >= irrigatedBiomassBefore - 1e-6,
+                "CommitHorizonExpansion preserves irrigated food and biomass instead of clamping to dryland");
+
+            // M1: expanding from q=0.50 to q=0.60 under active irrigation must not destroy standing irrigated food.
+            double cap50 = Math.Pow(0.50 / w.Config.ReferenceIntensity, 2);
+            double cap60 = Math.Pow(0.60 / w.Config.ReferenceIntensity, 2);
+            tile.CultivationCapital = cap50; tile.Cultivation = 0.50f;
+            var ov = new IrrigationOverlay(1, 0, 1);
+            var view = new EcologyView(tile) { Days = 0, CultivationCapital = cap50 };
+            ov.Apply(ref view);
+            var capAt50 = new EcologyCapacity(w, tile, view, 0);
+            tile.PotentialFood = capAt50.Biomass; tile.Food = capAt50.Food; tile.LastEcologyUpdateDays = 0;
+            var grown = EcologicalPressure.Integrate(w, project.Target, Array.Empty<Demand>(), 0, 365,
+                averageCultivationCapital: 0.5 * (cap50 + cap60), endingCultivationCapital: cap60, operatingFraction: 1, irrigationOverlay: ov);
+            Check(grown.View.Food > tile.Food, "expanding irrigated arid field from q=0.50 to q=0.60 increases standing food");
+
+            // B2-adv: entering cultivation q=0 -> q=0.05 on an irrigated tile must NOT destroy standing wild food.
+            double cap05 = Math.Pow(0.05 / w.Config.ReferenceIntensity, 2);
+            tile.CultivationCapital = 0; tile.Cultivation = 0; tile.Cultivated = false;
+            var dryZero = new EcologyCapacity(w, tile, new EcologyView(tile) { Days = 0, CultivationCapital = 0 }, 0);
+            tile.PotentialFood = dryZero.Biomass; tile.Food = dryZero.Food; tile.LastEcologyUpdateDays = 0;
+            var reentered = EcologicalPressure.Integrate(w, project.Target, Array.Empty<Demand>(), 0, 30,
+                averageCultivationCapital: cap05 * 0.5, endingCultivationCapital: cap05, operatingFraction: 1, irrigationOverlay: ov);
+            Check(reentered.View.Food >= dryZero.Food - 1e-6, "entering cultivation from q=0 on an irrigated tile preserves standing wild food");
+        }
+
+        // M4: Zeno-free canal grant in the genuine Zeno regime (0 < usefulFood < 0.5 * AnnualFoodGain * years).
+        {
+            var w = Fixture(); var c = w.Camps[0];
+            w.Config.EconomicAllocation = EconomicAllocationStrategy.DemandControl;
+            c.People.NeolithicTechnologies.Add(NeolithicTech.Irrigation);
+            c.Inventory.HousingUnits = 10000;
+            c.Inventory.HousingMaterial = 1000;
+            c.Inventory.Wood = c.Inventory.Clay = c.Inventory.Stone = 10000;
+            c.Inventory.Cloth = 10000;
+            var project = IrrigationEconomy.Opportunity(w, c);
+            double years = w.Config.TurnDays / w.Config.DaysPerYear;
+            double projectFood = project.AnnualFoodGain * years;
+            // Find the exact carried food threshold that produces 0 < DevelopmentFoodGap < 0.4 * projectFood.
+            c.Food = 0; c.PlantFood = 0;
+            DemandController.Plan(w, c, EconomicIntent.From(c), out _, out var zeroAlloc);
+            double fullGap = zeroAlloc.DevelopmentFoodGap;
+            double targetGap = Math.Min(projectFood * 0.35, fullGap * 0.5);
+            double carried = Math.Max(0, fullGap - targetGap);
+            c.Food = carried; c.PlantFood = carried;
+            DemandController.Plan(w, c, EconomicIntent.From(c), out var order, out var alloc);
+            var canalReq = alloc.Requests.FirstOrDefault(r => r.Good == CraftGood.CanalConstruction);
+            Check(alloc.DevelopmentFoodGap > 1e-3 && alloc.DevelopmentFoodGap < projectFood * 0.5,
+                $"Zeno fixture hits genuine sub-project food gap ({alloc.DevelopmentFoodGap:F2} vs {projectFood:F2})");
+            Check(canalReq != null && canalReq.Granted >= project.Remaining - 1e-6,
+                "affordable canal development in Zeno regime authorizes full remaining segment");
+            Check(order.Irrigation != null && order.Irrigation.Construction >= project.Remaining - 1e-6,
+                "production order carries full canal completion grant in Zeno regime");
+        }
+
+        // M5, M6, B1-adv (duplicate key), B5-adv (ghost village), B6-adv (asymmetric water-filling).
+        {
+            var w = Fixture(); var c = w.Camps[0];
+            double years = w.Config.TurnDays / w.Config.DaysPerYear;
+            var p1 = IrrigationEconomy.Opportunity(w, c);
+            int mid = p1.Target;
+            int tail = CultivationEconomy.Footprint(w, c).First(id => id != mid && w.Map.Distance(mid, id) == 1);
+            w.Tiles[tail].Elevation = w.Tiles[mid].Elevation;
+            for (int s = 0; s < 4; s++) w.Tiles[tail].Seasons[s].Moisture = .1f;
+            var twoHop = new IrrigationProject { Source = p1.Source, Target = tail, Route = new[] { mid, tail }, Remaining = 2, AnnualFoodGain = 100 };
+            var buildOrder = new ProductionOrder(Array.Empty<CraftGood>(), new Dictionary<CraftGood, double>())
+                { Irrigation = new IrrigationOrder { Project = twoHop, Construction = 2 } };
+            IrrigationEconomy.Produce(w, c, CraftGood.CanalConstruction, 2, buildOrder, 0);
+            Check(w.Canals.Count == 2 && w.IrrigatedFields.Count == 1, "two-segment canal built");
+            foreach (var seg in w.Canals) { seg.ActiveDays = 0; seg.FundedYears = 0; }
+            Near(IrrigationEconomy.UpkeepDemand(w, c, years), 2 * years, "two active segments require 2*years upkeep");
+            var upkeepOrder = new ProductionOrder(Array.Empty<CraftGood>(), new Dictionary<CraftGood, double>())
+                { Irrigation = new IrrigationOrder { Upkeep = years } };
+            // Symmetric partial upkeep: 1 * years across 2 empty segments -> 0.5 * years each.
+            IrrigationEconomy.Produce(w, c, CraftGood.CanalMaintenance, years, upkeepOrder, 0);
+            Near(w.Canals[0].FundedYears, 0.5 * years, "segment 1 receives proportional 50% upkeep");
+            Near(w.Canals[1].FundedYears, 0.5 * years, "segment 2 receives proportional 50% upkeep");
+            var partialWater = IrrigationEconomy.Allocate(w, Array.Empty<Demand>(), 0, w.Config.TurnDays);
+            Check(partialWater.Delivery > 0, "proportional partial upkeep delivers water instead of stranding downstream segments");
+            // Asymmetric carryover water-filling: [0.5*years, 0] + 0.75*years -> [0.625*years, 0.625*years].
+            w.Canals[0].FundedYears = 0.5 * years; w.Canals[1].FundedYears = 0;
+            IrrigationEconomy.Produce(w, c, CraftGood.CanalMaintenance, 0.75 * years, upkeepOrder, 0);
+            Near(w.Canals[0].FundedYears, 0.625 * years, "water-filling equalizes asymmetric segment 1 upward");
+            Near(w.Canals[1].FundedYears, 0.625 * years, "water-filling equalizes asymmetric segment 2 upward");
+            // B5-adv: Depopulated ghost village must NOT withdraw finite river water.
+            int savedPop = c.Population; c.Population = 0;
+            Near(IrrigationEconomy.Allocate(w, Array.Empty<Demand>(), 0, w.Config.TurnDays).Delivery, 0, "depopulated village withdraws zero water");
+            Near(IrrigationEconomy.UpkeepDemand(w, c, years), 0, "depopulated village demands zero upkeep");
+            c.Population = savedPop;
+            // B1-adv: Duplicate (Source, Tile) segments owned by same camp (e.g. after abandonment + ownership transfer) must not crash Produce/CompatibleRoute.
+            w.Canals.Add(new CanalSegment { Id = w.NextId++, Operator = c.Id, Source = p1.Source, From = p1.Source, Tile = mid,
+                Construction = 1, FundedYears = years, Throughput = w.Config.Agriculture.AnnualThroughput });
+            var dupOrder = new ProductionOrder(Array.Empty<CraftGood>(), new Dictionary<CraftGood, double>())
+                { Irrigation = new IrrigationOrder { Project = p1, Construction = 0.1 } };
+            IrrigationEconomy.Produce(w, c, CraftGood.CanalConstruction, 0.1, dupOrder, 0);
+            // Abandonment releases ownership and stops Continuity upkeep leak.
+            IrrigationEconomy.ReleaseAbandoned(w, c.Id);
+            Check(w.Canals.All(s => s.Operator < 0) && w.IrrigatedFields.All(f => f.Operator < 0), "abandonment releases canal and field ownership");
+            Near(IrrigationEconomy.UpkeepDemand(w, c, years), 0, "abandoned canals demand zero upkeep from departed camp");
+        }
+
+        // M7a & B4: Minimum-cost routing branches off existing canal; fog-of-war hides unseen water claims.
+        {
+            var w = Fixture(); var c = w.Camps[0];
+            var first = IrrigationEconomy.Opportunity(w, c);
+            int source = first.Source;
+            var neighbors = CultivationEconomy.Footprint(w, c).Where(id => w.Map.Distance(source, id) == 1).OrderBy(id => id).ToArray();
+            Check(neighbors.Length >= 2, "routing fixture has at least two source-adjacent footprint neighbors");
+            int a = neighbors[0], b = neighbors[1];
+            int target = CultivationEconomy.Footprint(w, c).FirstOrDefault(id => id != a && id != b &&
+                w.Map.Distance(source, id) == 2 && w.Map.Distance(a, id) == 1 && w.Map.Distance(b, id) == 1);
+            Check(target > 0, "routing fixture has a shared two-hop dry target");
+            foreach (int id in CultivationEconomy.Footprint(w, c))
+                for (int s = 0; s < 4; s++) w.Tiles[id].Seasons[s].Moisture = id == target ? .1f : .6f;
+            // Build existing segment on the higher-ID neighbor b so naive ID-order BFS would try unbuilt a first.
+            var existing = new CanalSegment { Id = w.NextId++, Operator = c.Id, Source = source, From = source, Tile = b,
+                Construction = 1, FundedYears = 20, Throughput = w.Config.Agriculture.AnnualThroughput };
+            w.Canals = new List<CanalSegment> { existing };
+            var chosen = IrrigationEconomy.Opportunity(w, c);
+            Check(chosen != null && chosen.Target == target && chosen.Route.Length == 2 && chosen.Route[0] == b,
+                "minimum-cost routing branches from existing canal segment instead of building redundant parallel path");
+            Near(chosen.Remaining, 1, "branching off completed segment charges only 1 remaining segment");
+            // Fog-of-war check: unseen camp at source must be excluded when tileKnown returns false.
+            var rival = new Camp { Id = w.NextId++, Player = 1, Tile = source, Population = 100000 };
+            w.Camps.Add(rival); Ownership.Bind(w);
+            var hiddenClaims = IrrigationEconomy.EssentialForecastClaimsForSources(w, 20, new[] { source }, id => id != source);
+            Check(!hiddenClaims.Any(d => d.Entity == rival.Id), "fog-of-war excludes unseen rival water claims");
+            var visibleClaims = IrrigationEconomy.EssentialForecastClaimsForSources(w, 20, new[] { source }, _ => true);
+            Check(visibleClaims.Any(d => d.Entity == rival.Id), "visible rival water claims are included locally");
+        }
+    }
     public static int Run()
     {
-        checks = 0; Plough(); Discovery(); GatesAndCosts(); WaterAndSoil(); AdditionalContracts(); ElderGatesAndSharing(); CompleteTurns(); CommissioningMaterialChain(); MixedConstructionCommitment();
+        checks = 0; Plough(); Discovery(); GatesAndCosts(); WaterAndSoil(); AdditionalContracts(); ElderGatesAndSharing(); CompleteTurns(); CommissioningMaterialChain(); MixedConstructionCommitment(); ReviewFixContracts();
         Console.WriteLine("PASS: " + checks + " agricultural technology assertions"); return checks;
     }
 }

@@ -183,12 +183,15 @@ namespace Anthropocene.Simulation
         // Proportional claims have the same mix, so their effective rate is the
         // stock-weighted harmonic rate of wild gathering and crop harvesting.
         // One opening-profile query per local field; no future/yearly loop.
-        public static double HarvestProductivity(WorldState w, Camp camp, int[] footprint = null, double? operatingFarmers = null, double? coveredFraction = null)
+        internal static void HarvestProductivityRates(WorldState w, Camp camp, int[] footprint, out double uncovered, out double covered)
         {
             var cfg = w.Config;
             bool plough = AgriculturalTechnology.Plough(w, camp);
-            if (!plough && (!cfg.CropHarvestingOnly || cfg.FarmerProductivity <= 1)) return cfg.FarmerProductivity;
-            double covered = plough ? coveredFraction ?? AgriculturalTechnology.Coverage(w, camp, cfg.TurnDays / cfg.DaysPerYear, operatingFarmers ?? AgriculturalTechnology.OperatingFarmers(camp)) : 0;
+            if (!plough && (!cfg.CropHarvestingOnly || cfg.FarmerProductivity <= 1))
+            {
+                uncovered = covered = cfg.FarmerProductivity;
+                return;
+            }
             double food = 0, work = 0, coveredWork = 0;
             int season = (int)Math.Floor(w.Days / cfg.BaseDays) % 4;
             foreach (int id in footprint ?? Footprint(w, camp))
@@ -205,7 +208,18 @@ namespace Anthropocene.Simulation
                 work += available * ((1 - cropShare) / wildRate + cropShare / cfg.FarmerProductivity);
                 coveredWork += available * ((1 - cropShare) / wildRate + cropShare / (cfg.FarmerProductivity * (plough ? cfg.Agriculture.PloughHarvest : 1)));
             }
-            return work > 0 ? (1 - covered) * food / work + covered * food / Math.Max(1e-12, coveredWork) : 1;
+            double emptyFallback = cfg.CropHarvestingOnly ? 1 : cfg.FarmerProductivity;
+            uncovered = work > 0 ? food / work : emptyFallback;
+            covered = work > 0 ? food / Math.Max(1e-12, coveredWork) : emptyFallback;
+        }
+        public static double HarvestProductivity(WorldState w, Camp camp, int[] footprint = null, double? operatingFarmers = null, double? coveredFraction = null)
+        {
+            var cfg = w.Config;
+            bool plough = AgriculturalTechnology.Plough(w, camp);
+            if (!plough && (!cfg.CropHarvestingOnly || cfg.FarmerProductivity <= 1)) return cfg.FarmerProductivity;
+            double covered = plough ? coveredFraction ?? AgriculturalTechnology.Coverage(w, camp, cfg.TurnDays / cfg.DaysPerYear, operatingFarmers ?? AgriculturalTechnology.OperatingFarmers(camp)) : 0;
+            HarvestProductivityRates(w, camp, footprint, out double uncoveredRate, out double coveredRate);
+            return (1 - covered) * uncoveredRate + covered * coveredRate;
         }
         // Village status is an endpoint decision, never an input to this turn's
         // claim or field plan. Count every nearby land tile in the original
@@ -343,7 +357,7 @@ namespace Anthropocene.Simulation
                     : Math.Min(plan.ExpansionFarmers, camp.EconomicLabor.ExpansionFarmers);
                 plan.OperatingFarmers = established ? farmers - plan.ExpansionFarmers : 0;
             }
-            if (AgriculturalTechnology.Plough(w, camp))
+            if (AgriculturalTechnology.Plough(w, camp) && w.Config.Agriculture.PloughHarvest > 1 + 1e-9)
             {
                 double covered = Math.Min(plan.OperatingFarmers, availableCovered);
                 plan.OperatingCoveredWorkerYears = covered * years;
@@ -418,26 +432,36 @@ namespace Anthropocene.Simulation
         {
             if (!Enabled(camp) || camp.Population <= 0 || years <= 0) return 0;
             double required = MaintenanceWorkerRequirement(w, camp);
-            bool expansionEligible = false;
+            bool expansionEligible = false, established = false;
             foreach (int id in Footprint(w, camp))
             {
                 var t = w.Tiles[id];
                 if (t.CultivationOperator >= 0 && t.CultivationOperator != camp.Id) continue;
                 var projected = LazyEcology.ProjectEcology(w, id, Math.Max(w.Days, t.LastEcologyUpdateDays));
                 double capital = Math.Max(0, projected.CultivationCapital);
+                if (capital > 0) established = true;
                 if (capital < 1 / (w.Config.ReferenceIntensity * w.Config.ReferenceIntensity) - 1e-12) expansionEligible = true;
             }
             double farmers = Workers(camp, WorkforceRoles.Farmer);
-            double maintenanceFarmers = Math.Min(farmers, required / FarmToolFieldWorkEfficiency(w.Config.Neolithic));
-            double expansionFarmers = camp.EconomicLabor?.ExpansionFarmers ?? Math.Max(0, farmers - maintenanceFarmers);
-            if (!expansionEligible) expansionFarmers = 0;
-            expansionFarmers = Math.Min(Math.Max(0, farmers - maintenanceFarmers), Math.Max(0, expansionFarmers));
+            double efficiency = AgriculturalTechnology.MaintenanceEfficiency(w, camp);
+            double maintenanceFarmers = Math.Min(farmers, required / efficiency);
+            double rawExpansion = camp.EconomicLabor != null
+                ? Math.Max(0, camp.EconomicLabor.ExpansionFarmers)
+                : Math.Max(0, farmers - maintenanceFarmers);
+            double effectiveExpansion = camp.EconomicLabor != null && w.Config.SharedCropHerdAllocationEnabled
+                ? Math.Min(farmers, rawExpansion)
+                : Math.Min(Math.Max(0, farmers - maintenanceFarmers), rawExpansion);
+            double upkeepFarmers = Math.Max(0, farmers - effectiveExpansion);
+            double actualMaintenance = Math.Min(upkeepFarmers, required / efficiency);
+            double expansionFarmers = expansionEligible ? effectiveExpansion : 0;
             // Expand reports effective physical work after tool efficiency. The
             // forecast is raw covered farmer-years, so reserve only the raw work
             // needed to reach the remaining physical E room.
             expansionFarmers = Math.Min(expansionFarmers, ExpandableWorkerYears(w, camp) /
                 Math.Max(1e-12, FarmToolFieldWorkEfficiency(w.Config.Neolithic)) / years);
-            return Math.Max(0, (AgriculturalTechnology.Plough(w, camp) ? farmers - expansionFarmers : maintenanceFarmers) + expansionFarmers) * years;
+            bool ploughHarvest = AgriculturalTechnology.Plough(w, camp) && w.Config.Agriculture.PloughHarvest > 1 + 1e-9;
+            double operatingFarmers = ploughHarvest ? (established ? upkeepFarmers : 0) : actualMaintenance;
+            return Math.Max(0, operatingFarmers + expansionFarmers) * years;
         }
 
         // Planner-only projection: the proposal may reserve field workers that
@@ -447,7 +471,8 @@ namespace Anthropocene.Simulation
         {
             if (!Enabled(camp) || camp.Population <= 0 || years <= 0) return 0;
             double maintenance = PlannedMaintenanceFarmers(w, camp, availableFarmers);
-            return Math.Max(0, AgriculturalTechnology.Plough(w, camp) ? availableFarmers : maintenance) * years;
+            bool ploughHarvest = AgriculturalTechnology.Plough(w, camp) && w.Config.Agriculture.PloughHarvest > 1 + 1e-9;
+            return Math.Max(0, ploughHarvest ? availableFarmers : maintenance) * years;
         }
 
         private sealed class HorizonCandidate
@@ -807,6 +832,7 @@ namespace Anthropocene.Simulation
                     continue;
                 }
                 var before = new EcologyView(tile);
+                IrrigationEconomy.RestoreOverlay(w, id, ref before, before.Days);
                 if (endpoint > beforeCapital + 1e-12) tile.CultivationOperator = camp.Id;
                 var after = before; after.CultivationCapital = endpoint;
                 LazyEcology.ClampCapacity(w, tile, ref after);

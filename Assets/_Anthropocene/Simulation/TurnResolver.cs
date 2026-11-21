@@ -411,6 +411,7 @@ namespace Anthropocene.Simulation
                                 w.Tiles[id].CultivationOperator = -1;
                                 w.Tiles[id].CultivationOperatingFraction = 0;
                             }
+                        IrrigationEconomy.ReleaseAbandoned(w, camp.Id);
                         camp.IsVillage = false;
                         camp.VillageTurns = 0;
                         record.Log("Village " + camp.Id + " abandoned its fields and became a camp.");

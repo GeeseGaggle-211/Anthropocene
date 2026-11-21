@@ -99,7 +99,9 @@ namespace Anthropocene.Simulation
             // state, with CultivationEconomy.HarvestProductivity's stock-weighted
             // crop/wild rule over the footprint (the current turn keeps the committed
             // productivity, which is what the resolver harvests this turn).
-            bool cropRate = world.Config.CropHarvestingOnly && world.Config.FarmerProductivity > 1;
+            double ploughHarvest = AgriculturalTechnology.Plough(world, camp) ? world.Config.Agriculture.PloughHarvest : 1;
+            bool cropRate = (world.Config.CropHarvestingOnly && world.Config.FarmerProductivity > 1) || ploughHarvest > 1 + 1e-9;
+            double futureWildRate = world.Config.CropHarvestingOnly ? 1 : world.Config.FarmerProductivity;
             int season = (int)Math.Floor(world.Days / world.Config.BaseDays) % 4;
             var footprintTiles = new HashSet<int>(demand.Footprint);
             var cfg = world.Config; var n = cfg.Neolithic;
@@ -177,7 +179,7 @@ namespace Anthropocene.Simulation
                             var capacity = new EcologyCapacity(world, tile, empty, season);
                             double crop = tile.CultivationOperator >= 0 && tile.CultivationOperator != camp.Id ? 0 : Math.Max(0, capacity.Food - capacity.WildFood);
                             double cropShare = capacity.Food > 0 ? crop / capacity.Food : 0;
-                            harvestWork = refill.ClosingFood * (1 - cropShare + cropShare / cfg.FarmerProductivity);
+                            harvestWork = refill.ClosingFood * ((1 - cropShare) / futureWildRate + cropShare / (cfg.FarmerProductivity * ploughHarvest));
                         }
                         forecast = (current.HumanFoodReceipts, refill.ClosingFood, refill.ClosingBiomass, harvestWork);
                         TileForecasts += 2;
@@ -202,7 +204,7 @@ namespace Anthropocene.Simulation
                 d.ForageAfterHerds = d.TerrestrialAfterHerds + aquatic;
                 d.FutureForageAfterHerds = Math.Max(0, futureLand - demand.ManagedFood.HumanFoodDisplaced) + aquatic;
                 d.FutureUpkeep = futureMaintenance;
-                d.FutureHarvestProductivity = !d.CultivationEnabled ? 1 : !cropRate ? cfg.FarmerProductivity : futureFieldWork > 0 ? futureFieldFood / futureFieldWork : 1;
+                d.FutureHarvestProductivity = !d.CultivationEnabled ? 1 : !cropRate ? cfg.FarmerProductivity : futureFieldWork > 0 ? futureFieldFood / futureFieldWork : futureWildRate;
                 double forageNeed = d.ManagedFood.FoodConsumption * cfg.GenerationIntervals;
                 d.FuturePastureCapacity = forageNeed > 0
                     ? Math.Max(0, futureBiomass - Math.Min(futureLand, d.Meals)) / forageNeed : double.PositiveInfinity;

@@ -170,6 +170,33 @@ namespace Anthropocene.Simulation
             }
             return output;
         }
+        // Non-equipment Housing Material under shared housing+infrastructure orders
+        // uses the remaining-weighted Builder tool-grade multiplier without capping
+        // output to the assembly step's remaining consumable tool-output count.
+        internal double HousingMaterialMultiplier()
+        {
+            double weighted = 0, total = 0;
+            for (int grade = 0; grade < 3; grade++)
+            {
+                double r = Math.Max(0, remaining[grade]);
+                if (r > 1e-12 && housingMultipliers[grade] > 0)
+                {
+                    weighted += r * housingMultipliers[grade];
+                    total += r;
+                }
+            }
+            return total > 1e-12 ? weighted / total : 0;
+        }
+        public double HousingMaterialCapacity(double rate, double labor)
+        {
+            double m = HousingMaterialMultiplier();
+            return m > 0 && rate > 0 && labor > 0 ? labor * rate * m : 0;
+        }
+        public double HousingMaterialTime(double rate, double output)
+        {
+            double m = HousingMaterialMultiplier();
+            return m > 0 && rate > 0 && output > 0 ? output / (rate * m) : 0;
+        }
         public double Spend(CraftGood good, double rate, double output)
         {
             bool housing = IsHousingWork(good);
@@ -890,7 +917,13 @@ namespace Anthropocene.Simulation
         }
         public static double FarmerMaintenanceMultiplier(Camp c) => 1;
         public static double DomesticExpectationFactor(Camp c) => c.RudimentaryExpectation;
-        public static bool CanIrrigateTile(WorldState w, Camp c, int tile, out string reason) { reason = "Irrigation construction and effects are deferred."; return false; }
+        public static bool CanIrrigateTile(WorldState w, Camp c, int tile, out string reason)
+        {
+            if (!IrrigationEconomy.Enabled(w)) { reason = "Irrigation is disabled in this configuration."; return false; }
+            if (c == null || !c.IsVillage || !c.People.HasTech(NeolithicTech.Irrigation)) { reason = "Requires a village with Irrigation knowledge."; return false; }
+            reason = "Irrigation is planned automatically by the Elder when development food capacity is needed.";
+            return IrrigationEconomy.FertileGate(w, c) && IrrigationEconomy.Opportunity(w, c) != null;
+        }
         public static double HousingMultiplier(WorldState w, Camp c, double workers)
         {
             var n = w.Config.Neolithic;
@@ -936,8 +969,11 @@ namespace Anthropocene.Simulation
             if (recipe.ConstructionMaterial > 0 && housing == null)
             {
                 var planned = Recipes(w.Config).ToDictionary(r => r.Good, r => 0d);
-                planned[recipe.Good] = Math.Min(usefulDemand, recipe.Equipment || recipe.Good == CraftGood.HousingMaterial
-                    ? coverage.Capacity(recipe.Good, rate, workerIntervals) : workerIntervals * rate);
+                planned[recipe.Good] = Math.Min(usefulDemand, recipe.Equipment
+                    ? coverage.Capacity(recipe.Good, rate, workerIntervals)
+                    : recipe.Good == CraftGood.HousingMaterial
+                        ? (order?.Irrigation != null ? coverage.HousingMaterialCapacity(rate, workerIntervals) : coverage.Capacity(recipe.Good, rate, workerIntervals))
+                        : workerIntervals * rate);
                 housing = MaterialEconomy.PlanHousingMaterials(w, c, Recipes(w.Config), planned, intervals * w.Config.BaseDays / w.Config.DaysPerYear, w.Days, null, order);
             }
             // The shared budget limits finished output.  The legacy equipment
@@ -948,8 +984,11 @@ namespace Anthropocene.Simulation
             // consume it, so it never takes labour the assembly needs this turn.
             double amount = recipe.Good == CraftGood.HousingMaterial && order?.Irrigation == null
                 ? ExportedHousingMaterialLimit(coverage, rate, labor, usefulDemand, c.Inventory.HousingMaterial - c.TradeHeldForExport(CraftGood.HousingMaterial), c.TradeOutstanding(CraftGood.HousingMaterial))
-                : Math.Min(usefulDemand, recipe.Equipment || recipe.Good == CraftGood.HousingMaterial
-                    ? coverage.Capacity(recipe.Good, rate, labor) : labor * rate);
+                : Math.Min(usefulDemand, recipe.Equipment
+                    ? coverage.Capacity(recipe.Good, rate, labor)
+                    : recipe.Good == CraftGood.HousingMaterial
+                        ? coverage.HousingMaterialCapacity(rate, labor)
+                        : labor * rate);
             double laborToolLimit = amount;
             var inv = c.Inventory;
             if (recipe.Stone > 0) amount = Math.Min(amount, inv.Stone / recipe.Stone);
@@ -1000,7 +1039,10 @@ namespace Anthropocene.Simulation
             }
             double handBeforeBudget = recipe.Equipment ? coverage.HandToolsConsumed : 0;
             double toolsBeforeBudget = recipe.Equipment ? coverage.ToolsConsumed : 0;
-            double used = recipe.Equipment ? coverage.Spend(recipe.Good, rate, amount) : recipe.Good == CraftGood.HousingMaterial ? coverage.Time(recipe.Good, rate, amount) : amount / rate;
+            double used = recipe.Equipment ? coverage.Spend(recipe.Good, rate, amount)
+                : recipe.Good == CraftGood.HousingMaterial
+                    ? (order?.Irrigation != null ? coverage.HousingMaterialTime(rate, amount) : coverage.Time(recipe.Good, rate, amount))
+                    : amount / rate;
             // Spend reports cumulative budget use. Debit only this receipt's
             // delta while keeping the budget shared across all production calls.
             double consumedHand = recipe.Equipment ? coverage.HandToolsConsumed - handBeforeBudget : 0;

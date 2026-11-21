@@ -3,11 +3,15 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
-      - 'Assets/_Anthropocene/Simulation/AgriculturalTechnology.cs'
-      - 'Assets/_Anthropocene/Simulation/IrrigationEconomy.cs'
+      - 'Assets/_Anthropocene/Simulation/**'
       - 'Assets/_Anthropocene/Resources/AgriculturalTechnologyOpeningConfig.json'
       - 'Tools/AgriculturalTechnologySweep/**'
       - 'Tools/Headless/AgriculturalTechnologyChecks.cs'
+      - 'Tools/Headless/DemandControlChecks.cs'
+      - 'Tools/Headless/GoodsStorageChecks.cs'
+      - 'Tools/Headless/HousingMaterialRecipeChecks.cs'
+      - 'Tools/Headless/NeolithicChecks.cs'
+      - 'Tools/Headless/SaveCodecChecks.cs'
       - '.github/workflows/agricultural-technology.yml'
 permissions:
   contents: read
@@ -26,7 +30,7 @@ jobs:
         with:
           dotnet-version: '8.0.x'
       - name: Focused contracts
-        run: dotnet run -c Release --project Tools/Headless/Anthropocene.Headless.csproj -- --only=AgriculturalTechnologyChecks,HousingMaterialRecipeChecks --jobs=1
+        run: dotnet run -c Release --project Tools/Headless/Anthropocene.Headless.csproj -- --only=AgriculturalTechnologyChecks,HousingMaterialRecipeChecks,DemandControlChecks,GoodsStorageChecks,SaveCodecChecks --jobs=1
       - name: Five-seed matched smoothed-calendar sweep
         run: dotnet run -c Release --project Tools/AgriculturalTechnologySweep/Anthropocene.AgriculturalTechnologySweep.csproj
       - name: Labor attribution and exact diagnostic replay

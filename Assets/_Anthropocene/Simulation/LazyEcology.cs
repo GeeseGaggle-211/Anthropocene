@@ -488,12 +488,37 @@ namespace Anthropocene.Simulation
             }
             double previousQ = CultivationEconomy.Intensity(w.Config, previousCapital);
             double nextQ = CultivationEconomy.Intensity(w.Config, nextCapital);
+            double baseBiomass = naturalCapacity.Biomass;
             double oldFood = EcologyMath.EffectiveWildFoodCapacity(naturalCapacity.WildFood,
-                naturalCapacity.Biomass, previousQ, w.Config, tile.Seasons[season].Moisture);
+                baseBiomass, previousQ, w.Config, tile.Seasons[season].Moisture);
             double newFood = EcologyMath.EffectiveWildFoodCapacity(naturalCapacity.WildFood,
-                naturalCapacity.Biomass, nextQ, w.Config, tile.Seasons[season].Moisture);
-            double oldShare = naturalCapacity.Biomass <= 0 ? 0 : Numbers.Clamp(oldFood / naturalCapacity.Biomass, 0, 1);
-            double newShare = naturalCapacity.Biomass <= 0 ? 0 : Numbers.Clamp(newFood / naturalCapacity.Biomass, 0, 1);
+                baseBiomass, nextQ, w.Config, tile.Seasons[season].Moisture);
+            if (tile.Land && w.Config.Agriculture?.IrrigationEnabled == true && view.IrrigationArea > 0)
+            {
+                // Keep one continuous irrigated biomass denominator across q=0 <-> q>0
+                // so entering or leaving cultivation cannot destroy or fabricate wild food.
+                var settings = w.Config.Agriculture;
+                var s = tile.Seasons[season];
+                double area = Numbers.Clamp(view.IrrigationArea, 0, 1);
+                var watered = s;
+                watered.Moisture = (float)(s.Moisture + view.IrrigationWater * Math.Max(0, settings.TargetMoisture - s.Moisture));
+                double multiplier = OpeningTransitions.FoodMultiplier(w, tile);
+                double condition = Numbers.Clamp(view.LandCondition, 0, 1);
+                double waterBiomass = s.Moisture > 1e-9 ? baseBiomass * watered.Moisture / s.Moisture :
+                    FoodEcology.LandBiomassBase * w.Config.LandBiomassMultiplier *
+                    FoodEcology.LandProductivity(tile, watered, w.Config) * multiplier * condition;
+                double improved = waterBiomass * (1 + settings.SoilCapacityGain * view.IrrigationSoil);
+                double blendedBiomass = (1 - area) * baseBiomass + area * improved;
+                double oldIrr = EcologyMath.EffectiveWildFoodCapacity(naturalCapacity.WildFood,
+                    improved, previousQ, w.Config, watered.Moisture);
+                double newIrr = EcologyMath.EffectiveWildFoodCapacity(naturalCapacity.WildFood,
+                    improved, nextQ, w.Config, watered.Moisture);
+                baseBiomass = blendedBiomass;
+                oldFood = Math.Min(blendedBiomass, (1 - area) * oldFood + area * oldIrr);
+                newFood = Math.Min(blendedBiomass, (1 - area) * newFood + area * newIrr);
+            }
+            double oldShare = baseBiomass <= 0 ? 0 : Numbers.Clamp(oldFood / baseBiomass, 0, 1);
+            double newShare = baseBiomass <= 0 ? 0 : Numbers.Clamp(newFood / baseBiomass, 0, 1);
             double nonfood = Math.Max(0, view.PotentialFood - view.Food);
             if (newShare > oldShare && oldShare < 1)
                 view.Food += nonfood * (newShare - oldShare) / (1 - oldShare);

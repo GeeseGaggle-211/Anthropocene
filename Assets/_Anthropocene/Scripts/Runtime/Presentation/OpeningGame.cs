@@ -114,6 +114,8 @@ namespace Anthropocene.Presentation
                 // legacy configuration and convert their original multipliers.
                 config.GrowthReserveYears = config.MinimumStorageYears = config.MaximumStorageYears = double.NaN;
                 JsonUtility.FromJsonOverwrite(tuning.text, config);
+                if (!System.Text.RegularExpressions.Regex.IsMatch(tuning.text, "\"Agriculture\"\\s*:\\s*\\{")) config.Agriculture = null;
+                if (!System.Text.RegularExpressions.Regex.IsMatch(tuning.text, "\"SmoothCalendar\"\\s*:\\s*\\{")) config.SmoothCalendar = null;
                 config.MigrateMissingPhysicalFoodHorizons();
             }
             var resourceOptions = new ResourceGenerationOptions();
@@ -589,13 +591,23 @@ namespace Anthropocene.Presentation
         {
             if (saving != null) return;
             string directory = Application.persistentDataPath, path = SavePath; var committed = world;
+            var pendingDraft = drafting;
             status = "Saving this turn...";
             // Orders stay disabled while the worker reads this committed state.
             saving = Task.Run(() =>
             {
+                if (pendingDraft != null) try { pendingDraft.GetAwaiter().GetResult(); } catch { }
                 Directory.CreateDirectory(directory); string temporary = path + ".tmp";
-                using (var output = File.Create(temporary)) SaveCodec.Save(committed, output);
-                if (File.Exists(path)) File.Replace(temporary, path, null); else File.Move(temporary, path);
+                try
+                {
+                    using (var output = File.Create(temporary)) SaveCodec.Save(committed, output);
+                    if (File.Exists(path)) File.Replace(temporary, path, null); else File.Move(temporary, path);
+                }
+                catch
+                {
+                    try { if (File.Exists(temporary)) File.Delete(temporary); } catch { }
+                    throw;
+                }
             });
         }
         private void Load()
@@ -603,7 +615,13 @@ namespace Anthropocene.Presentation
             if (saving != null || generating != null) return;
             drafting = null;
             previewAfterGeneration = false; string path = SavePath; operation = "Loading the saved opening";
-            generating = Task.Run(() => { using (var input = File.OpenRead(path)) { var loaded = SaveCodec.Load(input); _ = loaded.TerrainMetrics; return loaded; } });
+            generating = Task.Run(() =>
+            {
+                WorldState loaded;
+                using (var input = File.OpenRead(path)) loaded = SaveCodec.Load(input);
+                _ = loaded.TerrainMetrics;
+                return loaded;
+            });
         }
         private void TransitionGameOver(Rect rect)
         {

@@ -11,7 +11,7 @@ namespace Anthropocene.Simulation
         public const string Legacy = "Legacy", DemandControl = "DemandControl";
         public static bool IsKnown(string name) => name == Legacy || name == DemandControl;
         public static bool IsDemandControl(SimulationConfig cfg) => cfg != null && cfg.EconomicAllocation == DemandControl;
-        internal static EconomicIntent Plan(WorldState w, Camp c, EconomicIntent settings, out ProductionOrder production)
+        public static EconomicIntent Plan(WorldState w, Camp c, EconomicIntent settings, out ProductionOrder production)
             => Plan(w, c, settings, null, out production);
 
         // TurnPlanning may supply the access plan it already built for this accepted destination. The normal path keeps
@@ -265,11 +265,55 @@ namespace Anthropocene.Simulation
                 d.AnimalEnvelopeClothing) + portfolio.SlaughterFood;
             double foodNeed = Math.Max(0, survivalFood - animalReceipts);
             double terrestrial = Math.Min(d.TerrestrialAfterHerds, foodNeed);
+            bool plough = AgriculturalTechnology.Plough(w, c);
+            bool ploughHarvestActive = plough && cfg.Agriculture.PloughHarvest > 1 + 1e-9;
+            double toolWorkers = years > 0 ? Math.Max(0, c.Inventory.FarmTools) * n.FarmToolFarmerYearsPerUnit / years : 0;
+            CultivationEconomy.HarvestProductivityRates(w, c, d.Footprint, out double uncoveredFarmProd, out double coveredFarmProd);
             double farmRate = d.HarvestProductivity * cfg.GatherPerPerson * intervals;
+            double FarmCapacity(double count)
+            {
+                if (count <= 0) return 0;
+                if (!ploughHarvestActive) return count * uncoveredFarmProd * gatherRate;
+                double cov = Math.Min(count, toolWorkers);
+                return (cov * coveredFarmProd + Math.Max(0, count - cov) * uncoveredFarmProd) * gatherRate;
+            }
+            bool matureFields = c.IsVillage || d.Operated.All(id => CultivationEconomy.Intensity(cfg, w.Tiles[id].CultivationCapital) >= cfg.GathererBridgeCeiling - 1e-6);
+            bool harvestStaffing = cfg.Agriculture != null && d.Established && farmers > 0 &&
+                matureFields && AgriculturalTechnology.FixedFieldStaffingDiagnostic == null;
+            // On mature fields in the agriculture profile, staff operating Farmers
+            // for remaining survival terrestrial food while marginal Farmer harvest
+            // exceeds 1.0x gathering so higher maintenance efficiency cannot replace
+            // equipped crop harvesters with base-rate Gatherers.
+            if (harvestStaffing)
+            {
+                int maxSurvivalFarmers = Math.Max(farmers, residents - herders);
+                double missingTerrestrial = Math.Max(0, terrestrial - FarmCapacity(farmers));
+                if (missingTerrestrial > Epsilon && farmers < maxSurvivalFarmers && gatherRate > Epsilon)
+                {
+                    double coveredHeadroom = ploughHarvestActive ? Math.Max(0, toolWorkers - farmers) : 0;
+                    double coveredYield = ploughHarvestActive && coveredFarmProd > 1 + Epsilon ? coveredHeadroom * coveredFarmProd * gatherRate : 0;
+                    double neededExtra = 0;
+                    if (coveredYield > Epsilon)
+                    {
+                        double takeCovered = Math.Min(missingTerrestrial, coveredYield);
+                        neededExtra += takeCovered / (coveredFarmProd * gatherRate);
+                        missingTerrestrial -= takeCovered;
+                    }
+                    if (missingTerrestrial > Epsilon && uncoveredFarmProd > 1 + Epsilon)
+                        neededExtra += missingTerrestrial / (uncoveredFarmProd * gatherRate);
+                    int extra = Math.Min(maxSurvivalFarmers - farmers, Math.Max(0, (int)Math.Ceiling(neededExtra - Epsilon)));
+                    while (extra > 0 && FarmCapacity(farmers + extra) - FarmCapacity(farmers + extra - 1) <= gatherRate + Epsilon)
+                        extra--;
+                    farmers += extra;
+                }
+            }
+            double effectiveFarmProd = farmers > 0 && gatherRate > Epsilon
+                ? FarmCapacity(farmers) / (farmers * gatherRate)
+                : (ploughHarvestActive && toolWorkers > Epsilon ? coveredFarmProd : d.HarvestProductivity);
             // Operating farmers keep the fields up (and harvest while they do); the rest of the food is gathered. Gathering on
             // the footprint also builds field capital through the resolver's gatherer bridge (up to GathererBridgeCeiling),
-            // which harvesting farmers do not, so food beyond the upkeep crew is staffed as gathering (slice 2).
-            double harvest = Math.Min(terrestrial, farmers * farmRate);
+            // which harvesting farmers do not, so non-Plough food beyond the upkeep crew is staffed as gathering (slice 2).
+            double harvest = Math.Min(terrestrial, FarmCapacity(farmers));
             int foodLabor = Math.Max(0, residents - herders - farmers);
             double selectedPassive = Math.Min(d.SelectedFishingPassiveSupply, d.AquaticAfterHerds);
             double fishingTools = Math.Max(0, c.Inventory.FishingTools);
@@ -372,6 +416,7 @@ namespace Anthropocene.Simulation
 
             // The resolver-shaped candidate the tool demands read (herders and farmers staffed).
             var staffed = e.Copy();
+            staffed.Labor = new EconomicLaborPlan { ExpansionFarmers = 0 };
             if (herders > 0) staffed.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Herder, Population = herders });
             if (farmers > 0) staffed.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Farmer, Population = farmers });
             if (fishers > 0) staffed.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Fisher, Population = fishers });
@@ -517,7 +562,7 @@ namespace Anthropocene.Simulation
             // summoning a second set of Gatherers for the same physical work.
             double farmerSpareCapacity = Math.Min(
                 Math.Max(0, d.TerrestrialAfterHerds - harvest),
-                Math.Max(0, farmers * farmRate - harvest));
+                Math.Max(0, FarmCapacity(farmers) - harvest));
             double plannedPlantFromLand = Math.Max(0,
                 plantFeedstock - availablePlantInventory);
             double farmerPlantService = Math.Min(farmerSpareCapacity,
@@ -543,6 +588,11 @@ namespace Anthropocene.Simulation
                 d.ForageAfterHerds - Math.Min(fishingFood, selectedPassive) -
                 harvest - gatheredFood - farmerFoodService -
                 plannedPlantFromLand);
+            double terrestrialGathered = Math.Max(0, gatheredFood -
+                Math.Max(0, d.AquaticAfterHerds - Math.Min(fishingFood, selectedPassive)));
+            double remainingTerrestrial = Math.Max(0,
+                d.TerrestrialAfterHerds - harvest - terrestrialGathered -
+                plannedPlantFromLand - farmerFoodService);
             double reserveGatherFood = Math.Min(reserveFoodGap,
                 remainingForage);
             double growthGatherFood = Math.Min(growthFoodGap,
@@ -630,7 +680,20 @@ namespace Anthropocene.Simulation
             ShelterRequest("shelter deficit", ServiceClass.Recovery, deficitPreferred, gapPeople);
             double shelterDeficitPeople = gapPeople;
             // Field and herd equipment for the work staffed (continuity of retained assets).
-            Request("farm tools", ServiceClass.Continuity, CraftGood.FarmTools, Math.Max(0, NeolithicProduction.Demand(w, candidate, CraftGood.FarmTools, years, residents, false, false, d.Sources)));
+            var farmToolCandidate = candidate;
+            if (ploughHarvestActive && d.Established && AgriculturalTechnology.FixedFieldStaffingDiagnostic == null)
+            {
+                int priorOperating = Math.Min(Math.Max(0, residents - herders - fishers), (int)Math.Round(AgriculturalTechnology.OperatingFarmers(c)));
+                if (priorOperating > farmers)
+                {
+                    var expanded = staffed.Copy();
+                    var farmerSlot = expanded.Assignments.FirstOrDefault(a => a.Role == WorkforceRoles.Farmer);
+                    if (farmerSlot != null) farmerSlot.Population = priorOperating;
+                    else expanded.Assignments.Add(new PopulationAssignment { Role = WorkforceRoles.Farmer, Population = priorOperating });
+                    farmToolCandidate = EconomicPlanner.Preview(c, expanded, residents);
+                }
+            }
+            Request("farm tools", ServiceClass.Continuity, CraftGood.FarmTools, Math.Max(0, NeolithicProduction.Demand(w, farmToolCandidate, CraftGood.FarmTools, years, residents, false, false, d.Sources)));
             Request("herding tools", ServiceClass.Continuity, CraftGood.HerdingTools, Math.Max(0, NeolithicProduction.Demand(w, candidate, CraftGood.HerdingTools, years, residents, false, false, d.Sources)));
             // Fishing Tools continuity is sized only after the shared survival frontier fixes Fisher staffing.
             Request("fishing tools", ServiceClass.Continuity, CraftGood.FishingTools,
@@ -650,25 +713,59 @@ namespace Anthropocene.Simulation
             // Development and competes on the same physical-return scale as
             // herd and field increments. This prevents the biological maximum
             // from being silently promoted to mandatory field continuity.
-            var reserveGathering = LabourRequest("food reserve recovery",
-                ServiceClass.Recovery,
-                WorkforceRoles.Gatherer, gatherRate > 0
-                    ? reserveGatherFood / gatherRate : 0);
-            if (reserveGathering != null)
-                reserveGathering.Bundle.FoodService = reserveGatherFood /
-                    Math.Max(Epsilon, reserveGathering.Units);
-            var growthGathering = LabourRequest("food growth gathering",
-                ServiceClass.Development, WorkforceRoles.Gatherer,
-                gatherRate > 0 ? growthGatherFood / gatherRate : 0);
-            if (growthGathering != null)
+            var reserveFoodRequests = new List<Request>();
+            bool ploughHarvestStaffing = harvestStaffing && gatherRate > Epsilon &&
+                ((ploughHarvestActive && coveredFarmProd > 1 + Epsilon) || uncoveredFarmProd > 1 + Epsilon);
+            double remainingToolFarmers = ploughHarvestActive ? Math.Max(0, toolWorkers - farmers) : 0;
+            void AddFoodChannel(string harvestService, string gatherService, ServiceClass cls, double totalFood, ref double availTerrestrial)
             {
-                growthGathering.PriorityScore = gatherRate /
-                    Math.Max(Epsilon, years);
-                growthGathering.DevelopmentFood = growthGatherFood;
-                growthGathering.DevelopmentFoodPerUnit = gatherRate;
-                growthGathering.Bundle.FoodService = growthGatherFood /
-                    Math.Max(Epsilon, growthGathering.Units);
+                if (!(totalFood > Epsilon) || !(gatherRate > Epsilon)) return;
+                double left = totalFood;
+                if (ploughHarvestStaffing && availTerrestrial > Epsilon)
+                {
+                    double terr = Math.Min(left, availTerrestrial);
+                    if (ploughHarvestActive && coveredFarmProd > 1 + Epsilon && remainingToolFarmers > Epsilon && terr > Epsilon)
+                    {
+                        double rate = coveredFarmProd * gatherRate;
+                        double covFood = Math.Min(terr, remainingToolFarmers * rate);
+                        double covPersons = covFood / rate;
+                        var req = LabourRequest(harvestService, cls, WorkforceRoles.Farmer, covPersons);
+                        if (req != null)
+                        {
+                            req.Bundle.FoodService = rate;
+                            if (cls == ServiceClass.Recovery) reserveFoodRequests.Add(req);
+                            else { req.PriorityScore = rate / Math.Max(Epsilon, years); req.DevelopmentFood = covFood; req.DevelopmentFoodPerUnit = rate; }
+                        }
+                        remainingToolFarmers = Math.Max(0, remainingToolFarmers - covPersons);
+                        terr -= covFood; left -= covFood; availTerrestrial -= covFood;
+                    }
+                    if (uncoveredFarmProd > 1 + Epsilon && terr > Epsilon)
+                    {
+                        double rate = uncoveredFarmProd * gatherRate;
+                        double uncovPersons = terr / rate;
+                        var req = LabourRequest(harvestService, cls, WorkforceRoles.Farmer, uncovPersons);
+                        if (req != null)
+                        {
+                            req.Bundle.FoodService = rate;
+                            if (cls == ServiceClass.Recovery) reserveFoodRequests.Add(req);
+                            else { req.PriorityScore = rate / Math.Max(Epsilon, years); req.DevelopmentFood = terr; req.DevelopmentFoodPerUnit = rate; }
+                        }
+                        left -= terr; availTerrestrial -= terr;
+                    }
+                }
+                if (left > Epsilon)
+                {
+                    var req = LabourRequest(gatherService, cls, WorkforceRoles.Gatherer, left / gatherRate);
+                    if (req != null)
+                    {
+                        req.Bundle.FoodService = gatherRate;
+                        if (cls == ServiceClass.Recovery) reserveFoodRequests.Add(req);
+                        else { req.PriorityScore = gatherRate / Math.Max(Epsilon, years); req.DevelopmentFood = left; req.DevelopmentFoodPerUnit = gatherRate; }
+                    }
+                }
             }
+            AddFoodChannel("food reserve harvest", "food reserve recovery", ServiceClass.Recovery, reserveGatherFood, ref remainingTerrestrial);
+            AddFoodChannel("food growth harvest", "food growth gathering", ServiceClass.Development, growthGatherFood, ref remainingTerrestrial);
             // These commitments were selected by the settlement supervisor
             // before bundle arbitration and already removed from `budget`.
             // Record them as frozen continuity requests so the allocation
@@ -730,7 +827,7 @@ namespace Anthropocene.Simulation
             double ComparableFieldReturn(CultivationEconomy.ExpansionStep step)
             {
                 double food = Math.Max(0, step.AnnualGain * years);
-                double annualHarvest = d.HarvestProductivity *
+                double annualHarvest = effectiveFarmProd *
                     cfg.GatherPerPerson * perYear;
                 double harvestWork = annualHarvest > Epsilon
                     ? food / annualHarvest : double.PositiveInfinity;
@@ -891,7 +988,7 @@ namespace Anthropocene.Simulation
                         canalBuild.DevelopmentFoodPerUnit = canalBuild.DevelopmentFood / irrigationProject.Remaining;
                         canalBuild.TypedDevelopmentNeed = plantFeedstockShortfall;
                         double constructionYears = canalBuild.Bundle?.RoleYears.Values.Sum() ?? double.PositiveInfinity;
-                        double annualHarvest = irrigationProject.AnnualFoodGain / Math.Max(Epsilon, d.HarvestProductivity * cfg.GatherPerPerson * perYear);
+                        double annualHarvest = irrigationProject.AnnualFoodGain / Math.Max(Epsilon, effectiveFarmProd * cfg.GatherPerPerson * perYear);
                         canalBuild.PriorityScore = irrigationProject.AnnualFoodGain * years /
                             Math.Max(Epsilon, constructionYears * irrigationProject.Remaining + annualHarvest * years);
                     }
@@ -1467,8 +1564,7 @@ namespace Anthropocene.Simulation
                 return lo;
             }
 
-            double grantedReserveFood = reserveGathering == null ? 0 :
-                reserveGathering.Granted * reserveGathering.Bundle.FoodService;
+            double grantedReserveFood = reserveFoodRequests.Sum(q => q.Granted * q.Bundle.FoodService);
             double remainingCurrentDevelopmentFood = survivalFoodGap + growthFoodGap +
                 Math.Max(0, reserveFoodGap - grantedReserveFood);
             // Strategic investment may answer a future production deficit, but
@@ -1498,7 +1594,15 @@ namespace Anthropocene.Simulation
                         : remainingStrategicDevelopmentFood) + typedNeed +
                     substitutionNeed;
                 double wanted = request.Units;
-                if (request.DevelopmentFoodPerUnit > Epsilon)
+                // A canal yields zero water until completed; request full remaining
+                // construction whenever food demand justifies it (bounded below by
+                // real Builder/material budgets) so fractional grants cannot stall.
+                if (request.Good == CraftGood.CanalConstruction)
+                {
+                    double minimumUseful = Math.Max(Epsilon, Math.Min(gatherRate * 0.25, request.DevelopmentFood * 0.1));
+                    wanted = usefulFood >= minimumUseful ? request.Units : 0;
+                }
+                else if (request.DevelopmentFoodPerUnit > Epsilon)
                 {
                     double usefulUnits = usefulFood /
                         request.DevelopmentFoodPerUnit;
@@ -1735,7 +1839,21 @@ namespace Anthropocene.Simulation
             intent.Labor.MaterialGatherers = Math.Min(Math.Max(0, residents - nonGatherers), alloc.MaterialGatherers);
             intent.Labor.EquipmentTarget = Math.Min(residents, alloc.Staff.Where(p => !WorkforceRoles.Extractors.Contains(p.Key) && p.Key != WorkforceRoles.Herder && p.Key != WorkforceRoles.Farmer).Sum(p => p.Value));
             // Build farmers are the field-expansion staff, on top of the operating farmers.
-            intent.Labor.ExpansionFarmers = alloc.Staff.TryGetValue(WorkforceRoles.Farmer, out int builders) ? builders : 0;
+            // Plough reserve/growth harvest Farmers remain operating Farmers, not expansion.
+            int staffedFarmers = alloc.Staff.TryGetValue(WorkforceRoles.Farmer, out int builders) ? builders : 0;
+            double expansionFarmerYears = alloc.Requests
+                .Where(q => q.Service == "field expansion" && q.Bundle != null &&
+                    q.Bundle.RoleYears.TryGetValue(WorkforceRoles.Farmer, out double ry) && ry > 0)
+                .Sum(q => q.Granted * q.Bundle.RoleYears[WorkforceRoles.Farmer]);
+            double harvestFarmerYears = alloc.Requests
+                .Where(q => (q.Service == "food reserve harvest" || q.Service == "food growth harvest") &&
+                    q.Bundle != null && q.Bundle.RoleYears.TryGetValue(WorkforceRoles.Farmer, out double ry) && ry > 0)
+                .Sum(q => q.Granted * q.Bundle.RoleYears[WorkforceRoles.Farmer]);
+            double expansionFarmers = expansionFarmerYears > Epsilon ? expansionFarmerYears / Math.Max(Epsilon, years) : 0;
+            double harvestFarmers = harvestFarmerYears > Epsilon ? harvestFarmerYears / Math.Max(Epsilon, years) : 0;
+            intent.Labor.ExpansionFarmers = harvestFarmerYears > Epsilon
+                ? Math.Min(Math.Max(0, staffedFarmers - harvestFarmers), Math.Max(0, expansionFarmers))
+                : staffedFarmers;
             // The herd is held at what the staffed herders manage, within the policy's target; breeding is capped to it.
             if (herdTarget >= 0)
             {
@@ -1767,7 +1885,7 @@ namespace Anthropocene.Simulation
             foreach (var r in recipes) if (!order.Contains(r.Good)) order.Add(r.Good);
             foreach (var r in recipes) if (!alloc.Ceilings.ContainsKey(r.Good)) alloc.Ceilings[r.Good] = 0;
             production = new ProductionOrder(order.ToArray(), alloc.Ceilings);
-            if (canalBuild != null || canalUpkeep != null)
+            if ((canalBuild?.Granted ?? 0) > Epsilon || (canalUpkeep?.Granted ?? 0) > Epsilon)
                 production.Irrigation = new IrrigationOrder { Project = irrigationProject,
                     Construction = canalBuild?.Granted ?? 0, Upkeep = canalUpkeep?.Granted ?? 0 };
             if (protectedSplit && protectedClothingUnits >= 0)
@@ -1803,15 +1921,26 @@ namespace Anthropocene.Simulation
                 .ThenByDescending(q => a.Requests.IndexOf(q)))
             {
                 if (needed <= budget + Epsilon) break;
-                // A trimmed request releases the workers it was staffed with (at least one per role), not just one.
+                double priorGranted = q.Granted;
+                foreach (var g in q.Bundle.Outputs) if (a.Ceilings.ContainsKey(g.Key)) a.Ceilings[g.Key] = Math.Max(0, a.Ceilings[g.Key] - g.Value * priorGranted);
+                q.Granted = 0; q.Unmet = "integer staffing";
+                // Release only the integer workers genuinely freed after accounting for other
+                // remaining requests sharing the same role (e.g., Farmer harvest + expansion).
                 foreach (var role in q.Bundle.RoleYears)
                     if (a.Staff.TryGetValue(role.Key, out int s) && s > 0)
                     {
-                        int release = Math.Min(s, Math.Max(1, (int)Math.Ceiling(q.Granted * role.Value / Math.Max(Epsilon, years) - Epsilon)));
-                        a.Staff[role.Key] = s - release; needed -= release; if (a.Staff[role.Key] == 0) a.Staff.Remove(role.Key);
+                        double remainingRoleYears = a.Requests
+                            .Where(r => !r.Frozen && r.Bundle != null && r.Granted > Epsilon && r.Bundle.RoleYears.ContainsKey(role.Key))
+                            .Sum(r => r.Granted * r.Bundle.RoleYears[role.Key]);
+                        int neededAfter = remainingRoleYears > Epsilon
+                            ? (int)Math.Ceiling(remainingRoleYears / Math.Max(Epsilon, years) - Epsilon) : 0;
+                        int release = Math.Max(0, s - neededAfter);
+                        if (release > 0)
+                        {
+                            a.Staff[role.Key] = s - release; needed -= release;
+                            if (a.Staff[role.Key] == 0) a.Staff.Remove(role.Key);
+                        }
                     }
-                foreach (var g in q.Bundle.Outputs) if (a.Ceilings.ContainsKey(g.Key)) a.Ceilings[g.Key] = Math.Max(0, a.Ceilings[g.Key] - g.Value * q.Granted);
-                q.Granted = 0; q.Unmet = "integer staffing";
             }
         }
     }

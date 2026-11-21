@@ -235,17 +235,21 @@ namespace Anthropocene.Simulation
                     if (PassiveGathering.Eligible(snapshot, location, id)) localTiles.Add(id);
             }
             foreach (int id in labor.Footprint ?? Array.Empty<int>()) localTiles.Add(id);
+            foreach (int id in cultivation?.Tiles ?? Array.Empty<int>()) localTiles.Add(id);
             // One shared water forecast, using the caller's known claims. Like
             // food competition this remains an optimistic envelope when the
             // caller cannot observe all competing water users.
-            var waterClaims = (knownCompetingClaims ?? Array.Empty<Demand>()).ToList();
-            if (IrrigationEconomy.Enabled(snapshot))
+            IrrigationAllocation irrigation;
+            var localWaterSources = IrrigationEconomy.LocalSources(snapshot, localTiles);
+            if (localWaterSources.Count > 0)
             {
+                var waterClaims = (knownCompetingClaims ?? Array.Empty<Demand>()).ToList();
                 bool hasDrinking = waterClaims.Any(d => d.Kind == "Drinking"), hasHerds = waterClaims.Any(d => d.Kind == "Herd" && d.Freshwater > 0);
-                waterClaims.AddRange(IrrigationEconomy.EssentialForecastClaims(snapshot, durationDays / snapshot.Config.DaysPerYear)
+                waterClaims.AddRange(IrrigationEconomy.EssentialForecastClaimsForSources(snapshot, durationDays / snapshot.Config.DaysPerYear, localWaterSources, tileKnown)
                     .Where(d => d.Kind == "Drinking" ? !hasDrinking : !hasHerds));
+                irrigation = IrrigationEconomy.AllocateLocal(snapshot, waterClaims, startDays, durationDays, localWaterSources, location);
             }
-            var irrigation = IrrigationEconomy.Allocate(snapshot, waterClaims, startDays, durationDays);
+            else irrigation = new IrrigationAllocation();
             var allClaims = ownClaims.Concat(knownCompetingClaims ?? Array.Empty<Demand>())
                 .Where(d => localTiles.Contains(d.Tile) &&
                     (tileKnown == null || tileKnown(d.Tile)))

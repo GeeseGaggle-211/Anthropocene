@@ -96,11 +96,11 @@ namespace Anthropocene.Presentation
             }
             GUI.Label(new Rect(x, wy, col, 36), "Unassigned food/material gatherers: " + (camp.Population - draft.Assignments.Sum(a => a.Population)), small); wy += 40;
             if (Button(new Rect(x, wy, col - 8, 28), "Reset to gatherers")) { draft.Assignments.Clear(); draft.AutomationTurns = 0; draft.Labor = null; } wy += 34;
-            if (Button(new Rect(x, wy, col - 8, 28), "Allocate once")) { draft.AutomationTurns = 0; draft = EconomicPlanner.Plan(world, camp, draft); } wy += 34;
+            if (Button(new Rect(x, wy, col - 8, 28), "Allocate once")) { draft.AutomationTurns = 0; draft = EconomicAllocationStrategy.Plan(world, camp, draft, out _); } wy += 34;
             GUI.Label(new Rect(x, wy, col - 8, 42), "Automation: " + (draft.AutomationTurns == 0 ? "Off" : draft.AutomationTurns < 0 ? "Until disabled" : draft.AutomationTurns + " turns remaining"), small); wy += 44;
             if (Button(new Rect(x, wy, 65, 26), "Off")) draft.AutomationTurns = 0;
-            if (Button(new Rect(x + 70, wy, col - 78, 26), "Until disabled")) { draft.AutomationTurns = -1; draft = EconomicPlanner.Plan(world, camp, draft); } wy += 32;
-            if (Button(new Rect(x, wy, col - 80, 26), "Next " + Math.Max(1, villageAutomationTurns) + " turns")) { draft.AutomationTurns = Math.Max(1, villageAutomationTurns); draft = EconomicPlanner.Plan(world, camp, draft); }
+            if (Button(new Rect(x + 70, wy, col - 78, 26), "Until disabled")) { draft.AutomationTurns = -1; draft = EconomicAllocationStrategy.Plan(world, camp, draft, out _); } wy += 32;
+            if (Button(new Rect(x, wy, col - 80, 26), "Next " + Math.Max(1, villageAutomationTurns) + " turns")) { draft.AutomationTurns = Math.Max(1, villageAutomationTurns); draft = EconomicAllocationStrategy.Plan(world, camp, draft, out _); }
             if (Button(new Rect(x + col - 76, wy, 30, 26), "−")) villageAutomationTurns = Math.Max(1, villageAutomationTurns - 1);
             if (Button(new Rect(x + col - 40, wy, 30, 26), "+")) villageAutomationTurns = Math.Min(999, villageAutomationTurns + 1); wy += 36;
             GUI.Label(new Rect(x, wy, col - 8, 96), "Replans each turn against demand, stocks and unlocked jobs. Manual workforce edits turn automation off.\n" + (draft.Labor == null ? "" : $"Reserved material gathering: {draft.Labor.MaterialGatherers:F1} workers\nExpansion: {draft.Labor.ExpansionFarmers:F1} farmers"), small);
@@ -138,8 +138,15 @@ namespace Anthropocene.Presentation
             double potStorage = camp.Inventory.Pots * world.Config.Neolithic.PotStorageFoodPerUnit;
             double storageCapacity = NeolithicProduction.StorageCapacity(world, camp, storageIntervals);
             GUI.Label(new Rect(x, cy, col - 8, fishing ? 154 : 132), $"Stone {inventory.Stone:F2}\nClay {inventory.Clay:F2}\nWood {inventory.Wood:F2}\nPots {inventory.Pots:F2} (+{potStorage:F2} storage)\nFarm tools {inventory.FarmTools:F2}\n{(fishing ? "Fishing tools " + inventory.FishingTools.ToString("F2") + "\n" : "")}Storage capacity {storageCapacity:F2}\nHand tools {inventory.HandTools:F2}\nImproved tools {inventory.Tools:F2}", small); cy += fishing ? 166 : 144;
-            GUI.Label(new Rect(x, cy, col - 8, 100), $"Crafting consumes tools with useful output. Pots add {world.Config.Neolithic.PotStorageFoodPerUnit:F0} food storage each and retain {100 * (1 - world.Config.Neolithic.PotDecayPerReferenceTurn):F0}% per {world.Config.Neolithic.ReferenceTurnYears:F0}-year reference turn. Stone Farm Tools reduce maintenance and expansion labor for covered field work; they do not multiply harvest or ecology.", small);
-            cy += 108;
+            string farmToolNote = AgriculturalTechnology.Plough(world, camp)
+                ? $"Plough Farm Tools raise maintenance efficiency to {world.Config.Agriculture.PloughMaintenance:F2}× and multiply covered crop harvesting by {world.Config.Agriculture.PloughHarvest:F2}×."
+                : world.Config.Agriculture?.PloughEnabled == true
+                    ? "Stone Farm Tools reduce maintenance and expansion labor for covered field work; they do not multiply harvest or ecology until Plough is learned."
+                    : "Stone Farm Tools reduce maintenance and expansion labor for covered field work; they do not multiply harvest or ecology.";
+            string craftSummary = $"Crafting consumes tools with useful output. Pots add {world.Config.Neolithic.PotStorageFoodPerUnit:F0} food storage each and retain {100 * (1 - world.Config.Neolithic.PotDecayPerReferenceTurn):F0}% per {world.Config.Neolithic.ReferenceTurnYears:F0}-year reference turn. {farmToolNote}";
+            float craftSummaryHeight = Math.Max(100f, small.CalcHeight(new GUIContent(craftSummary), col - 8) + 8f);
+            GUI.Label(new Rect(x, cy, col - 8, craftSummaryHeight), craftSummary, small);
+            cy += craftSummaryHeight + 8f;
             if (husbandry)
             {
                 GUI.Label(new Rect(x, cy, col - 8, pastoralDescriptionHeight), pastoralDescription, small);

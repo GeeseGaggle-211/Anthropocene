@@ -219,7 +219,7 @@ namespace Anthropocene.Simulation
                     fieldWork.OperatingFarmerReservationWorkerYears = labor.OperatingFarmers * horizon.Years;
                     fieldWork.ExpansionFarmerWorkerYears = labor.ExpansionFarmers * horizon.Years;
                     fieldWork.MaintenanceWorkerYears = labor.MaintenanceFarmerWorkerYears;
-                    fieldWork.FarmToolCoveredWorkerYears = labor.MaintenanceCoveredWorkerYears;
+                    fieldWork.FarmToolCoveredWorkerYears = Math.Max(labor.MaintenanceCoveredWorkerYears, labor.OperatingCoveredWorkerYears);
                 }
 
                 // The first bridge estimate is limited by available terrestrial
@@ -304,13 +304,15 @@ namespace Anthropocene.Simulation
             if (w.Config.Agriculture != null)
             {
                 claims.AddRange(IrrigationEconomy.DrinkingClaims(w, horizon.Years));
-                foreach (int id in claims.Where(d => d.Kind == "Drinking").Select(d => d.Tile).Distinct()) { activeTiles.Add(id); touch(id); }
+                foreach (int id in claims.Where(d => d.Kind == "Drinking").Select(d => d.Tile).Distinct())
+                { LazyEcology.MaterializeEcology(w, id, horizon.StartDays); activeTiles.Add(id); touch(id); }
             }
             var irrigation = IrrigationEconomy.Allocate(w, claims, horizon.StartDays, horizon.Days);
             claims.AddRange(irrigation.Withdrawals);
             if (IrrigationEconomy.Enabled(w)) record.IrrigationWater = irrigation.Receipts;
-            foreach (int id in irrigation.Fields.Keys.Concat(irrigation.Withdrawals.Select(d => d.Tile)).Distinct())
-            { activeTiles.Add(id); touch(id); }
+            foreach (int id in irrigation.Fields.Where(p => p.Value.Water > 0 || w.Tiles[p.Key].Irrigated).Select(p => p.Key)
+                .Concat(irrigation.Withdrawals.Select(d => d.Tile)).Distinct())
+            { LazyEcology.MaterializeEcology(w, id, horizon.StartDays); activeTiles.Add(id); touch(id); }
             IrrigationOverlay? IrrigationOverlayAt(int id)
                 => irrigation.Fields.TryGetValue(id, out var overlay) ? overlay : (IrrigationOverlay?)null;
 

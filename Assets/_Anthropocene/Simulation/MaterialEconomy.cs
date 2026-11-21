@@ -770,8 +770,11 @@ namespace Anthropocene.Simulation
                 double wanted = exportOnly ? Outstanding(recipe.Good) : sharedFabricNeed ? useful : Math.Max(0, useful - planned[recipe.Good]);
                 // DemandControl ceilings: no ordinary step makes more than the allocated output (exports keep their claim).
                 if (!exportOnly && order != null && order.HasCeilings) wanted = Math.Min(wanted, Math.Max(0, order.Ceiling(recipe.Good) - planned[recipe.Good]));
-                double amount = Math.Min(wanted, recipe.Equipment || recipe.Good == CraftGood.HousingMaterial
-                    ? tools.Capacity(recipe.Good, rate, labor) : labor * rate);
+                double amount = Math.Min(wanted, recipe.Equipment
+                    ? tools.Capacity(recipe.Good, rate, labor)
+                    : recipe.Good == CraftGood.HousingMaterial
+                        ? (order?.Irrigation != null ? tools.HousingMaterialCapacity(rate, labor) : tools.Capacity(recipe.Good, rate, labor))
+                        : labor * rate);
                 // Housing Material and its assembly draw on one Builder pool.
                 if (recipe.Good == CraftGood.HousingMaterial && order?.Irrigation == null)
                     amount = Math.Min(amount, NeolithicProduction.ExportedHousingMaterialLimit(tools, rate, labor,
@@ -790,7 +793,10 @@ namespace Anthropocene.Simulation
                     amount = storage.Limit(stored, storage.Capacity(c.Food, storagePots + planned[CraftGood.Pots]), recipe.Good, amount, recipe.AnimalFabric, recipe.HousingMaterial);
                 if (amount <= 0) return;
                 if (stored != null) GoodsStorage.Add(stored, recipe.Good, amount, recipe.AnimalFabric, recipe.HousingMaterial);
-                labor -= recipe.Equipment ? tools.Spend(recipe.Good, rate, amount) : recipe.Good == CraftGood.HousingMaterial ? tools.Time(recipe.Good, rate, amount) : amount / rate;
+                labor -= recipe.Equipment ? tools.Spend(recipe.Good, rate, amount)
+                    : recipe.Good == CraftGood.HousingMaterial
+                        ? (order?.Irrigation != null ? tools.HousingMaterialTime(rate, amount) : tools.Time(recipe.Good, rate, amount))
+                        : amount / rate;
                 laborByRole[role] = labor;
                 double forExport = Math.Min(amount, Outstanding(recipe.Good));
                 planned[recipe.Good] += amount; plant -= amount * recipe.PlantFood; animalFood -= amount * recipe.AnimalFood;
