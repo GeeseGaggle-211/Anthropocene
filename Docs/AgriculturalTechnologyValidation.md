@@ -1,5 +1,43 @@
 # Agricultural technology validation — 11 November 2026
 
+**21 November review and 25° valley-diversion rerun (`b106f8f`):** following the
+Plough harvest-staffing, shared Builder tool-budget, ecology-continuity,
+localized-routing fixes (`ac882b0`) and the non-gorge river-valley diversion
+rule (`ValleyMaxSlopeDegrees = 25`, `ValleyBankWidthMeters = 1200`, `b106f8f`),
+the full five-seed × thirteen-treatment × two-regime CI matrix (**130 paired
+runs**, seeds `11, 23, 47, 101, 1729`) and all 70 headless suites
+(`AgriculturalTechnologyChecks`: 337 assertions; `SmoothCalendar`: 28,787
+checks; `--benchmark`: 320 networks @ 1M pop / 600 yr in 2.90 ms) passed. Every
+seed now organically discovers Irrigation by year 199–298 (including seed 1729,
+previously unattained), expanding active irrigation to **41 canals / 32 fields /
+21 settlements / 1.193M delivered water** (vs. 13 canals / 9 settlements /
+379K water under strict downhill-only gravity).
+
+| Treatment (`b106f8f`, 5 seeds) | Elder food Δ | Elder work/food Δ | Fixed-field food Δ | Fixed-field work/food Δ | Elder pop (`p25` / `med` / `p75`) | Canals / Water |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `none` | +0.000% | +0.000% | +0.000% | +0.000% | 96,186 (`643.0` / `997.0` / `1000.0`) | 37 / 0 |
+| `maintenance` | -0.609% | -0.338% | +1.900% | -0.506% | 94,423 (`652.0` / `998.0` / `1000.0`) | 37 / 0 |
+| `harvest` | -1.599% | -1.368% | -0.102% | -2.542% | 94,068 (`673.0` / `996.0` / `1000.0`) | 37 / 0 |
+| `combined` | -3.131% | -1.720% | -0.669% | -2.492% | 91,166 (`647.2` / `996.0` / `1000.0`) | 37 / 0 |
+| `water` | +0.287% | -0.104% | +1.033% | -0.157% | 96,390 (`645.0` / `999.0` / `1000.0`) | 41 / 1,192,670 |
+| `soil` | +0.317% | -0.131% | +1.147% | -0.214% | 96,573 (`645.0` / `997.0` / `1000.0`) | 41 / 1,192,692 |
+| `combined-water` | -2.915% | -1.741% | -0.558% | -2.667% | 91,669 (—) | 41 / 1,193,303 |
+| `combined-soil` | -2.864% | -1.872% | -0.510% | -2.760% | 91,646 (`648.0` / `996.0` / `1000.0`) | 41 / 1,193,316 |
+| `low-plough` | -1.953% | -0.198% | +1.335% | -0.740% | 92,221 (—) | 37 / 0 |
+| `high-plough` | -0.629% | -2.726% | +0.953% | -3.911% | 93,816 (`640.2` / `996.0` / `1000.0`) | 37 / 0 |
+| `half-cost` | -2.856% | -1.934% | -0.447% | -2.803% | 92,008 (—) | 41 / 1,193,283 |
+| `double-cost` | -2.337% | -1.827% | -0.493% | -2.726% | 92,709 (—) | 41 / 1,193,317 |
+| `moisture-one` | -0.434% | -1.756% | +1.103% | -2.711% | 96,779 (—) | 51 / 1,654,494 |
+
+On the **7 sub-cap (`<950`) irrigated settlements**, irrigation lifts mean
+population by **+6.1%** (`574.9 → 609.9`, median `651 → 711`, `+9.2%`) in `soil`
+vs. `none` and **+5.7%** (`562.6 → 594.7`, `p25` `396 → 421`, median `634 → 677`)
+in `combined-soil` vs. `combined`, while `p75` and overall median remain pinned
+near the `1,000`-person crowding ceiling across all treatments. Organic first
+availability on `b106f8f` (Plough / Irrigation years): seed 11 (`517.8` /
+`237.8`), seed 23 (`521.6` / `276.7`), seed 47 (`488.6` / `257.8`), seed 101
+(`501.6` / `199.3`), seed 1729 (`577.8` / `297.8`).
+
 **15 November persistence follow-up:** [SavePersistence.md](SavePersistence.md)
 records recovery of the large-world save, preserving its original fingerprint
 and history. This resolves the documented metadata-size failure; native Unity
