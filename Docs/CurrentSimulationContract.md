@@ -25,7 +25,10 @@ and action layouts, and demographic laws retain their prior behavior.
 corrections and three Standard/80-tribe, 1,600-year smoothed-calendar reruns. The
 generic paid-tool allowance correction applies to DemandControl production;
 the agricultural technology effects remain opt-in. [SavePersistence.md](SavePersistence.md)
-records the subsequent streaming codec and native large-save recovery. Unity
+records the subsequent streaming codec and native large-save recovery. [Sanitation.md](Sanitation.md)
+records the stacked opt-in paid physical Sanitation extension (`SanitationEnabled`,
+Irrigation-unlocked disease-only reduction with conserved freshwater coupling,
+Elder Continuity/Development planning, and five-seed matched ablation). Unity
 interaction acceptance remains open.
 
 ## Physical altitude for new worlds (6 November 2026)

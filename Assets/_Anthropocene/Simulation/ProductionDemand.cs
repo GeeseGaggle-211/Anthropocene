@@ -1001,6 +1001,8 @@ namespace Anthropocene.Simulation
         // the Elder committed ahead of meals; negative (the default) means none.
         internal double ProtectedClothingUnits = -1;
         internal IrrigationOrder Irrigation;
+        internal bool HasSharedHousingMaterialConsumers
+            => Irrigation != null || (HasCeilings && !double.IsInfinity(Ceiling(CraftGood.Sanitation)) && Ceiling(CraftGood.Sanitation) > 1e-12);
         internal ProductionOrder CopyForPreparation()
         {
             var copy = ceilings == null
@@ -1064,6 +1066,7 @@ namespace Anthropocene.Simulation
             var order = pricedRecipes.Concat(rest).Select(r => r.Good).ToList();
             MoveBefore(order, CraftGood.AnimalFabric, CraftGood.LightHousing);
             MoveBefore(order, CraftGood.HousingMaterial, CraftGood.Housing);
+            MoveBefore(order, CraftGood.HousingMaterial, CraftGood.Sanitation);
             return new ProductionOrder(order.ToArray(), valued);
         }
         // Sequencing rule: an input recipe is reached before the recipe that consumes it.

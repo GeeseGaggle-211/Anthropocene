@@ -9,6 +9,9 @@ namespace Anthropocene.Simulation
     {
         public int Camp, Society, Lineage, Population, Emigrated, Immigrated, SplitOff;
         public double QoL, PopulationWeightedQoL;
+#pragma warning disable SYSLIB0050
+        [System.Runtime.Serialization.OptionalField] public double SanitationPeople;
+#pragma warning restore SYSLIB0050
         public bool TransferAffected => Emigrated > 0 || Immigrated > 0 || SplitOff > 0;
     }
 
@@ -45,6 +48,7 @@ namespace Anthropocene.Simulation
                 {
                     Camp = c.Id, Society = c.SocietyId, Lineage = Root(c.SocietyId), Population = population,
                     QoL = c.QoL, PopulationWeightedQoL = population * c.QoL,
+                    SanitationPeople = NeolithicProduction.SanitationCapacity(world, c, world.Days),
                     Emigrated = d?.Emigrated ?? 0, Immigrated = d?.Immigrated ?? 0, SplitOff = d?.SplitOff ?? 0
                 };
             }).ToList();

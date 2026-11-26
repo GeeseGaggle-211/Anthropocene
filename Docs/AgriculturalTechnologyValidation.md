@@ -38,6 +38,15 @@ availability on `b106f8f` (Plough / Irrigation years): seed 11 (`517.8` /
 `237.8`), seed 23 (`521.6` / `276.7`), seed 47 (`488.6` / `257.8`), seed 101
 (`501.6` / `199.3`), seed 1729 (`577.8` / `297.8`).
 
+**26 November Sanitation follow-up (`features/sanitation`):** [Sanitation.md](Sanitation.md)
+documents paid physical Sanitation unlocked upon `Irrigation` (`SanitationEnabled`,
+50% disease-only reduction, conserved `0.15`/person-year freshwater coupling,
+Elder Continuity + `+1..2` `PlanningBudget` Development) and extends the
+`AgriculturalTechnologySweep` harness to 15 treatments (`sanitation` and
+`combined-soil-sanitation`), with a 40-run matched five-seed ablation, `--labor-audit`
+exact-replay verification, and `SanitationChecks` (417 assertions). Pre-sanitation
+`none` and `combined-soil` arms reproduce the `b106f8f` results above identically.
+
 **15 November persistence follow-up:** [SavePersistence.md](SavePersistence.md)
 records recovery of the large-world save, preserving its original fingerprint
 and history. This resolves the documented metadata-size failure; native Unity

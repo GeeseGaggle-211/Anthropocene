@@ -558,6 +558,13 @@
     "SoilReferenceQ": 0.4,
     "HydraulicTolerance": 1e-05,
     "ValleyMaxSlopeDegrees": 25.0,
-    "ValleyBankWidthMeters": 1200.0
+    "ValleyBankWidthMeters": 1200.0,
+    "SanitationEnabled": true,
+    "SanitationDiseaseReduction": 0.5,
+    "SanitationPeoplePerUnit": 20.0,
+    "SanitationHousingMaterialsPerUnit": 1.0,
+    "SanitationBuilderOutputPerBaseDays": 0.03125,
+    "SanitationDecayPerReferenceTurn": 0.1,
+    "SanitationWaterPerPersonYear": 0.15
   }
 }

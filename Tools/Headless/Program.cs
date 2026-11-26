@@ -248,6 +248,7 @@ internal static class Program
         if (args.Contains("--immigration-only")) { ImmigrationChecks.Run(); return 0; }
         if (args.Contains("--social-relocation-only")) { SocialRelocationChecks.Run(); return 0; }
         if (args.Contains("--demand-control-only")) { DemandControlChecks.Run(); return 0; }
+        if (args.Contains("--sanitation-only")) { SanitationChecks.Run(); return 0; }
         var socialNative = args.FirstOrDefault(a => a.StartsWith("--social-relocation-native", StringComparison.Ordinal));
         if (socialNative != null)
         {
@@ -452,6 +453,7 @@ internal static class Program
                 new ParallelChecks.Entry { Name = "FarmFoodPhaseChecks", Run = () => FarmFoodPhaseChecks.Run() },
                 new ParallelChecks.Entry { Name = "CultivationCacheChecks", Run = () => CultivationCacheChecks.Run() },
                 new ParallelChecks.Entry { Name = "AgriculturalTechnologyChecks", Run = () => AgriculturalTechnologyChecks.Run() },
+                new ParallelChecks.Entry { Name = "SanitationChecks", Run = () => SanitationChecks.Run() },
                 new ParallelChecks.Entry { Name = "HorizonCultivationChecks", Run = () => HorizonCultivationChecks.Run() },
                 new ParallelChecks.Entry { Name = "HorizonEcologyChecks", Run = () => HorizonEcologyChecks.Run() },
                 new ParallelChecks.Entry { Name = "HorizonExecutionChecks", Run = () => HorizonExecutionChecks.Run() },

@@ -24,15 +24,16 @@ namespace Anthropocene.Simulation
     public sealed class DemographicServicePoolInput
     {
         public DemographicCohortInput[] Cohorts;
-        public double FoodBudget, ClothingBudget, HousingCapacity;
+        public double FoodBudget, ClothingBudget, HousingCapacity, SanitationCapacity;
 
         public DemographicServicePoolInput(IEnumerable<DemographicCohortInput> cohorts,
-            double foodBudget, double clothingBudget, double housingCapacity)
+            double foodBudget, double clothingBudget, double housingCapacity, double sanitationCapacity = 0)
         {
             Cohorts = cohorts?.ToArray() ?? throw new ArgumentNullException(nameof(cohorts));
             FoodBudget = foodBudget;
             ClothingBudget = clothingBudget;
             HousingCapacity = housingCapacity;
+            SanitationCapacity = sanitationCapacity;
         }
     }
 
@@ -52,10 +53,10 @@ namespace Anthropocene.Simulation
         // scalar propagator: exactly homogeneous service/history schedules reduce to AdvanceBudget unchanged.
         private const double CoupledRelativeTolerance = 2e-10;
         private const int CoupledMaxAcceptedAndRejectedSteps = 200000;
-        private const int CoupledStateStride = 9;
+        private const int CoupledStateStride = 10;
         private const int CoupledX = 0, CoupledY = 1, CoupledBirths = 2, CoupledExposure = 3;
         private const int CoupledCrowding = 4, CoupledDisease = 5, CoupledStarvation = 6;
-        private const int CoupledAdditional = 7, CoupledHousingY = 8;
+        private const int CoupledAdditional = 7, CoupledHousingY = 8, CoupledSanitationY = 9;
 
         private sealed class CoupledLayout
         {
@@ -102,7 +103,8 @@ namespace Anthropocene.Simulation
                         if (layout.PoolOf[i] == p) { deficit += layout.DeficitYears[i] * layout.Population[i]; include |= layout.IncludeStarvation[i]; }
                     deficit = population > 0 ? deficit / population : 0;
                     if (population > 0) SurplusBudget(config, population, years, pools[p].FoodBudget, pools[p].ClothingBudget,
-                        pools[p].HousingCapacity, deficit, include, Math.Max(0, totalPopulation - population), out poolFertility[p]);
+                        pools[p].HousingCapacity, deficit, include, Math.Max(0, totalPopulation - population), out poolFertility[p],
+                        false, pools[p].SanitationCapacity);
                     else poolFertility[p] = 1;
                 }
             }
@@ -294,9 +296,12 @@ namespace Anthropocene.Simulation
                 member.LegacyStarvationDeaths = Math.Max(0, state[offset + CoupledStarvation]);
                 member.AdditionalDeaths = Math.Max(0, state[offset + CoupledAdditional]);
                 member.HousingPersonYears = Math.Max(0, state[offset + CoupledHousingY]);
+                member.SanitationPersonYears = Math.Max(0, state[offset + CoupledSanitationY]);
                 member.Nutrition = nutrition[p]; member.ClothingCoverage = clothing[p];
                 member.AverageHousingCoverage = member.PersonYears > 0
                     ? Numbers.Clamp(member.HousingPersonYears / member.PersonYears, 0, 1) : 1;
+                member.AverageSanitationCoverage = member.PersonYears > 0
+                    ? Numbers.Clamp(member.SanitationPersonYears / member.PersonYears, 0, 1) : 0;
                 ReconcileCauses(config, member);
             }
             for (int p = 0; p < pools.Count; p++) output.Pools[p] = AggregateCoupled(output.Cohorts[p]);
@@ -348,6 +353,7 @@ namespace Anthropocene.Simulation
             }
             if (!Finite(density))
                 throw new DemographicNumericalException("Coupled demographic density overflowed.");
+            double alpha = SanitationDiseaseReduction(config);
             for (int i = 0; i < layout.Members; i++)
             {
                 if (layout.Population[i] <= 0) continue;
@@ -355,8 +361,11 @@ namespace Anthropocene.Simulation
                 double n = Math.Exp(state[offset + CoupledX]);
                 double h = poolPopulation[p] > 0
                     ? Math.Min(1, pools[p].HousingCapacity / poolPopulation[p]) : 1;
+                double s = poolPopulation[p] > 0
+                    ? Math.Min(1, pools[p].SanitationCapacity / poolPopulation[p]) : 0;
                 DemographicRates rates = RatesAtDensityCoverage(config, density, nutrition[p], clothing[p], h,
-                    starvationActive[i], fertilityFactor: fertility != null ? fertility[p] : 1);
+                    starvationActive[i], fertilityFactor: fertility != null ? fertility[p] : 1,
+                    sanitationCoverage: s, diseaseReduction: alpha);
                 derivative[offset + CoupledX] = rates.Net;
                 derivative[offset + CoupledY] = n;
                 derivative[offset + CoupledBirths] = rates.Birth * n;
@@ -366,6 +375,7 @@ namespace Anthropocene.Simulation
                 derivative[offset + CoupledStarvation] = rates.LegacyStarvation * n;
                 derivative[offset + CoupledAdditional] = rates.Additional * n;
                 derivative[offset + CoupledHousingY] = h * n;
+                derivative[offset + CoupledSanitationY] = s * n;
                 rateEvaluations++;
             }
         }
@@ -384,8 +394,8 @@ namespace Anthropocene.Simulation
                 DemographicServicePoolInput pool = pools[p] ?? throw new ArgumentException("A demographic service pool is null.");
                 if (pool.Cohorts == null || pool.Cohorts.Length == 0)
                     throw new ArgumentException("Every demographic service pool requires at least one cohort.");
-                if (!Finite(pool.FoodBudget) || !Finite(pool.ClothingBudget) || !Finite(pool.HousingCapacity)
-                    || pool.FoodBudget < 0 || pool.ClothingBudget < 0 || pool.HousingCapacity < 0)
+                if (!Finite(pool.FoodBudget) || !Finite(pool.ClothingBudget) || !Finite(pool.HousingCapacity) || !Finite(pool.SanitationCapacity)
+                    || pool.FoodBudget < 0 || pool.ClothingBudget < 0 || pool.HousingCapacity < 0 || pool.SanitationCapacity < 0)
                     throw new ArgumentException("Coupled physical service budgets must be finite and nonnegative.");
                 members += pool.Cohorts.Length;
             }
@@ -437,7 +447,7 @@ namespace Anthropocene.Simulation
                 double population = layout.PoolPopulation[p];
                 if (population <= 0)
                 {
-                    if (pools[p].FoodBudget != 0 || pools[p].ClothingBudget != 0 || pools[p].HousingCapacity != 0)
+                    if (pools[p].FoodBudget != 0 || pools[p].ClothingBudget != 0 || pools[p].HousingCapacity != 0 || pools[p].SanitationCapacity != 0)
                         return false;
                     continue;
                 }
@@ -445,15 +455,17 @@ namespace Anthropocene.Simulation
                 // unproved fuzzy homogeneity shortcut.
                 if (pools[p].FoodBudget * firstPopulation != reference.FoodBudget * population
                     || pools[p].ClothingBudget * firstPopulation != reference.ClothingBudget * population
-                    || pools[p].HousingCapacity * firstPopulation != reference.HousingCapacity * population)
+                    || pools[p].HousingCapacity * firstPopulation != reference.HousingCapacity * population
+                    || pools[p].SanitationCapacity * firstPopulation != reference.SanitationCapacity * population)
                     return false;
             }
             double totalPopulation = layout.Population.Sum();
             double totalFood = pools.Sum(p => p.FoodBudget);
             double totalClothing = pools.Sum(p => p.ClothingBudget);
             double totalHousing = pools.Sum(p => p.HousingCapacity);
+            double totalSanitation = pools.Sum(p => p.SanitationCapacity);
             DemographicResult scalar = AdvanceBudget(config, totalPopulation, years, totalFood, totalClothing,
-                totalHousing, deficit, include);
+                totalHousing, deficit, include, sanitationCapacity: totalSanitation);
             result = EmptyCoupledResult(pools, layout);
             for (int p = 0; p < pools.Count; p++)
             {
@@ -513,6 +525,7 @@ namespace Anthropocene.Simulation
                 result.ExposureDeaths += value.ExposureDeaths; result.CrowdingDeaths += value.CrowdingDeaths;
                 result.DiseaseDeaths += value.DiseaseDeaths; result.LegacyStarvationDeaths += value.LegacyStarvationDeaths;
                 result.AdditionalDeaths += value.AdditionalDeaths; result.HousingPersonYears += value.HousingPersonYears;
+                result.SanitationPersonYears += value.SanitationPersonYears;
                 result.FoodConsumed += value.FoodConsumed; result.ClothingConsumed += value.ClothingConsumed;
                 result.EquilibriumPopulation += value.EquilibriumPopulation;
                 result.HasPositiveEquilibrium |= value.HasPositiveEquilibrium;
@@ -530,8 +543,13 @@ namespace Anthropocene.Simulation
                 result.Nutrition = items.Sum(v => v.Nutrition * v.PersonYears) / result.PersonYears;
                 result.ClothingCoverage = items.Sum(v => v.ClothingCoverage * v.PersonYears) / result.PersonYears;
                 result.AverageHousingCoverage = items.Sum(v => v.AverageHousingCoverage * v.PersonYears) / result.PersonYears;
+                result.AverageSanitationCoverage = items.Sum(v => v.AverageSanitationCoverage * v.PersonYears) / result.PersonYears;
             }
-            else result.Nutrition = result.ClothingCoverage = result.AverageHousingCoverage = 1;
+            else
+            {
+                result.Nutrition = result.ClothingCoverage = result.AverageHousingCoverage = 1;
+                result.AverageSanitationCoverage = 0;
+            }
             return result;
         }
 
@@ -550,6 +568,7 @@ namespace Anthropocene.Simulation
                 AdditionalDeaths = source.AdditionalDeaths * share,
                 Nutrition = source.Nutrition, ClothingCoverage = source.ClothingCoverage,
                 AverageHousingCoverage = source.AverageHousingCoverage,
+                AverageSanitationCoverage = source.AverageSanitationCoverage,
                 FoodConsumed = source.FoodConsumed * share,
                 ClothingConsumed = source.ClothingConsumed * share,
                 EquilibriumPopulation = source.EquilibriumPopulation * share,
@@ -558,6 +577,7 @@ namespace Anthropocene.Simulation
                 CauseCorrection = source.CauseCorrection,
                 ConservationError = source.ConservationError * share,
                 HousingPersonYears = source.HousingPersonYears * share,
+                SanitationPersonYears = source.SanitationPersonYears * share,
                 RootEvaluations = includeSharedWork ? source.RootEvaluations : 0,
                 BandsCrossed = includeSharedWork ? source.BandsCrossed : 0,
                 HazardEvaluations = includeSharedWork ? source.HazardEvaluations : 0,

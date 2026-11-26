@@ -394,9 +394,16 @@ namespace Anthropocene.Simulation
                     foreach (var c in localCamps.Values.Where(c => c.Population > 0).OrderBy(c => c.Id))
                     {
                         int src = FreshwaterAccess.Source(w, c.Tile);
-                        if (sourceSet.Contains(src))
-                            claims.Add(new Demand { Tile = src, Entity = c.Id, Kind = "Drinking",
-                                Freshwater = c.Population * w.Config.Agriculture.AnnualDrinkingPerPerson * years });
+                        if (!sourceSet.Contains(src)) continue;
+                        claims.Add(new Demand { Tile = src, Entity = c.Id, Kind = "Drinking",
+                            Freshwater = c.Population * w.Config.Agriculture.AnnualDrinkingPerPerson * years });
+                        if (w.Config.Agriculture.SanitationEnabled && w.Config.Agriculture.SanitationWaterPerPersonYear > 0)
+                        {
+                            double served = Math.Min(c.Population, NeolithicProduction.SanitationCapacity(w, c, w.Days));
+                            if (served > 1e-12)
+                                claims.Add(new Demand { Tile = src, Entity = c.Id, Kind = "Sanitation",
+                                    Freshwater = served * w.Config.Agriculture.SanitationWaterPerPersonYear * years });
+                        }
                     }
                 foreach (var h in w.Hunters)
                 {
@@ -431,6 +438,7 @@ namespace Anthropocene.Simulation
                     herd.Id, 0, herd.Animals * w.Config.GetSpecies(herd.Species).FreshwaterConsumption * intervals,
                     years * w.Config.DaysPerYear, claims, null, claims);
             claims.AddRange(DrinkingClaims(w, years));
+            claims.AddRange(SanitationClaims(w, years, w.Days));
             return claims;
         }
         internal static IEnumerable<Demand> DrinkingClaims(WorldState w, double years)
@@ -442,6 +450,19 @@ namespace Anthropocene.Simulation
             foreach (var h in w.Hunters.Where(h => h.Population > 0).OrderBy(h => h.Id))
                 yield return new Demand { Tile = FreshwaterAccess.Source(w, h.Tile), Entity = h.Id, Kind = "Drinking",
                     Freshwater = h.Population * w.Config.Agriculture.AnnualDrinkingPerPerson * years };
+        }
+        internal static IEnumerable<Demand> SanitationClaims(WorldState w, double years, double atDays)
+        {
+            var ag = w.Config.Agriculture;
+            if (ag == null || !ag.SanitationEnabled || !(years > 0) || !(ag.SanitationWaterPerPersonYear > 0)) yield break;
+            foreach (var c in w.Camps.Where(c => c.Population > 0).OrderBy(c => c.Id))
+            {
+                double installed = NeolithicProduction.SanitationCapacity(w, c, atDays);
+                double served = Math.Min(c.Population, installed);
+                if (served > 1e-12)
+                    yield return new Demand { Tile = FreshwaterAccess.Source(w, c.Tile), Entity = c.Id, Kind = "Sanitation",
+                        Freshwater = served * ag.SanitationWaterPerPersonYear * years };
+            }
         }
         private static List<CanalSegment> ActiveMaintenanceSegments(WorldState w, Camp c)
         {
@@ -746,12 +767,22 @@ namespace Anthropocene.Simulation
             string gate = !n.IrrigationEnabled ? "disabled" : !c.People.HasTech(NeolithicTech.Irrigation) ? "knowledge required" :
                 !FertileGate(w, c) ? $"develop every naturally fertile tile to q={n.DevelopmentQ:F2} first" :
                 "Elder considers paid projects when additional food capacity is needed";
+            string sanitation = "";
+            if (AgriculturalTechnology.Sanitation(w, c))
+            {
+                double units = NeolithicProduction.FixedSanitationAt(w, c, w.Days);
+                double capacity = NeolithicProduction.SanitationCapacity(w, c, w.Days);
+                double effective = NeolithicProduction.EffectiveSanitationCapacity(w, c, w.Days);
+                double coverage = c.Population > 0 ? Math.Min(1, effective / c.Population) : (effective > 0 ? 1 : 0);
+                double reduction = 1 - PhysicalDemography.DiseaseMitigation(w, c);
+                sanitation = $"\nSanitation: {units:F2} units / {capacity:F1} capacity ({coverage:P0} effective coverage, {n.SanitationWaterPerPersonYear:F2} water/served person-yr); active disease reduction {reduction:P0}.";
+            }
             return tool + "\nIrrigation: " + gate + $". Canals {owned.Length}, completed {owned.Count(s => s.Construction >= 1 - 1e-9)}; " +
                 $"funded segment-years {owned.Sum(s => s.FundedYears):F1}.\n" +
                 $"Construction: {n.CanalHousingMaterials:F1} Housing Materials + {n.CanalBuilderYears:F1} Builder-years per segment, plus tools and prepaid first-period upkeep. " +
                 $"Upkeep: {n.UpkeepHousingMaterials:F2} materials + {n.UpkeepBuilderYears:F2} Builder-years per segment-year.\n" +
                 $"Served fields {fields.Length}; last supply {(fields.Length == 0 ? 0 : fields.Average(f => f.WaterService)):P0}; " +
-                $"soil development {(fields.Length == 0 ? 0 : fields.Average(f => f.Soil)):P0}.";
+                $"soil development {(fields.Length == 0 ? 0 : fields.Average(f => f.Soil)):P0}." + sanitation;
         }
         public static void Validate(WorldState w)
         {

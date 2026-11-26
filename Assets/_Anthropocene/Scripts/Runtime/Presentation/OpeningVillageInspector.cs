@@ -18,6 +18,7 @@ namespace Anthropocene.Presentation
             string before = draft.Stamp;
             bool husbandry = CultivationEconomy.HusbandryEnabled(camp);
             bool fishing = FishingEconomy.FeatureEnabled(world, camp);
+            bool sanitationUnlocked = AgriculturalTechnology.Sanitation(world, camp);
             float width = Mathf.Min(1040, Screen.width - 32), height = Mathf.Min(820, Screen.height - 32);
             Fill(new Rect(0, 0, Screen.width, Screen.height), new Color(.02f, .03f, .03f, .88f));
             var panel = new Rect((Screen.width - width) / 2, (Screen.height - height) / 2, width, height);
@@ -36,7 +37,22 @@ namespace Anthropocene.Presentation
             float pastoralDescriptionHeight = husbandry ? small.CalcHeight(new GUIContent(pastoralDescription), col - 8) + 8 : 0;
             float livestockRows = husbandry ? ownedLivestock.Length * 54 : 0;
             float fishingRows = fishing ? observation.FishingGrounds.Count(g => world.Map.Distance(camp.Tile, g.Tile) <= FishingEconomy.GroundRange + 1) * 24 : 0;
-            float contentHeight = Mathf.Max(1370 + livestockRows + fishingRows, 940 + livestockRows + pastoralDescriptionHeight + fishingRows) + (world.Config.Agriculture == null ? 0 : 240);
+            string sanitationStock = "";
+            if (sanitationUnlocked)
+            {
+                double sanUnits = NeolithicProduction.FixedSanitationAt(world, camp.Id, camp.Tile, world.Days);
+                double sanCapacity = NeolithicProduction.SanitationCapacity(world, camp, world.Days);
+                double sanEffective = NeolithicProduction.EffectiveSanitationCapacity(world, camp, world.Days);
+                double sanCoverage = camp.Population > 0 ? Math.Min(1, sanEffective / camp.Population) : (sanEffective > 0 ? 1 : 0);
+                double diseaseReduction = 1 - PhysicalDemography.DiseaseMitigation(world, camp);
+                sanitationStock = $"\nSanitation {sanCoverage:P0} · current site {sanUnits:F2} units / {sanCapacity:F1} capacity · active disease reduction {diseaseReduction:P0}";
+            }
+            float sanitationHeaderExtra = sanitationUnlocked ? Mathf.Max(26f, text.CalcHeight(new GUIContent(sanitationStock.TrimStart('\n')), scrollContentWidth - 16) + 4f) : 0f;
+            string agStatus = AgriculturalTechnology.Plough(world, camp) || world.Config.Agriculture != null
+                ? IrrigationEconomy.Status(world, camp) + $"\nConstruction progress: {(world.Canals?.Where(s => s.Operator == camp.Id).Sum(s => s.Construction) ?? 0):F2} completed segment equivalents."
+                : "Plough and Irrigation are available in the opt-in agricultural technology profile.";
+            float agHeight = Mathf.Max(280f, small.CalcHeight(new GUIContent(agStatus), col - 8) + 8f);
+            float contentHeight = Mathf.Max(1370 + livestockRows + fishingRows, 940 + livestockRows + pastoralDescriptionHeight + fishingRows) + sanitationHeaderExtra + (world.Config.Agriculture == null ? 0 : agHeight);
             villageInspectorScroll = GUI.BeginScrollView(new Rect(12, 52, width - 24, height - 64), villageInspectorScroll, new Rect(0, 0, scrollContentWidth, contentHeight));
             float y = 4;
             var inventory = camp.Inventory;
@@ -50,11 +66,11 @@ namespace Anthropocene.Presentation
             string housingStock = husbandry
                 ? $"Shelter {camp.HousingPerCapita:P0} · current site {currentHousing:F2} units / {shelterPeople:F1} capacity (fixed {fixedHousing:F2}, portable {portableHousing:F2})"
                 : $"Housing {camp.HousingPerCapita:P0} · current site {currentHousing:F2} units · capacity {shelterPeople:F1}";
-            GUI.Label(new Rect(4, y, scrollContentWidth - 16, husbandry ? 102 : 76),
+            GUI.Label(new Rect(4, y, scrollContentWidth - 16, (husbandry ? 102 : 76) + sanitationHeaderExtra),
                 $"Population {camp.Population} · QoL {camp.QoL:P0} · food {camp.FoodNeedsMetRatio:P0} · water {camp.WaterNeedsMetRatio:P0}\n" +
-                clothingStock + "\n" + housingStock + "\n" +
+                clothingStock + "\n" + housingStock + sanitationStock + "\n" +
                 $"Expectations {camp.RudimentaryExpectation:P0} · stationary {camp.StationaryYears:F1} years · shortfalls are graded; automatic fission is deferred.", text);
-            y += husbandry ? 116 : 90;
+            y += (husbandry ? 116 : 90) + sanitationHeaderExtra;
             if (husbandry)
             {
                 int animals = ownedLivestock.Sum(h => h.Count.Representative);
@@ -183,8 +199,7 @@ namespace Anthropocene.Presentation
             {
                 GUI.Label(new Rect(x, fy, col - 8, 24), material + ": " + (known.Any(s => s.Material == material && s.Available > 0) ? "known local source" : "no accessible source"), small); fy += 28;
             }
-            GUI.Label(new Rect(x, fy + 10, col - 8, 280), AgriculturalTechnology.Plough(world, camp) || world.Config.Agriculture != null
-                ? IrrigationEconomy.Status(world, camp) + $"\nConstruction progress: {(world.Canals?.Where(s => s.Operator == camp.Id).Sum(s => s.Construction) ?? 0):F2} completed segment equivalents." : "Plough and Irrigation are available in the opt-in agricultural technology profile.", small);
+            GUI.Label(new Rect(x, fy + 10, col - 8, agHeight), agStatus, small);
             GUI.EndScrollView(); GUI.EndGroup();
             if (draft.Stamp != before) Queue(new Order(OrderKind.Economy, camp.Id) { Economy = draft });
         }

@@ -1,3 +1,4 @@
+#pragma warning disable SYSLIB0050
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -24,6 +25,28 @@ namespace Anthropocene.Simulation
         // to 0 in older saves, preserving strict downhill-only HydraulicTolerance behavior.
         [System.Runtime.Serialization.OptionalField] public double ValleyMaxSlopeDegrees = 25;
         [System.Runtime.Serialization.OptionalField] public double ValleyBankWidthMeters = 1200;
+        // Opt-in village Sanitation infrastructure unlocked upon Irrigation discovery.
+        [System.Runtime.Serialization.OptionalField] public bool SanitationEnabled;
+        [System.Runtime.Serialization.OptionalField] public double SanitationDiseaseReduction = .50;
+        [System.Runtime.Serialization.OptionalField] public double SanitationPeoplePerUnit = 20;
+        [System.Runtime.Serialization.OptionalField] public double SanitationHousingMaterialsPerUnit = 1.0;
+        [System.Runtime.Serialization.OptionalField] public double SanitationBuilderOutputPerBaseDays = .03125;
+        [System.Runtime.Serialization.OptionalField] public double SanitationDecayPerReferenceTurn = .10;
+        [System.Runtime.Serialization.OptionalField] public double SanitationWaterPerPersonYear = .15;
+
+        [System.Runtime.Serialization.OnDeserializing]
+        private void InitializeSanitationDefaults(System.Runtime.Serialization.StreamingContext context)
+        {
+            // Preserve ValleyMaxSlopeDegrees/ValleyBankWidthMeters = 0 on pre-valley saves.
+            // Legacy saves load with SanitationEnabled = false and valid calibration defaults.
+            SanitationEnabled = false;
+            SanitationDiseaseReduction = .50;
+            SanitationPeoplePerUnit = 20;
+            SanitationHousingMaterialsPerUnit = 1.0;
+            SanitationBuilderOutputPerBaseDays = .03125;
+            SanitationDecayPerReferenceTurn = .10;
+            SanitationWaterPerPersonYear = .15;
+        }
         public void Validate()
         {
             foreach (var f in GetType().GetFields().Where(f => f.FieldType == typeof(double)))
@@ -37,7 +60,9 @@ namespace Anthropocene.Simulation
                 CanalBuilderYears <= 0 || CanalHousingMaterials <= 0 || UpkeepBuilderYears <= 0 ||
                 UpkeepHousingMaterials <= 0 || AnnualApplication <= 0 || AnnualThroughput <= 0 ||
                 Retention <= 0 || Retention > 1 || SoilYears <= 0 || SoilReferenceQ <= 0 ||
-                ValleyMaxSlopeDegrees >= 90)
+                ValleyMaxSlopeDegrees >= 90 ||
+                SanitationDiseaseReduction > 1 || SanitationPeoplePerUnit <= 0 ||
+                SanitationBuilderOutputPerBaseDays <= 0 || SanitationDecayPerReferenceTurn >= 1)
                 throw new ArgumentException("Invalid agricultural technology calibration.");
         }
     }
@@ -56,6 +81,8 @@ namespace Anthropocene.Simulation
         internal static Func<WorldState, Camp, int?> FixedFieldStaffingDiagnostic;
         public static bool Plough(WorldState w, Camp c)
             => w.Config.Agriculture?.PloughEnabled == true && c.People.HasTech(NeolithicTech.Plough);
+        public static bool Sanitation(WorldState w, Camp c)
+            => w?.Config?.Agriculture?.SanitationEnabled == true && c != null && c.IsVillage && c.People.HasTech(NeolithicTech.Irrigation);
         public static double MaintenanceEfficiency(WorldState w, Camp c)
             => Plough(w, c) ? w.Config.Agriculture.PloughMaintenance
                 : CultivationEconomy.FarmToolFieldWorkEfficiency(w.Config.Neolithic);
