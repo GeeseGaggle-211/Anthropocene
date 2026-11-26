@@ -244,9 +244,9 @@ namespace Anthropocene.Simulation
             if (localWaterSources.Count > 0)
             {
                 var waterClaims = (knownCompetingClaims ?? Array.Empty<Demand>()).ToList();
-                bool hasDrinking = waterClaims.Any(d => d.Kind == "Drinking"), hasHerds = waterClaims.Any(d => d.Kind == "Herd" && d.Freshwater > 0);
+                bool hasDrinking = waterClaims.Any(d => d.Kind == "Drinking"), hasSanitation = waterClaims.Any(d => d.Kind == "Sanitation"), hasHerds = waterClaims.Any(d => d.Kind == "Herd" && d.Freshwater > 0);
                 waterClaims.AddRange(IrrigationEconomy.EssentialForecastClaimsForSources(snapshot, durationDays / snapshot.Config.DaysPerYear, localWaterSources, tileKnown)
-                    .Where(d => d.Kind == "Drinking" ? !hasDrinking : !hasHerds));
+                    .Where(d => d.Kind == "Drinking" ? !hasDrinking : d.Kind == "Sanitation" ? !hasSanitation : !hasHerds));
                 irrigation = IrrigationEconomy.AllocateLocal(snapshot, waterClaims, startDays, durationDays, localWaterSources, location);
             }
             else irrigation = new IrrigationAllocation();

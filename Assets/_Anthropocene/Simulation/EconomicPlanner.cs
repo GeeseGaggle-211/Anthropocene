@@ -795,7 +795,8 @@ namespace Anthropocene.Simulation
         }
         internal static Camp Preview(Camp c, EconomicIntent intent, double population)
         {
-            var result = new Camp { Id = c.Id, Tile = c.Tile, Population = (int)Math.Ceiling(population), PlantFood = c.PlantFood, AnimalFood = c.AnimalFood, AquaticFood = c.AquaticFood,
+            var result = new Camp { Id = c.Id, Tile = c.Tile, Population = (int)Math.Ceiling(population), IsVillage = c.IsVillage, PlantFood = c.PlantFood, AnimalFood = c.AnimalFood, AquaticFood = c.AquaticFood,
+                WaterNeedsMetRatio = c.WaterNeedsMetRatio, HasSanitationWaterRatio = c.HasSanitationWaterRatio, SanitationWaterRatio = c.SanitationWaterRatio,
                 Inventory = new CampInventory { HandTools = c.Inventory.HandTools, Tools = c.Inventory.Tools, CopperTools = c.Inventory.CopperTools, Cloth = c.Inventory.Cloth, AnimalFabric = c.Inventory.AnimalFabric, LightHousingUnits = c.Inventory.LightHousingUnits, HousingMaterial = c.Inventory.HousingMaterial, HerdingTools = c.Inventory.HerdingTools, FishingTools = c.Inventory.FishingTools, HousingUnits = c.Inventory.HousingUnits, Pots = c.Inventory.Pots, FarmTools = c.Inventory.FarmTools, Stone = c.Inventory.Stone, Clay = c.Inventory.Clay, Wood = c.Inventory.Wood } };
             result.QoL = c.QoL; result.TradeExports = (double[])c.TradeExports?.Clone(); result.TradeImports = (double[])c.TradeImports?.Clone(); result.Bind(c.People); EconomicIntents.Apply(result, intent); return result;
         }

@@ -301,10 +301,17 @@ namespace Anthropocene.Simulation
                     claim.Food *= claim.Manufacturing ? feedstockScale : biologicalScale;
             }
 
+            foreach (var camp in w.Camps) { camp.HasSanitationWaterRatio = false; camp.SanitationWaterRatio = 1; }
+            var sanitationRequested = new Dictionary<int, double>();
             if (w.Config.Agriculture != null)
             {
                 claims.AddRange(IrrigationEconomy.DrinkingClaims(w, horizon.Years));
-                foreach (int id in claims.Where(d => d.Kind == "Drinking").Select(d => d.Tile).Distinct())
+                foreach (var sanClaim in IrrigationEconomy.SanitationClaims(w, horizon.Years, horizon.StartDays))
+                {
+                    claims.Add(sanClaim);
+                    sanitationRequested[sanClaim.Entity] = (sanitationRequested.TryGetValue(sanClaim.Entity, out double prior) ? prior : 0) + sanClaim.Freshwater;
+                }
+                foreach (int id in claims.Where(d => d.Kind == "Drinking" || d.Kind == "Sanitation").Select(d => d.Tile).Distinct())
                 { LazyEcology.MaterializeEcology(w, id, horizon.StartDays); activeTiles.Add(id); touch(id); }
             }
             var irrigation = IrrigationEconomy.Allocate(w, claims, horizon.StartDays, horizon.Days);
@@ -533,9 +540,14 @@ namespace Anthropocene.Simulation
                 }
             }
             LastMetrics.HorizonCommitMilliseconds = commitTimer.Elapsed.TotalMilliseconds;
+            var sanitationReceived = new Dictionary<int, double>();
             foreach (var transfer in transfers)
             {
                 if (transfer.Kind == "Drinking" || transfer.Kind == "Irrigation") { /* Water-only receipt; already debited at its source. */ }
+                else if (transfer.Kind == "Sanitation")
+                {
+                    sanitationReceived[transfer.Entity] = (sanitationReceived.TryGetValue(transfer.Entity, out double prior) ? prior : 0) + transfer.Freshwater;
+                }
                 else if (transfer.Kind == "Herd")
                 {
                     var herd = herds[transfer.Entity];
@@ -569,6 +581,13 @@ namespace Anthropocene.Simulation
                     }
                 }
                 record.Transfers.Add(transfer);
+            }
+            foreach (var pair in sanitationRequested)
+            {
+                if (!(pair.Value > 1e-12) || !camps.TryGetValue(pair.Key, out var camp)) continue;
+                sanitationReceived.TryGetValue(pair.Key, out double received);
+                camp.HasSanitationWaterRatio = true;
+                camp.SanitationWaterRatio = Numbers.Clamp(received / pair.Value, 0, 1);
             }
             LastMetrics.EcologyMilliseconds = timer.Elapsed.TotalMilliseconds;
             return gatheredFoodForMaterials;

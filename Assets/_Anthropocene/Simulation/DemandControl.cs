@@ -679,6 +679,21 @@ namespace Anthropocene.Simulation
             CraftGood deficitPreferred = mobilePolicy ? CraftGood.LightHousing : CraftGood.Housing;
             ShelterRequest("shelter deficit", ServiceClass.Recovery, deficitPreferred, gapPeople);
             double shelterDeficitPeople = gapPeople;
+            var ag = cfg.Agriculture;
+            bool sanitationEnabled = AgriculturalTechnology.Sanitation(w, c)
+                && byGood.TryGetValue(CraftGood.Sanitation, out var sanRecipe) && Usable(sanRecipe)
+                && NeolithicProduction.Priority(candidate, CraftGood.Sanitation) > 0;
+            double sanPeoplePerUnit = sanitationEnabled ? ag.SanitationPeoplePerUnit : 0;
+            double sanWaterScale = c.HasSanitationWaterRatio
+                ? Numbers.Clamp(c.SanitationWaterRatio, 0, 1)
+                : Numbers.Clamp(c.WaterNeedsMetRatio, 0, 1);
+            double sanNowPeople = sanitationEnabled ? NeolithicProduction.FixedSanitationAt(w, c, w.Days) * sanPeoplePerUnit : 0;
+            double sanEndPeople = sanitationEnabled ? NeolithicProduction.FixedSanitationAt(w, c, endDays) * sanPeoplePerUnit : 0;
+            double sanReplacementPeople = sanitationEnabled && sanWaterScale > Epsilon
+                ? Math.Min(Math.Max(0, residents - sanEndPeople), Math.Max(0, sanNowPeople - sanEndPeople))
+                : 0;
+            if (sanReplacementPeople > Epsilon)
+                Request("sanitation replacement", ServiceClass.Continuity, CraftGood.Sanitation, sanReplacementPeople / sanPeoplePerUnit);
             // Field and herd equipment for the work staffed (continuity of retained assets).
             var farmToolCandidate = candidate;
             if (ploughHarvestActive && d.Established && AgriculturalTechnology.FixedFieldStaffingDiagnostic == null)
@@ -1198,6 +1213,35 @@ namespace Anthropocene.Simulation
             // ---- Kernel-scored Elder split (Docs/ClothingCoverageAndSurplusBirths.md) ----
             // Score a grid of (clothing, shelter) levels with the demographic kernel over the turn and commit the best as
             // the Protected class. Mixed farming/herding camps also score the other clothing and shelter route.
+            double baseSanPeople = sanitationEnabled ? sanEndPeople + sanReplacementPeople : 0;
+            double baseSanCapacity = baseSanPeople * sanWaterScale;
+            double sanDiseaseReduction = sanitationEnabled ? Numbers.Clamp(ag.SanitationDiseaseReduction, 0, 1) : 0;
+            RouteCost SanitationCost()
+            {
+                if (!sanitationEnabled || !(sanPeoplePerUnit > 0)) return null;
+                var r = byGood[CraftGood.Sanitation]; var b = Craft(CraftGood.Sanitation);
+                if (b == null) return null;
+                double persons = b.RoleYears.Values.Sum() / years, food = b.Plant + b.Animal, plant = b.Plant, animal = b.Animal;
+                double wood = b.Wood + b.Construction, clay = b.Clay, stone = b.Stone;
+                if (r.HousingMaterial > 0)
+                {
+                    var m = Usable(byGood[CraftGood.HousingMaterial]) ? Craft(CraftGood.HousingMaterial) : null;
+                    if (m == null) return null;
+                    persons += r.HousingMaterial * m.RoleYears.Values.Sum() / years;
+                    food += r.HousingMaterial * (m.Plant + m.Animal);
+                    plant += r.HousingMaterial * m.Plant; animal += r.HousingMaterial * m.Animal;
+                    wood += r.HousingMaterial * (m.Wood + m.Construction); clay += r.HousingMaterial * m.Clay; stone += r.HousingMaterial * m.Stone;
+                }
+                double extraction = ExtractionYears(MaterialId.Wood, wood) + ExtractionYears(MaterialId.Clay, clay) + ExtractionYears(MaterialId.Stone, stone);
+                if (double.IsInfinity(extraction)) return null;
+                persons += extraction / years;
+                return new RouteCost
+                {
+                    Good = CraftGood.Sanitation, Persons = persons / sanPeoplePerUnit, Food = food / sanPeoplePerUnit,
+                    Plant = plant / sanPeoplePerUnit, Animal = animal / sanPeoplePerUnit,
+                    Stone = stone / sanPeoplePerUnit, WoodOrClay = (wood + clay) / sanPeoplePerUnit
+                };
+            }
             if (KernelSplitOn(cfg) && PhysicalDemography.Enabled(cfg))
             {
                 long started = System.Diagnostics.Stopwatch.GetTimestamp();
@@ -1274,12 +1318,13 @@ namespace Anthropocene.Simulation
                         Food = Math.Min(TurnResolver.PhysicalDemographicFoodBudget(totalFood, d.Meals, growthFood, protectedFood), Math.Max(Math.Min(Math.Max(0, d.Meals), afterClothing), afterClothing - shelterFood))
                     };
                 }
-                DemographicResult Kernel(bool exact, double population, double food, double clothing, double capacity, double deficit)
+                DemographicResult Kernel(bool exact, double population, double food, double clothing, double capacity, double deficit, double sanitationCapacity = double.NaN)
                 {
                     calls++;
+                    double san = double.IsNaN(sanitationCapacity) ? baseSanCapacity : sanitationCapacity;
                     var result = exact
-                        ? PhysicalDemography.AdvanceBudget(cfg, population, years, food, clothing, capacity, deficit, true)
-                        : PhysicalDemography.PlanningBudget(cfg, population, years, food, clothing, capacity, deficit, true);
+                        ? PhysicalDemography.AdvanceBudget(cfg, population, years, food, clothing, capacity, deficit, true, sanitationCapacity: san, diseaseReduction: sanDiseaseReduction)
+                        : PhysicalDemography.PlanningBudget(cfg, population, years, food, clothing, capacity, deficit, true, sanitationCapacity: san, diseaseReduction: sanDiseaseReduction);
                     System.Threading.Interlocked.Add(ref KernelServiceIterations, result.ServiceIterations);
                     return result;
                 }
@@ -1399,32 +1444,6 @@ namespace Anthropocene.Simulation
                 double bestC = chosenSplit?.ClothingUnits ?? 0, bestH = chosenSplit?.ShelterPeople ?? 0;
                 int bestCi = chosenSplit?.ClothingLevel ?? 0, bestHi = chosenSplit?.ShelterLevel ?? 0;
                 CraftGood chosenClothing = chosenSplit?.ClothingRoute ?? clothingRoute, chosenShelter = chosenSplit?.ShelterRoute ?? durable;
-                System.Threading.Interlocked.Add(ref KernelSplitCalls, calls);
-                System.Threading.Interlocked.Add(ref KernelSplitTicks, System.Diagnostics.Stopwatch.GetTimestamp() - started);
-                System.Threading.Interlocked.Increment(ref KernelSplitCamps);
-                System.Threading.Interlocked.Increment(ref KernelChosenClothing[bestCi]);
-                System.Threading.Interlocked.Increment(ref KernelChosenShelter[bestHi]);
-                if (mixed)
-                {
-                    System.Threading.Interlocked.Increment(ref KernelMixedCamps);
-                    if (chosenClothing != clothingRoute) System.Threading.Interlocked.Increment(ref KernelMixedOtherClothing);
-                    if (chosenShelter != durable) System.Threading.Interlocked.Increment(ref KernelMixedOtherShelter);
-                }
-                // The committed action (the shape a Village Elder policy would emit).
-                alloc.ElderAction = new ElderAction
-                {
-                    ClothingRoute = chosenClothing, ClothingLevel = bestCi, ClothingUnits = bestC,
-                    ShelterRoute = chosenShelter, ShelterLevel = bestHi, ShelterPeople = bestH,
-                    Posture = LabourPosture.HerdFirst, PersonYears = chosenSplit?.PersonYears ?? 0, QoL = chosenSplit?.QoL ?? 0
-                };
-                if (ResolutionMetrics.CaptureDemandAllocations)
-                    alloc.KernelCandidates = decision.pool.Select(k => new ElderAction
-                    {
-                        ClothingRoute = k.ClothingRoute, ClothingLevel = k.ClothingLevel, ClothingUnits = k.ClothingUnits,
-                        ShelterRoute = k.ShelterRoute, ShelterLevel = k.ShelterLevel, ShelterPeople = k.ShelterPeople,
-                        PersonYears = k.PersonYears, QoL = k.QoL
-                    }).ToList();
-
                 // Enact: replace the clothing and shelter requests with the committed Protected split.
                 var replaced = new HashSet<string> { "shelter replacement", "portable shelter replacement", "shelter deficit" };
                 if (!KernelShelterOnlyDiagnostic) { replaced.Add("clothing"); replaced.Add("clothing reserve"); }
@@ -1457,6 +1476,141 @@ namespace Anthropocene.Simulation
                 budget = Math.Max(budget, Math.Min(workers, committedPersons));
                 alloc.ResidentGoodsBudget = budget;
                 protectedClothingUnits = protectedClothing != null ? 0 : -1;
+
+                // Sanitation Development: +1..2 PlanningBudget calls after the winning (clothing, shelter) split.
+                if (sanitationEnabled && sanDiseaseReduction > 0 && sanWaterScale > Epsilon && chosenSplit != null)
+                {
+                    var sanCost = SanitationCost();
+                    if (sanCost != null)
+                    {
+                        double projectedEnd = chosenSplit.Result.FinalPopulation;
+                        double targetPeople = Math.Max(residents, projectedEnd);
+                        double sanGapPeople = Math.Max(0, targetPeople - baseSanPeople);
+                        double remBudget = Math.Max(0, kernelBudgetBase - Math.Min(kernelBudgetBase, committedPersons) - sanReplacementPeople * sanCost.Persons);
+                        double hmConstruction = byGood.TryGetValue(CraftGood.HousingMaterial, out var hmRecipe) ? hmRecipe.ConstructionMaterial : 0;
+                        double committedWoodClay = alloc.Requests
+                            .Where(q => q.Bundle != null && (q.Class == ServiceClass.Protected || q.Class == ServiceClass.Continuity))
+                            .Sum(q => q.Units * (q.Bundle.Wood + q.Bundle.Clay + q.Bundle.Construction));
+                        double remMatRoom = Math.Max(0, woodClayRoom + freeMaterial * hmConstruction - committedWoodClay);
+                        double addFull = Math.Min(sanGapPeople, Math.Min(
+                            sanCost.Persons > Epsilon ? remBudget / sanCost.Persons : sanGapPeople,
+                            sanCost.WoodOrClay > Epsilon ? remMatRoom / sanCost.WoodOrClay : sanGapPeople));
+                        if (addFull > Epsilon)
+                        {
+                            double basePy = chosenSplit.Result.PersonYears;
+                            double bestAdd = 0, bestPy = basePy;
+                            double shelterFood = chosenSplit.ShelterRoute == CraftGood.LightHousing && bestH > Epsilon
+                                ? bestH * (ShelterCost(chosenSplit.ShelterRoute)?.Food ?? 0) : 0;
+                            double FoodWithSanitation(double addPeople)
+                            {
+                                double extraPersons = addPeople * sanCost.Persons;
+                                double gatherers = Math.Max(0, workers - committedPersons - extraPersons);
+                                double income = animalReceipts + fishingFood + Math.Min(terrestrialRoom, harvest + farmerSpareCapacity + gatherers * gatherRate);
+                                double totalFood = Math.Max(0, c.Food) + income;
+                                double afterClothing = Math.Max(0, totalFood - chosenSplit.ProtectedFood);
+                                return Math.Min(TurnResolver.PhysicalDemographicFoodBudget(totalFood, d.Meals, growthFood, chosenSplit.ProtectedFood),
+                                    Math.Max(Math.Min(Math.Max(0, d.Meals), afterClothing), afterClothing - shelterFood));
+                            }
+                            void TrySanitation(double addPeople)
+                            {
+                                if (!(addPeople > Epsilon)) return;
+                                var r = Kernel(KernelExactScoringDiagnostic, effective, FoodWithSanitation(addPeople),
+                                    clothingStock + bestC, capacityEnd + bestH, c.FoodDeficitYears, (baseSanPeople + addPeople) * sanWaterScale);
+                                if (r.PersonYears > bestPy + 1e-6 * Math.Max(1, basePy))
+                                {
+                                    bestPy = r.PersonYears;
+                                    bestAdd = addPeople;
+                                }
+                            }
+                            TrySanitation(addFull);
+                            if (addFull > 2 * Epsilon) TrySanitation(0.5 * addFull);
+                            if (bestAdd > Epsilon)
+                            {
+                                var sanDev = Request("sanitation development", ServiceClass.Development, CraftGood.Sanitation, bestAdd / sanPeoplePerUnit);
+                                if (sanDev != null)
+                                {
+                                    double sanWorkerYears = Math.Max(Epsilon, bestAdd * sanCost.Persons * years);
+                                    sanDev.PriorityScore = (bestPy - basePy) * PhysicalDemography.FoodPerPersonYear(cfg) / sanWorkerYears;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                System.Threading.Interlocked.Add(ref KernelSplitCalls, calls);
+                System.Threading.Interlocked.Add(ref KernelSplitTicks, System.Diagnostics.Stopwatch.GetTimestamp() - started);
+                System.Threading.Interlocked.Increment(ref KernelSplitCamps);
+                System.Threading.Interlocked.Increment(ref KernelChosenClothing[bestCi]);
+                System.Threading.Interlocked.Increment(ref KernelChosenShelter[bestHi]);
+                if (mixed)
+                {
+                    System.Threading.Interlocked.Increment(ref KernelMixedCamps);
+                    if (chosenClothing != clothingRoute) System.Threading.Interlocked.Increment(ref KernelMixedOtherClothing);
+                    if (chosenShelter != durable) System.Threading.Interlocked.Increment(ref KernelMixedOtherShelter);
+                }
+                // The committed action (the shape a Village Elder policy would emit).
+                alloc.ElderAction = new ElderAction
+                {
+                    ClothingRoute = chosenClothing, ClothingLevel = bestCi, ClothingUnits = bestC,
+                    ShelterRoute = chosenShelter, ShelterLevel = bestHi, ShelterPeople = bestH,
+                    Posture = LabourPosture.HerdFirst, PersonYears = chosenSplit?.PersonYears ?? 0, QoL = chosenSplit?.QoL ?? 0
+                };
+                if (ResolutionMetrics.CaptureDemandAllocations)
+                    alloc.KernelCandidates = decision.pool.Select(k => new ElderAction
+                    {
+                        ClothingRoute = k.ClothingRoute, ClothingLevel = k.ClothingLevel, ClothingUnits = k.ClothingUnits,
+                        ShelterRoute = k.ShelterRoute, ShelterLevel = k.ShelterLevel, ShelterPeople = k.ShelterPeople,
+                        PersonYears = k.PersonYears, QoL = k.QoL
+                    }).ToList();
+            }
+            else if (sanitationEnabled && PhysicalDemography.Enabled(cfg) && sanDiseaseReduction > 0 && sanWaterScale > Epsilon)
+            {
+                var sanCost = SanitationCost();
+                if (sanCost != null)
+                {
+                    double clothingStock = Math.Max(0, c.Inventory.Cloth - c.TradeExport(CraftGood.Cloth))
+                        + Math.Max(0, c.Inventory.AnimalFabric - c.TradeExport(CraftGood.AnimalFabric));
+                    double effective = Math.Max(0, c.Population + c.GrowthRemainder - c.DeathRemainder + (d.Consumers - c.Population));
+                    double capacityEnd = NeolithicProduction.HousingCapacity(w, candidate, endDays).Total;
+                    double totalFood = Math.Max(0, c.Food) + retainedFoodSupply;
+                    double foodBudget = TurnResolver.PhysicalDemographicFoodBudget(totalFood, d.Meals, growthFood, 0);
+                    var baseResult = PhysicalDemography.PlanningBudget(cfg, effective, years, foodBudget, clothingStock, capacityEnd,
+                        c.FoodDeficitYears, true, sanitationCapacity: baseSanCapacity, diseaseReduction: sanDiseaseReduction);
+                    double targetPeople = Math.Max(residents, baseResult.FinalPopulation);
+                    double sanGapPeople = Math.Max(0, targetPeople - baseSanPeople);
+                    double remBudget = Math.Max(0, budget - sanReplacementPeople * sanCost.Persons);
+                    double hmConstruction = byGood.TryGetValue(CraftGood.HousingMaterial, out var hmRecipe) ? hmRecipe.ConstructionMaterial : 0;
+                    double woodClayRoom = Inventory(MaterialId.Wood) + Accessible(MaterialId.Wood) + Inventory(MaterialId.Clay) + Accessible(MaterialId.Clay);
+                    double committedWoodClay = alloc.Requests
+                        .Where(q => q.Bundle != null && q.Class == ServiceClass.Continuity)
+                        .Sum(q => q.Units * (q.Bundle.Wood + q.Bundle.Clay + q.Bundle.Construction));
+                    double remMatRoom = Math.Max(0, woodClayRoom + freeMaterial * hmConstruction - committedWoodClay);
+                    double addFull = Math.Min(sanGapPeople, Math.Min(
+                        sanCost.Persons > Epsilon ? remBudget / sanCost.Persons : sanGapPeople,
+                        sanCost.WoodOrClay > Epsilon ? remMatRoom / sanCost.WoodOrClay : sanGapPeople));
+                    if (addFull > Epsilon)
+                    {
+                        double basePy = baseResult.PersonYears, bestAdd = 0, bestPy = basePy;
+                        void TrySan(double addPeople)
+                        {
+                            if (!(addPeople > Epsilon)) return;
+                            var r = PhysicalDemography.PlanningBudget(cfg, effective, years, foodBudget, clothingStock, capacityEnd,
+                                c.FoodDeficitYears, true, sanitationCapacity: (baseSanPeople + addPeople) * sanWaterScale, diseaseReduction: sanDiseaseReduction);
+                            if (r.PersonYears > bestPy + 1e-6 * Math.Max(1, basePy)) { bestPy = r.PersonYears; bestAdd = addPeople; }
+                        }
+                        TrySan(addFull);
+                        if (addFull > 2 * Epsilon) TrySan(0.5 * addFull);
+                        if (bestAdd > Epsilon)
+                        {
+                            var sanDev = Request("sanitation development", ServiceClass.Development, CraftGood.Sanitation, bestAdd / sanPeoplePerUnit);
+                            if (sanDev != null)
+                            {
+                                double sanWorkerYears = Math.Max(Epsilon, bestAdd * sanCost.Persons * years);
+                                sanDev.PriorityScore = (bestPy - basePy) * PhysicalDemography.FoodPerPersonYear(cfg) / sanWorkerYears;
+                            }
+                        }
+                    }
+                }
             }
 
             // ---- Elder arbitration ----

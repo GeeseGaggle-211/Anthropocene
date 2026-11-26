@@ -18,12 +18,13 @@ internal static class Program
         var record = resolver.Resolve(w, TurnPlanner.Prepare(w, ai.Orders, ai.Traces));
         lastMetrics = resolver.LastMetrics; return record;
     }
-    private static readonly string[] Treatments = { "none", "maintenance", "harvest", "combined", "water", "soil", "combined-water", "combined-soil", "low-plough", "high-plough", "half-cost", "double-cost", "moisture-one" };
+    private static readonly string[] Treatments = { "none", "maintenance", "harvest", "combined", "water", "soil", "combined-water", "combined-soil", "low-plough", "high-plough", "half-cost", "double-cost", "moisture-one", "sanitation", "combined-soil-sanitation" };
     private static void Treatment(WorldState w, string name)
     {
         var n = w.Config.Agriculture;
-        n.PloughEnabled = name != "none" && name != "water" && name != "soil";
-        n.IrrigationEnabled = name == "water" || name == "soil" || name.Contains("-") && name != "low-plough" && name != "high-plough";
+        n.PloughEnabled = name != "none" && name != "water" && name != "soil" && name != "sanitation";
+        n.IrrigationEnabled = name == "water" || name == "soil" || (name.Contains("-") && name != "low-plough" && name != "high-plough");
+        n.SanitationEnabled = name == "sanitation" || name.EndsWith("-sanitation", StringComparison.Ordinal);
         if (name == "maintenance") n.PloughHarvest = 1;
         if (name == "harvest") n.PloughMaintenance = CultivationEconomy.FarmToolFieldWorkEfficiency(w.Config.Neolithic);
         if (name.EndsWith("water")) n.SoilCapacityGain = 0;
@@ -77,7 +78,8 @@ internal static class Program
         foreach (int count in new[] { 1, 16, 80, 320 })
         {
             var cfg = SimulationConfig.Small(1); cfg.Width = 64; cfg.Height = 8 + 4 * ((count + 7) / 8);
-            cfg.Agriculture = new AgriculturalTechnologySettings { IrrigationEnabled = true };
+            cfg.DemographicModel = DemographicModel.PhysicalMortalityV1;
+            cfg.Agriculture = new AgriculturalTechnologySettings { IrrigationEnabled = true, SanitationEnabled = true };
             var w = new WorldState { Config = cfg, Tiles = new Tile[cfg.Width * cfg.Height], Canals = new List<CanalSegment>(), IrrigatedFields = new List<IrrigatedField>() };
             for (int i = 0; i < w.Tiles.Length; i++)
             {
@@ -90,18 +92,21 @@ internal static class Program
             {
                 int target = (4 + n / 8 * 4) * cfg.Width + 4 + n % 8 * 6, source = target - 1;
                 var camp = new Camp { Id = w.NextId++, Tile = target, Player = n, Population = 100, IsVillage = true };
+                camp.People.NeolithicTechnologies.Add(NeolithicTech.Irrigation);
                 w.Camps.Add(camp); var tile = w.Tiles[target]; tile.CultivationOperator = camp.Id; tile.CultivationCapital = 1; tile.CultivationOperatingFraction = 1;
                 w.Tiles[source].FreshwaterSource = FreshwaterSource.River; w.Tiles[source].Elevation = .2f;
                 var segment = new CanalSegment { Id = w.NextId++, Operator = camp.Id, Source = source, From = source, Tile = target,
                     Construction = 1, FundedYears = 1000, Throughput = cfg.Agriculture.AnnualThroughput };
                 w.Canals.Add(segment); w.IrrigatedFields.Add(new IrrigatedField { Tile = target, Operator = camp.Id, Endpoint = segment.Id });
+                NeolithicProduction.AddFixedSanitation(w, camp, 50, 0);
             }
             foreach (int population in new[] { 100, 1000000 }) foreach (double years in new[] { 1.0 / 365, 20, 600 })
             {
                 foreach (var c in w.Camps) c.Population = population;
                 void Run()
                 {
-                    var allocation = IrrigationEconomy.Allocate(w, Array.Empty<Demand>(), 0, years * 365);
+                    var sanClaims = IrrigationEconomy.SanitationClaims(w, years, 0).ToArray();
+                    var allocation = IrrigationEconomy.Allocate(w, sanClaims, 0, years * 365);
                     foreach (var group in allocation.Withdrawals.GroupBy(d => d.Tile))
                     {
                         var receipt = EcologicalPressure.Integrate(w, group.Key, group, 0, years * 365);
@@ -109,10 +114,33 @@ internal static class Program
                     }
                     foreach (var field in allocation.Fields) EcologicalPressure.Integrate(w, field.Key, Array.Empty<Demand>(), 0, years * 365, irrigationOverlay: field.Value);
                 }
+                double foodRate = PhysicalDemography.FoodPerPersonYear(cfg), clothRate = PhysicalDemography.ClothingPerPersonYear(cfg);
+                double sanPop = population <= 10000 ? population : 1200;
+                double sanYears = years > 20 ? 1.0 : years;
+                double sanChecksum = 0;
+                void RunSanitationKernel()
+                {
+                    foreach (var c in w.Camps)
+                    {
+                        double cap = NeolithicProduction.EffectiveSanitationCapacity(w, c, 0);
+                        var res = PhysicalDemography.PlanningBudget(cfg, sanPop, sanYears,
+                            sanPop * foodRate * sanYears * 2, sanPop * clothRate * sanYears * 2, sanPop, 0, true,
+                            sanitationCapacity: cap, diseaseReduction: cfg.Agriculture.SanitationDiseaseReduction);
+                        sanChecksum += res.PersonYears;
+                    }
+                }
                 Run(); long before = GC.GetAllocatedBytesForCurrentThread(); var clock = Stopwatch.StartNew();
                 for (int repeat = 0; repeat < 20; repeat++) Run();
-                reports.Add(new { networks = count, populationPerSettlement = population, years, milliseconds = clock.Elapsed.TotalMilliseconds / 20,
-                    allocatedBytes = (GC.GetAllocatedBytesForCurrentThread() - before) / 20 });
+                double irrMs = clock.Elapsed.TotalMilliseconds / 20;
+                long irrBytes = (GC.GetAllocatedBytesForCurrentThread() - before) / 20;
+                RunSanitationKernel(); long beforeSan = GC.GetAllocatedBytesForCurrentThread(); var sanClock = Stopwatch.StartNew();
+                for (int repeat = 0; repeat < 20; repeat++) RunSanitationKernel();
+                double sanMs = sanClock.Elapsed.TotalMilliseconds / 20;
+                long sanBytes = (GC.GetAllocatedBytesForCurrentThread() - beforeSan) / 20;
+                if (!(sanChecksum > 0)) throw new Exception("Benchmark sanitation kernel checksum");
+                reports.Add(new { networks = count, populationPerSettlement = population, years, milliseconds = irrMs,
+                    allocatedBytes = irrBytes, sanitationPopulation = sanPop, sanitationYears = sanYears,
+                    sanitationMilliseconds = sanMs, sanitationAllocatedBytes = sanBytes });
             }
         }
         Directory.CreateDirectory("TestResults/AgriculturalTechnology");
@@ -138,6 +166,8 @@ internal static class Program
             AgriculturalTechnology.FixedFieldStaffingDiagnostic = null;
             var config = JsonSerializer.Deserialize<SimulationConfig>(File.ReadAllText("Assets/_Anthropocene/Resources/AgriculturalTechnologyOpeningConfig.json"), J);
             config.Width = 96; config.Height = 48; config.Players = 4; config.StartSeparation = 9;
+            // Keep pre-fork organic generation pre-sanitation so all treatments fork from identical matched checkpoints.
+            config.Agriculture.SanitationEnabled = false;
             var world = new WorldGenerator().Generate(seed, config);
             var attainment = new Dictionary<string, double>();
             void Observe()
@@ -167,6 +197,7 @@ internal static class Program
                 var staff = w.Camps.ToDictionary(c => c.Id, c => (int)AgriculturalTechnology.OperatingFarmers(c));
                 AgriculturalTechnology.FixedFieldStaffingDiagnostic = fixedStaff ? (state, camp) => staff.TryGetValue(camp.Id, out int n) ? n : (int?)null : null;
                 double cropReceipts = 0, wildReceipts = 0, constructionWorkerYears = 0, upkeepWorkerYears = 0;
+                double sanitationWorkerYears = 0, sanitationHousingMaterials = 0, diseaseDeaths = 0, sanCoverageNum = 0, sanCoverageDen = 0;
                 double start = w.Days, productionWork = 0, fieldWork = 0, crops = 0, wild = 0, materials = 0, water = 0, loss = 0, farmToolsMade = 0, genericToolsUsed = 0;
                 var durations = new List<double>(); var seasons = new double[4]; var timer = Stopwatch.StartNew();
                 while (w.Days < start + years * w.Config.DaysPerYear)
@@ -178,6 +209,11 @@ internal static class Program
                     wildReceipts += r.AgriculturalFood?.Sum(x => x.WildFood) ?? 0;
                     constructionWorkerYears += r.Production.Where(p => p.Good == CraftGood.CanalConstruction).Sum(p => p.WorkerIntervals) * w.Config.BaseDays / w.Config.DaysPerYear;
                     upkeepWorkerYears += r.Production.Where(p => p.Good == CraftGood.CanalMaintenance).Sum(p => p.WorkerIntervals) * w.Config.BaseDays / w.Config.DaysPerYear;
+                    sanitationWorkerYears += r.Production.Where(p => p.Good == CraftGood.Sanitation).Sum(p => p.WorkerIntervals) * w.Config.BaseDays / w.Config.DaysPerYear;
+                    sanitationHousingMaterials += r.Production.Where(p => p.Good == CraftGood.Sanitation).Sum(p => p.HousingMaterial);
+                    diseaseDeaths += r.Demographics.Sum(d => d.DiseaseDeaths);
+                    sanCoverageNum += r.Demographics.Sum(d => d.AverageSanitationCoverage * d.PersonYears);
+                    sanCoverageDen += r.Demographics.Sum(d => d.PersonYears);
                     productionWork += r.Production.Sum(p => p.WorkerIntervals) * w.Config.BaseDays / w.Config.DaysPerYear;
                     fieldWork += w.Camps.Sum(c => AgriculturalTechnology.OperatingFarmers(c)) * r.Duration / w.Config.DaysPerYear;
                     materials += r.Production.Where(p => IrrigationEconomy.InfrastructureGood(p.Good)).Sum(p => p.HousingMaterial);
@@ -192,8 +228,12 @@ internal static class Program
                 TurnResolver.Invariants(w);
                 var save = SaveCodec.Save(w); var replay = SaveCodec.Load(save);
                 if (SaveCodec.Fingerprint(w) != SaveCodec.Fingerprint(replay)) throw new Exception("Save roundtrip");
+                int[] campPopulations = w.Camps.OrderBy(c => c.Id).Select(c => c.Population).ToArray();
+                double sanitationUnits = w.Camps.Sum(c => NeolithicProduction.FixedSanitationAt(w, c, w.Days));
+                double meanSanitationCoverage = sanCoverageDen > 0 ? sanCoverageNum / sanCoverageDen : 0;
                 var result = new { seed, treatment, fixedFieldStaffing = fixedStaff, startDays = start, endDays = w.Days, durationDays = durations, seasonalExposureDays = seasons,
                     elapsedYears = (w.Days - start) / w.Config.DaysPerYear, population = w.Camps.Sum(c => c.Population), camps = w.Camps.Count,
+                    campPopulations, diseaseDeaths, sanitationWorkerYears, sanitationHousingMaterials, sanitationUnits, meanSanitationCoverage,
                     cropReceipts, wildReceipts, constructionWorkerYears, upkeepWorkerYears, productionWorkerYears = productionWork, operatingFarmerYears = fieldWork, farmerFoodReceipts = crops, gathererFoodReceipts = wild,
                     irrigationHousingMaterials = materials, farmToolsMade, genericToolsUsed, deliveredWater = water, waterLoss = loss,
                     soil = w.IrrigatedFields?.Sum(f => f.Soil * f.Area) ?? 0, canals = w.Canals?.Count ?? 0,
@@ -202,7 +242,7 @@ internal static class Program
                 var replay2 = SaveCodec.Load(save); Step(replay); Step(replay2);
                 if (SaveCodec.Fingerprint(replay) != SaveCodec.Fingerprint(replay2)) throw new Exception("Deterministic continuation");
                 results.Add(result); File.WriteAllText(Path.Combine(output, "results.json"), JsonSerializer.Serialize(results, J));
-                Console.WriteLine($"seed={seed} treatment={treatment} fixed={fixedStaff} years={result.elapsedYears:F2} canals={result.canals} water={water:F1} pop={result.population} seconds={result.seconds:F2}");
+                Console.WriteLine($"seed={seed} treatment={treatment} fixed={fixedStaff} years={result.elapsedYears:F2} canals={result.canals} san={sanitationUnits:F1} water={water:F1} pop={result.population} seconds={result.seconds:F2}");
             }
         }
         AgriculturalTechnology.FixedFieldStaffingDiagnostic = null;

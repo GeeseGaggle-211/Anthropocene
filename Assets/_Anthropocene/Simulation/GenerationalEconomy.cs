@@ -993,11 +993,12 @@ namespace Anthropocene.Simulation
                 double foodBudget = PhysicalDemographicFoodBudget(projectedFood, populationBase, growth, 0);
                 double clothingBudget = Math.Max(0, camp.Inventory.Cloth) + Math.Max(0, camp.Inventory.AnimalFabric);
                 double housing = NeolithicProduction.HousingCapacity(w, camp, w.Days).Total;
+                double sanitation = NeolithicProduction.EffectiveSanitationCapacity(w, camp, w.Days);
                 double hunterRemainders = w.Hunters.Where(h => h.SourceCamp == camp.Id && Supply.InRange(w, camp, h.Tile))
                     .OrderBy(h => h.Id).Sum(h => h.GrowthRemainder - h.DeathRemainder);
                 double effective = Math.Max(0, reproductive + camp.GrowthRemainder - camp.DeathRemainder + hunterRemainders);
                 var physical = PhysicalDemography.AdvanceBudget(w.Config, effective, years, foodBudget, clothingBudget,
-                    housing, camp.FoodDeficitYears, true);
+                    housing, camp.FoodDeficitYears, true, sanitationCapacity: sanitation);
                 double change = physical.FinalPopulation - effective;
                 return change >= 0 ? camp.Population + change
                     : Math.Max(0, camp.Population + change * camp.Population / Math.Max(1, reproductive));
@@ -1205,13 +1206,14 @@ namespace Anthropocene.Simulation
                 double initialAnimalFabric = Math.Max(0, camp.Inventory.AnimalFabric + camp.ResolvedAnimalFabricConsumed);
                 double clothingBudget = initialCloth + initialAnimalFabric;
                 double housing = NeolithicProduction.HousingCapacity(w, camp, w.Days).Total;
+                double sanitation = NeolithicProduction.EffectiveSanitationCapacity(w, camp, w.Days);
                 var residentCohorts = new[]
                 {
                     new DemographicCohortInput(Math.Max(0, camp.Population + camp.GrowthRemainder - camp.DeathRemainder), camp.FoodDeficitYears)
                 }.Concat(linked.Select(h => new DemographicCohortInput(EffectivePopulation(h), h.FoodDeficitYears))).ToArray();
                 var pools = new List<DemographicServicePoolInput>
                 {
-                    new DemographicServicePoolInput(residentCohorts, food.Total, clothingBudget, housing)
+                    new DemographicServicePoolInput(residentCohorts, food.Total, clothingBudget, housing, sanitation)
                 };
                 var detachedFood = new PhysicalFoodEnvelope[detached.Length];
                 for (int i = 0; i < detached.Length; i++)
@@ -1219,7 +1221,7 @@ namespace Anthropocene.Simulation
                     if (!hunterFood.TryGetValue(detached[i].Id, out detachedFood[i])) detachedFood[i] = new PhysicalFoodEnvelope();
                     pools.Add(new DemographicServicePoolInput(
                         new[] { new DemographicCohortInput(EffectivePopulation(detached[i]), detached[i].FoodDeficitYears) },
-                        detachedFood[i].Total, 0, 0));
+                        detachedFood[i].Total, 0, 0, 0));
                 }
                 CoupledDemographicResult coupled = PhysicalDemography.AdvanceCoupledBudget(w.Config, pools, years);
                 DemographicResult result = coupled.Pools[0];
@@ -1565,6 +1567,7 @@ namespace Anthropocene.Simulation
                 summary.Nutrition = (summary.Nutrition * previousYears + result.Nutrition * result.PersonYears) / combinedYears;
                 summary.ClothingCoverage = (summary.ClothingCoverage * previousYears + result.ClothingCoverage * result.PersonYears) / combinedYears;
                 summary.HousingCoverage = (summary.HousingCoverage * previousYears + result.AverageHousingCoverage * result.PersonYears) / combinedYears;
+                summary.AverageSanitationCoverage = (summary.AverageSanitationCoverage * previousYears + result.AverageSanitationCoverage * result.PersonYears) / combinedYears;
             }
             summary.PersonYears = combinedYears;
             summary.ContinuousBirths += result.Births; summary.ContinuousDeaths += result.Deaths;

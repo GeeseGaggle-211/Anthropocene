@@ -45,7 +45,7 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public int GrossBirths, GrossDeaths;
         [System.Runtime.Serialization.OptionalField] public double ContinuousBirths, ContinuousDeaths;
         [System.Runtime.Serialization.OptionalField] public double ExposureDeaths, CrowdingDeaths, DiseaseDeaths, StarvationDeaths, AdditionalDeaths;
-        [System.Runtime.Serialization.OptionalField] public double PersonYears, Nutrition, ClothingCoverage, HousingCoverage;
+        [System.Runtime.Serialization.OptionalField] public double PersonYears, Nutrition, ClothingCoverage, HousingCoverage, AverageSanitationCoverage;
         [System.Runtime.Serialization.OptionalField] public double EffectiveFertilityRate, EffectiveMortalityRate;
         [System.Runtime.Serialization.OptionalField] public double ExposureMortalityRate, CrowdingMortalityRate, DiseaseMortalityRate, StarvationMortalityRate;
         [System.Runtime.Serialization.OptionalField] public double EquilibriumPopulation, CauseCorrection, ConservationError;

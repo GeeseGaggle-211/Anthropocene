@@ -852,7 +852,7 @@ namespace Anthropocene.Simulation
                 ? Math.Max(0, PhysicalDemography.StarvationGraceYears(cfg) - state.DeficitYears) : years;
             double firstYears = Math.Min(years, graceRemaining);
             double crowding = PhysicalDemography.CrowdingMitigation(world, state.Origin);
-            double disease = PhysicalDemography.DiseaseMitigation(world, state.Origin);
+            double disease = PhysicalDemography.DiseaseMitigation(world, c);
             double additional = PhysicalDemography.AdditionalMortality(world, state.Origin);
             double MinimumDeath(bool legacyStarvation)
             {
@@ -945,13 +945,13 @@ namespace Anthropocene.Simulation
             var first = PhysicalDemography.Rates(cfg, c.Population, nutrition, clothingCoverage,
                 shelter.Total, false, state.DensityPopulationOffset,
                 PhysicalDemography.CrowdingMitigation(world, state.Origin),
-                PhysicalDemography.DiseaseMitigation(world, state.Origin),
+                PhysicalDemography.DiseaseMitigation(world, c),
                 fertility, PhysicalDemography.AdditionalMortality(world, state.Origin));
             var second = deficient && firstYears < years
                 ? PhysicalDemography.Rates(cfg, c.Population, nutrition, clothingCoverage, shelter.Total, true,
                     state.DensityPopulationOffset,
                     PhysicalDemography.CrowdingMitigation(world, state.Origin),
-                    PhysicalDemography.DiseaseMitigation(world, state.Origin),
+                    PhysicalDemography.DiseaseMitigation(world, c),
                     fertility, PhysicalDemography.AdditionalMortality(world, state.Origin))
                 : first;
             double population = c.Population, personYears = 0, exposureDeaths = 0, crowdingDeaths = 0, diseaseDeaths = 0, starvationDeaths = 0;

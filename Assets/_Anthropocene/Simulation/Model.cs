@@ -505,6 +505,7 @@ namespace Anthropocene.Simulation
             // including legitimate zeros, overwrite these absent-field defaults.
             CultivationFocusTile = -1; StonePriority = ClayPriority = WoodPriority = 1;
             QoL = FoodNeedsMetRatio = WaterNeedsMetRatio = ClothPerCapita = HousingPerCapita = 1;
+            SanitationWaterRatio = 1;
             DemographicGrowthMultiplier = 1;
             LastSelectedFishingGrounds = null;
         }
@@ -533,6 +534,8 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public int CultivationFocusTile = -1;
         [System.Runtime.Serialization.OptionalField] public double QoL = 1.0, FoodNeedsMetRatio = 1.0, ClothPerCapita = 1.0, HousingPerCapita = 1.0;
         [System.Runtime.Serialization.OptionalField] public double StationaryYears, RudimentaryExpectation, WaterNeedsMetRatio = 1;
+        [System.Runtime.Serialization.OptionalField] public bool HasSanitationWaterRatio;
+        [System.Runtime.Serialization.OptionalField] public double SanitationWaterRatio = 1;
         [System.Runtime.Serialization.OptionalField] public double FabricConsumed, HousingDemand, HousingReplacementDemand, HousingGrowthDemand;
         // Turn-local provenance of FabricConsumed. Physical demography may reconcile the finite textile envelope after
         // needs resolve; these values are never authoritative save state.
@@ -727,6 +730,12 @@ namespace Anthropocene.Simulation
         public double Units, LastUpdatedDays;
     }
     [Serializable]
+    public sealed class FixedSanitationStock
+    {
+        public int CampId, Tile;
+        public double Units, LastUpdatedDays;
+    }
+    [Serializable]
     public sealed class FisherySite
     {
         public int TileId, OperatorCampId = -1;
@@ -826,6 +835,7 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public List<MaterialSourceState> MaterialSources = new List<MaterialSourceState>();
         [NonSerialized] internal MaterialAccessIndex MaterialIndex;
         [NonSerialized] internal FixedHousingIndex HousingIndex;
+        [NonSerialized] internal FixedSanitationIndex SanitationIndex;
         [NonSerialized] internal TurnDiagnostics Diagnostics;
         // Immutable derived geography. It is rebuilt from saved Tile.Elevation and never
         // participates in authoritative state, turn resolution or fingerprints.
@@ -847,13 +857,14 @@ namespace Anthropocene.Simulation
         [NonSerialized] internal Dictionary<int, int> PendingTechnologyUnlocks = new Dictionary<int, int>();
         [System.Runtime.Serialization.OptionalField] public List<MaterialKnowledge> MaterialKnowledge = new List<MaterialKnowledge>();
         [System.Runtime.Serialization.OptionalField] public List<FixedHousingStock> FixedHousing = new List<FixedHousingStock>();
+        [System.Runtime.Serialization.OptionalField] public List<FixedSanitationStock> FixedSanitation = new List<FixedSanitationStock>();
         [System.Runtime.Serialization.OptionalField] public List<FisherySite> FisherySites = new List<FisherySite>();
         [System.Runtime.Serialization.OptionalField] public List<CanalSegment> Canals;
         [System.Runtime.Serialization.OptionalField] public List<IrrigatedField> IrrigatedFields;
         // Explicit provenance only. Loading an old save never appends this list or changes Config.DemographicModel.
         [System.Runtime.Serialization.OptionalField] public List<DemographicMigrationRecord> DemographicMigrations = new List<DemographicMigrationRecord>();
         [System.Runtime.Serialization.OnDeserializing]
-        private void MarkLegacyFixedHousing(System.Runtime.Serialization.StreamingContext context) { FixedHousing = null; FisherySites = null; }
+        private void MarkLegacyFixedHousing(System.Runtime.Serialization.StreamingContext context) { FixedHousing = null; FixedSanitation = null; FisherySites = null; }
         public int LivePlayers
         {
             get { int live = Math.Max(PlayerCount, Config.Players); foreach (var c in Camps) live = Math.Max(live, c.Player + 1); return live; }

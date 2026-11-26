@@ -7,6 +7,7 @@ on:
       - 'Assets/_Anthropocene/Resources/AgriculturalTechnologyOpeningConfig.json'
       - 'Tools/AgriculturalTechnologySweep/**'
       - 'Tools/Headless/AgriculturalTechnologyChecks.cs'
+      - 'Tools/Headless/SanitationChecks.cs'
       - 'Tools/Headless/DemandControlChecks.cs'
       - 'Tools/Headless/GoodsStorageChecks.cs'
       - 'Tools/Headless/HousingMaterialRecipeChecks.cs'
@@ -30,7 +31,7 @@ jobs:
         with:
           dotnet-version: '8.0.x'
       - name: Focused contracts
-        run: dotnet run -c Release --project Tools/Headless/Anthropocene.Headless.csproj -- --only=AgriculturalTechnologyChecks,HousingMaterialRecipeChecks,DemandControlChecks,GoodsStorageChecks,SaveCodecChecks --jobs=1
+        run: dotnet run -c Release --project Tools/Headless/Anthropocene.Headless.csproj -- --only=SanitationChecks,AgriculturalTechnologyChecks,HousingMaterialRecipeChecks,DemandControlChecks,GoodsStorageChecks,SaveCodecChecks --jobs=1
       - name: Five-seed matched smoothed-calendar sweep
         run: dotnet run -c Release --project Tools/AgriculturalTechnologySweep/Anthropocene.AgriculturalTechnologySweep.csproj
       - name: Labor attribution and exact diagnostic replay
