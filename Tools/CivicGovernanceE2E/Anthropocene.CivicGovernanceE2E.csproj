@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <LangVersion>9</LangVersion>
+    <SimRoot Condition="'$(SimRoot)' == ''">../../Assets/_Anthropocene/Simulation</SimRoot>
+    <ResourcesRoot Condition="'$(ResourcesRoot)' == ''">../../Assets/_Anthropocene/Resources</ResourcesRoot>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(SimRoot)/*.cs" />
+    <Compile Include="*.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <AssemblyMetadata Include="SimRoot" Value="$([MSBuild]::NormalizePath('$(MSBuildProjectDirectory)', '$(SimRoot)'))" />
+    <AssemblyMetadata Include="ResourcesRoot" Value="$([MSBuild]::NormalizePath('$(MSBuildProjectDirectory)', '$(ResourcesRoot)'))" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="$(ResourcesRoot)/*Config.json"
+          CopyToOutputDirectory="PreserveNewest"
+          Link="Resources/%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>
