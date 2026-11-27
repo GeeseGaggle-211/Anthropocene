@@ -132,6 +132,9 @@ internal static class DemographyChecks
         MicroscopicDeclineAndNumericalLimits(cfg);
         CoupledDensityAndCohortChecks(cfg);
         PlanningSolverAgreement(cfg);
+        Phase0UnitMitigationBitExactParity(cfg);
+        Phase0MitigatedEquilibriaAndAccuracy(cfg);
+        Phase0InvalidInputRejection(cfg);
 
         ResolutionAndReplay();
         IncompleteReserveDoesNotGateBirthService();
@@ -143,6 +146,8 @@ internal static class DemographyChecks
         DetachedCarryingAfterDeaths();
         IntegerExtinction();
         ExplicitMigration();
+        Phase0ProductionCallSitePlumbing();
+        Phase0CampaignFingerprintDeterminism();
 
         Console.WriteLine("PASS: " + assertions + " physical demography assertions");
         return assertions;
@@ -628,33 +633,35 @@ internal static class DemographyChecks
 
     private sealed class ReferenceFlow
     {
-        public double Final, PersonYears, Births, Exposure, Crowding, Disease, Starvation;
-        public double Deaths => Exposure + Crowding + Disease + Starvation;
+        public double Final, PersonYears, Births, Exposure, Crowding, Disease, Starvation, Additional;
+        public double Deaths => Exposure + Crowding + Disease + Starvation + Additional;
         public void Add(ReferenceFlow part)
         {
             Final = part.Final; PersonYears += part.PersonYears; Births += part.Births;
             Exposure += part.Exposure; Crowding += part.Crowding; Disease += part.Disease;
-            Starvation += part.Starvation;
+            Starvation += part.Starvation; Additional += part.Additional;
         }
     }
 
     // Independent fixed-step RK4 reference in log population. This is deliberately separate from the production
     // affine-band flow and its Gauss quadrature, and integrates the original nonlinear causes without reconciliation.
     private static ReferenceFlow ReferenceFlows(SimulationConfig cfg, double start, double years,
-        double food, double clothing, double housing, bool starvation = false)
+        double food, double clothing, double housing, bool starvation = false,
+        double crowdingMitigation = 1, double diseaseMitigation = 1, double fertilityFactor = 1,
+        double additionalMortality = 0)
     {
         int steps = Math.Max(1, (int)Math.Ceiling(years / .001));
         double dt = years / steps, x = Math.Log(start);
         var result = new ReferenceFlow();
         for (int i = 0; i < steps; i++)
         {
-            double n1 = Math.Exp(x); var r1 = PhysicalDemography.Rates(cfg, n1, food, clothing, housing, starvation);
+            double n1 = Math.Exp(x); var r1 = PhysicalDemography.Rates(cfg, n1, food, clothing, housing, starvation, 0, crowdingMitigation, diseaseMitigation, fertilityFactor, additionalMortality);
             double x2 = x + dt * r1.Net * .5;
-            double n2 = Math.Exp(x2); var r2 = PhysicalDemography.Rates(cfg, n2, food, clothing, housing, starvation);
+            double n2 = Math.Exp(x2); var r2 = PhysicalDemography.Rates(cfg, n2, food, clothing, housing, starvation, 0, crowdingMitigation, diseaseMitigation, fertilityFactor, additionalMortality);
             double x3 = x + dt * r2.Net * .5;
-            double n3 = Math.Exp(x3); var r3 = PhysicalDemography.Rates(cfg, n3, food, clothing, housing, starvation);
+            double n3 = Math.Exp(x3); var r3 = PhysicalDemography.Rates(cfg, n3, food, clothing, housing, starvation, 0, crowdingMitigation, diseaseMitigation, fertilityFactor, additionalMortality);
             double x4 = x + dt * r3.Net;
-            double n4 = Math.Exp(x4); var r4 = PhysicalDemography.Rates(cfg, n4, food, clothing, housing, starvation);
+            double n4 = Math.Exp(x4); var r4 = PhysicalDemography.Rates(cfg, n4, food, clothing, housing, starvation, 0, crowdingMitigation, diseaseMitigation, fertilityFactor, additionalMortality);
             double scale = dt / 6;
             result.PersonYears += scale * (n1 + 2 * n2 + 2 * n3 + n4);
             result.Births += scale * (r1.Birth * n1 + 2 * r2.Birth * n2 + 2 * r3.Birth * n3 + r4.Birth * n4);
@@ -663,6 +670,8 @@ internal static class DemographyChecks
             result.Disease += scale * (r1.Disease * n1 + 2 * r2.Disease * n2 + 2 * r3.Disease * n3 + r4.Disease * n4);
             result.Starvation += scale * (r1.LegacyStarvation * n1 + 2 * r2.LegacyStarvation * n2
                 + 2 * r3.LegacyStarvation * n3 + r4.LegacyStarvation * n4);
+            result.Additional += scale * (r1.Additional * n1 + 2 * r2.Additional * n2
+                + 2 * r3.Additional * n3 + r4.Additional * n4);
             x += scale * (r1.Net + 2 * r2.Net + 2 * r3.Net + r4.Net);
         }
         result.Final = Math.Exp(x);
@@ -840,7 +849,7 @@ internal static class DemographyChecks
 
     private sealed class CoupledReference
     {
-        public double[] Final, PersonYears, Births, Exposure, Crowding, Disease, Starvation, HousingPersonYears;
+        public double[] Final, PersonYears, Births, Exposure, Crowding, Disease, Starvation, Additional, HousingPersonYears;
     }
 
     private static void CoupledDensityAndCohortChecks(SimulationConfig cfg)
@@ -994,9 +1003,11 @@ internal static class DemographyChecks
     // it does not use the adaptive stepper, Richardson estimate, service closure or cause reconciler.
     private static CoupledReference CoupledReferenceFixed(SimulationConfig cfg,
         IReadOnlyList<DemographicServicePoolInput> pools, double years,
-        IReadOnlyList<double> nutrition, IReadOnlyList<double> clothing, double maximumStep)
+        IReadOnlyList<double> nutrition, IReadOnlyList<double> clothing, double maximumStep,
+        double crowdingMitigation = 1, double diseaseMitigation = 1, double fertilityFactor = 1,
+        double additionalMortality = 0)
     {
-        const int stride = 8;
+        const int stride = 9;
         int members = pools.Sum(p => p.Cohorts.Length), steps = Math.Max(1, (int)Math.Ceiling(years / maximumStep));
         double dt = years / steps, grace = PhysicalDemography.StarvationGraceYears(cfg);
         var poolOf = new int[members]; var deficit = new double[members]; var include = new bool[members];
@@ -1025,11 +1036,12 @@ internal static class DemographyChecks
                 double h = Math.Min(1, pools[p].HousingCapacity / poolPopulation[p]);
                 bool starvation = include[i] && nutrition[p] < 1 - 1e-12 && deficit[i] + time >= grace;
                 DemographicRates rates = PhysicalDemography.Rates(cfg, n, nutrition[p], clothing[p], h * n,
-                    starvation, Math.Max(0, density - n));
+                    starvation, Math.Max(0, density - n), crowdingMitigation, diseaseMitigation,
+                    fertilityFactor, additionalMortality);
                 target[o] = rates.Net; target[o + 1] = n; target[o + 2] = rates.Birth * n;
                 target[o + 3] = rates.Exposure * n; target[o + 4] = rates.Crowding * n;
                 target[o + 5] = rates.Disease * n; target[o + 6] = rates.LegacyStarvation * n;
-                target[o + 7] = h * n;
+                target[o + 7] = rates.Additional * n; target[o + 8] = h * n;
             }
         }
         double time = 0;
@@ -1049,14 +1061,771 @@ internal static class DemographyChecks
         {
             Final = new double[members], PersonYears = new double[members], Births = new double[members],
             Exposure = new double[members], Crowding = new double[members], Disease = new double[members],
-            Starvation = new double[members], HousingPersonYears = new double[members]
+            Starvation = new double[members], Additional = new double[members], HousingPersonYears = new double[members]
         };
         for (int i = 0; i < members; i++)
         {
             int o = i * stride; result.Final[i] = Math.Exp(state[o]); result.PersonYears[i] = state[o + 1];
             result.Births[i] = state[o + 2]; result.Exposure[i] = state[o + 3]; result.Crowding[i] = state[o + 4];
-            result.Disease[i] = state[o + 5]; result.Starvation[i] = state[o + 6]; result.HousingPersonYears[i] = state[o + 7];
+            result.Disease[i] = state[o + 5]; result.Starvation[i] = state[o + 6];
+            result.Additional[i] = state[o + 7]; result.HousingPersonYears[i] = state[o + 8];
         }
         return result;
+    }
+
+    private static void BitEqual(double actual, double expected, string message)
+        => Check(BitConverter.DoubleToInt64Bits(actual) == BitConverter.DoubleToInt64Bits(expected),
+            message + ": " + actual.ToString("G17") + " != " + expected.ToString("G17"));
+
+    private static void AssertResultBitEqual(DemographicResult a, DemographicResult b, string label)
+    {
+        BitEqual(a.InitialPopulation, b.InitialPopulation, label + " InitialPopulation");
+        BitEqual(a.FinalPopulation, b.FinalPopulation, label + " FinalPopulation");
+        BitEqual(a.PersonYears, b.PersonYears, label + " PersonYears");
+        BitEqual(a.Births, b.Births, label + " Births");
+        BitEqual(a.Deaths, b.Deaths, label + " Deaths");
+        BitEqual(a.ExposureDeaths, b.ExposureDeaths, label + " ExposureDeaths");
+        BitEqual(a.CrowdingDeaths, b.CrowdingDeaths, label + " CrowdingDeaths");
+        BitEqual(a.DiseaseDeaths, b.DiseaseDeaths, label + " DiseaseDeaths");
+        BitEqual(a.LegacyStarvationDeaths, b.LegacyStarvationDeaths, label + " LegacyStarvationDeaths");
+        BitEqual(a.AdditionalDeaths, b.AdditionalDeaths, label + " AdditionalDeaths");
+        BitEqual(a.Nutrition, b.Nutrition, label + " Nutrition");
+        BitEqual(a.ClothingCoverage, b.ClothingCoverage, label + " ClothingCoverage");
+        BitEqual(a.AverageHousingCoverage, b.AverageHousingCoverage, label + " AverageHousingCoverage");
+        BitEqual(a.FoodConsumed, b.FoodConsumed, label + " FoodConsumed");
+        BitEqual(a.ClothingConsumed, b.ClothingConsumed, label + " ClothingConsumed");
+        BitEqual(a.EquilibriumPopulation, b.EquilibriumPopulation, label + " EquilibriumPopulation");
+        BitEqual(a.CauseCorrection, b.CauseCorrection, label + " CauseCorrection");
+        BitEqual(a.ConservationError, b.ConservationError, label + " ConservationError");
+        Check(a.HasPositiveEquilibrium == b.HasPositiveEquilibrium, label + " HasPositiveEquilibrium");
+        Check(a.DeclineToExtinction == b.DeclineToExtinction, label + " DeclineToExtinction");
+        Check(a.RootEvaluations == b.RootEvaluations, label + " RootEvaluations");
+        Check(a.BandsCrossed == b.BandsCrossed, label + " BandsCrossed");
+        Check(a.HazardEvaluations == b.HazardEvaluations, label + " HazardEvaluations");
+        Check(a.QuadratureEvaluations == b.QuadratureEvaluations, label + " QuadratureEvaluations");
+        Check(a.ServiceIterations == b.ServiceIterations, label + " ServiceIterations");
+    }
+
+    private static void AssertCoupledBitEqual(CoupledDemographicResult a, CoupledDemographicResult b, string label)
+    {
+        Check(a.UsedExactScalarReduction == b.UsedExactScalarReduction, label + " UsedExactScalarReduction");
+        Check(a.CohortCount == b.CohortCount && a.PoolCount == b.PoolCount, label + " counts");
+        Check(a.RateEvaluations == b.RateEvaluations && a.AcceptedSteps == b.AcceptedSteps
+            && a.RejectedSteps == b.RejectedSteps && a.ServiceEvaluations == b.ServiceEvaluations, label + " work");
+        AssertResultBitEqual(a.Total, b.Total, label + " Total");
+        for (int p = 0; p < a.PoolCount; p++)
+        {
+            AssertResultBitEqual(a.Pools[p], b.Pools[p], label + " Pool[" + p + "]");
+            for (int c = 0; c < a.Cohorts[p].Length; c++)
+                AssertResultBitEqual(a.Cohorts[p][c], b.Cohorts[p][c], label + " Cohort[" + p + "][" + c + "]");
+        }
+    }
+
+    private static void Phase0UnitMitigationBitExactParity(SimulationConfig cfg)
+    {
+        var surplusCfg = new SimulationConfig
+        {
+            DemographicModel = DemographicModel.PhysicalMortalityV1,
+            QoLMortalityEnabled = false,
+            SurplusFundedBirths = true
+        };
+        surplusCfg.Validate();
+
+        // 1. AdvanceFixed parity across diverse regimes + 10-arg positional fertilityFactor slot compatibility
+        var fixedCases = new (double N, double T, double F, double C, double H, double Def, double Off)[]
+        {
+            (250, 20, .83, .62, 190, 4, 0),
+            (1000, 20, 1, 1, 1000, 0, 0),
+            (1600, 15, .5, .4, 800, 35, 300)
+        };
+        foreach (var k in fixedCases)
+        {
+            var def = PhysicalDemography.AdvanceFixed(cfg, k.N, k.T, k.F, k.C, k.H, k.Def, true, k.Off);
+            var exp = PhysicalDemography.AdvanceFixed(cfg, k.N, k.T, k.F, k.C, k.H, k.Def, true, k.Off, 1, 1, 1, 0);
+            AssertResultBitEqual(exp, def, "AdvanceFixed unit parity N=" + k.N);
+        }
+        var pos10 = PhysicalDemography.AdvanceFixed(cfg, 400, 20, .9, .7, 300, 0, true, 150, .75);
+        var pos13 = PhysicalDemography.AdvanceFixed(cfg, 400, 20, .9, .7, 300, 0, true, 150, .75, 1, 1, 0);
+        var pos10Unit = PhysicalDemography.AdvanceFixed(cfg, 400, 20, .9, .7, 300, 0, true, 150, 1);
+        AssertResultBitEqual(pos13, pos10, "AdvanceFixed 10-arg positional fertilityFactor compatibility");
+        Check(pos10.Births < pos10Unit.Births && pos10.FinalPopulation < pos10Unit.FinalPopulation,
+            "AdvanceFixed positional slot 10 applies fertilityFactor");
+
+        // 2 & 3. AdvanceBudget, PlanningBudget, and SurplusBudget direct across ample, food-bound, and shortage regimes
+        double foodRate = PhysicalDemography.FoodPerPersonYear(cfg);
+        double clothRate = PhysicalDemography.ClothingPerPersonYear(cfg);
+        double n = 450, years = 20, basis = n * years;
+        double clothBudget = .5 * clothRate * basis;
+        double housing = .7 * n;
+        double fullPy = PhysicalDemography.AdvanceFixed(surplusCfg, n, years, 1, .5, housing, 30, true, 200, 1).PersonYears;
+        double nonePy = PhysicalDemography.AdvanceFixed(surplusCfg, n, years, 1, .5, housing, 30, true, 200, 0).PersonYears;
+        var budgetCases = new (string Tag, double FoodBudget)[]
+        {
+            ("ample", 2.5 * foodRate * basis),
+            ("bound", 0.5 * (fullPy + nonePy) * foodRate),
+            ("shortage", 0.5 * nonePy * foodRate)
+        };
+        bool sawFull = false, sawBound = false, sawShortage = false;
+        foreach (var c in new[] { cfg, surplusCfg })
+        foreach (var b in budgetCases)
+        {
+            double foodBudget = b.FoodBudget;
+            var abDef = PhysicalDemography.AdvanceBudget(c, n, years, foodBudget, clothBudget, housing, 30, true, 200);
+            var abExp = PhysicalDemography.AdvanceBudget(c, n, years, foodBudget, clothBudget, housing, 30, true, 200, 1, 1, 1, 0);
+            AssertResultBitEqual(abExp, abDef, "AdvanceBudget unit parity surplus=" + c.SurplusFundedBirths + " regime=" + b.Tag);
+
+            var pbDef = PhysicalDemography.PlanningBudget(c, n, years, foodBudget, clothBudget, housing, 30, true, 200);
+            var pbExp = PhysicalDemography.PlanningBudget(c, n, years, foodBudget, clothBudget, housing, 30, true, 200, 1, 1, 1, 0);
+            AssertResultBitEqual(pbExp, pbDef, "PlanningBudget unit parity surplus=" + c.SurplusFundedBirths + " regime=" + b.Tag);
+
+            if (c.SurplusFundedBirths)
+            {
+                var sbDef = PhysicalDemography.SurplusBudget(c, n, years, foodBudget, clothBudget, housing, 30, true, 200, out double gDef, false);
+                var sbExp = PhysicalDemography.SurplusBudget(c, n, years, foodBudget, clothBudget, housing, 30, true, 200, out double gExp, false, 1, 1, 1, 0);
+                AssertResultBitEqual(sbExp, sbDef, "SurplusBudget exact unit parity regime=" + b.Tag);
+                BitEqual(gExp, gDef, "SurplusBudget exact g unit parity regime=" + b.Tag);
+
+                var sbfDef = PhysicalDemography.SurplusBudget(c, n, years, foodBudget, clothBudget, housing, 30, true, 200, out double gfDef, true);
+                var sbfExp = PhysicalDemography.SurplusBudget(c, n, years, foodBudget, clothBudget, housing, 30, true, 200, out double gfExp, true, 1, 1, 1, 0);
+                AssertResultBitEqual(sbfExp, sbfDef, "SurplusBudget fast unit parity regime=" + b.Tag);
+                BitEqual(gfExp, gfDef, "SurplusBudget fast g unit parity regime=" + b.Tag);
+
+                if (gDef == 1) sawFull = true;
+                else if (gDef == 0) sawShortage = true;
+                else sawBound = true;
+            }
+        }
+        Check(sawFull && sawBound && sawShortage, "Unit parity exercised full, food-bound, and shortage surplus branches");
+
+        // 4. AdvanceCoupledBudget scalar-reduced and non-homogeneous multi-pool + AdvanceCoupledFixed
+        double grace = PhysicalDemography.StarvationGraceYears(cfg);
+        foreach (var c in new[] { cfg, surplusCfg })
+        {
+            foreach (int split in new[] { 2, 4 })
+            {
+                var homogeneous = Enumerable.Range(0, split).Select(_ => new DemographicServicePoolInput(
+                    new[] { new DemographicCohortInput(600.0 / split) },
+                    foodRate * 600.0 * 20 * 1.08 / split, clothRate * 600.0 * 20 * .6 / split, 500.0 / split)).ToArray();
+                var def = PhysicalDemography.AdvanceCoupledBudget(c, homogeneous, 20);
+                var exp = PhysicalDemography.AdvanceCoupledBudget(c, homogeneous, 20, 1, 1, 1, 0);
+                Check(def.UsedExactScalarReduction, "Homogeneous parity case uses exact scalar reduction");
+                AssertCoupledBitEqual(exp, def, "AdvanceCoupledBudget reduced unit parity split=" + split + " surplus=" + c.SurplusFundedBirths);
+            }
+            var multiPools = new[]
+            {
+                new DemographicServicePoolInput(new[] { new DemographicCohortInput(140, 0), new DemographicCohortInput(60, grace + 5) },
+                    foodRate * 200 * 6 * .85, clothRate * 200 * 6 * .6, 150),
+                new DemographicServicePoolInput(new[] { new DemographicCohortInput(90, grace - 2.5) },
+                    foodRate * 90 * 6 * 1.04, clothRate * 90 * 6 * .3, 30),
+                new DemographicServicePoolInput(new[] { new DemographicCohortInput(40, 0) },
+                    foodRate * 40 * 6 * 2.0, clothRate * 40 * 6 * .9, 0)
+            };
+            var mpDef = PhysicalDemography.AdvanceCoupledBudget(c, multiPools, 6);
+            var mpExp = PhysicalDemography.AdvanceCoupledBudget(c, multiPools, 6, 1, 1, 1, 0);
+            Check(!mpDef.UsedExactScalarReduction, "Multi-pool parity case uses coupled integrator");
+            AssertCoupledBitEqual(mpExp, mpDef, "AdvanceCoupledBudget multi-pool unit parity surplus=" + c.SurplusFundedBirths);
+        }
+
+        var fixedPools = new[]
+        {
+            new DemographicServicePoolInput(new[] { new DemographicCohortInput(140, 0), new DemographicCohortInput(60, grace + 5) }, 0, 0, 150),
+            new DemographicServicePoolInput(new[] { new DemographicCohortInput(90, grace - 2.5) }, 0, 0, 30),
+            new DemographicServicePoolInput(new[] { new DemographicCohortInput(40, 0) }, 0, 0, 0)
+        };
+        double[] nut = { .7, .45, 1.0 }, clo = { .8, .2, 0.0 };
+        var cfDef = PhysicalDemography.AdvanceCoupledFixed(cfg, fixedPools, 6, nut, clo);
+        var cfExp = PhysicalDemography.AdvanceCoupledFixed(cfg, fixedPools, 6, nut, clo, 1, 1, 1, 0);
+        AssertCoupledBitEqual(cfExp, cfDef, "AdvanceCoupledFixed unit parity");
+    }
+
+    private static void Phase0MitigatedEquilibriaAndAccuracy(SimulationConfig cfg)
+    {
+        var surplusCfg = new SimulationConfig
+        {
+            DemographicModel = DemographicModel.PhysicalMortalityV1,
+            QoLMortalityEnabled = false,
+            SurplusFundedBirths = true
+        };
+        surplusCfg.Validate();
+
+        // Part 1: All 7 Docs/CivicGovernance.md §5 Choice #4 equilibria across all 5 solvers
+        var regimes = new (string Name, double Mc, double Md, double DocNStar, double ExactNStar)[]
+        {
+            ("Baseline", 1.0, 1.0, 1000.0, 1000.000000),
+            ("Tier1_P0", 0.4909, 1.0, 1609.0, 1609.294277),
+            ("Tier2_Ph1_P0", 0.0973, 1.0, 3023.0, 3023.439081),
+            ("Tier3A_Ph1_Strat", 0.05, 1.0, 3376.0, 3375.754660),
+            ("Tier3AB_Ph2_Hybrid", 0.075, 0.265, 7645.3, 7645.286932),
+            ("Tier3AB_Ph2_Strat", 0.05, 0.19, 10669.0, 10668.997537),
+            ("Phase2_Floor", 0.05, 0.15, 11994.29, 11994.285299)
+        };
+        const double ampleHousing = 200000, ampleBudget = 1e9;
+        foreach (var r in regimes)
+        {
+            var from1000 = PhysicalDemography.AdvanceFixed(cfg, 1000, 20, 1, 1, ampleHousing, 0, true, 0, 1, r.Mc, r.Md, 0);
+            Check(from1000.HasPositiveEquilibrium, r.Name + " has positive equilibrium");
+            Check(Relative(from1000.EquilibriumPopulation, r.DocNStar) < 0.001,
+                r.Name + " equilibrium within 0.1% of spec table: " + from1000.EquilibriumPopulation.ToString("G9") + " vs " + r.DocNStar);
+            Check(Relative(from1000.EquilibriumPopulation, r.ExactNStar) < 1e-6,
+                r.Name + " equilibrium matches exact root: " + from1000.EquilibriumPopulation.ToString("G12") + " vs " + r.ExactNStar);
+            if (r.ExactNStar > 1000)
+                Check(from1000.FinalPopulation > 1000 && from1000.FinalPopulation < from1000.EquilibriumPopulation,
+                    r.Name + " grows from 1000 toward equilibrium");
+
+            var above = PhysicalDemography.AdvanceFixed(cfg, 1.2 * r.ExactNStar, 20, 1, 1, ampleHousing, 0, true, 0, 1, r.Mc, r.Md, 0);
+            Check(above.FinalPopulation < 1.2 * r.ExactNStar && above.FinalPopulation > r.ExactNStar,
+                r.Name + " declines from above toward equilibrium");
+
+            var stFixed = PhysicalDemography.AdvanceFixed(cfg, r.ExactNStar, 20, 1, 1, ampleHousing, 0, true, 0, 1, r.Mc, r.Md, 0);
+            var stBudget = PhysicalDemography.AdvanceBudget(cfg, r.ExactNStar, 20, ampleBudget, ampleBudget, ampleHousing, 0, true, 0, r.Mc, r.Md, 1, 0);
+            var stPlan = PhysicalDemography.PlanningBudget(cfg, r.ExactNStar, 20, ampleBudget, ampleBudget, ampleHousing, 0, true, 0, r.Mc, r.Md, 1, 0);
+            var stSurplus = PhysicalDemography.AdvanceBudget(surplusCfg, r.ExactNStar, 20, ampleBudget, ampleBudget, ampleHousing, 0, true, 0, r.Mc, r.Md, 1, 0);
+            var stSurplusPlan = PhysicalDemography.PlanningBudget(surplusCfg, r.ExactNStar, 20, ampleBudget, ampleBudget, ampleHousing, 0, true, 0, r.Mc, r.Md, 1, 0);
+            var stCoupledReduced = PhysicalDemography.AdvanceCoupledBudget(cfg, new[]
+            {
+                new DemographicServicePoolInput(new[] { new DemographicCohortInput(r.ExactNStar * .5) }, ampleBudget * .5, ampleBudget * .5, ampleHousing * .5),
+                new DemographicServicePoolInput(new[] { new DemographicCohortInput(r.ExactNStar * .5) }, ampleBudget * .5, ampleBudget * .5, ampleHousing * .5)
+            }, 20, r.Mc, r.Md, 1, 0);
+            var stCoupledMulti = PhysicalDemography.AdvanceCoupledBudget(cfg, new[]
+            {
+                new DemographicServicePoolInput(new[] { new DemographicCohortInput(r.ExactNStar * .6, 0) }, ampleBudget * .6, ampleBudget * .6, ampleHousing * .6),
+                new DemographicServicePoolInput(new[] { new DemographicCohortInput(r.ExactNStar * .4, 1) }, ampleBudget * .4, ampleBudget * .4, ampleHousing * .4)
+            }, 20, r.Mc, r.Md, 1, 0);
+            Check(stCoupledReduced.UsedExactScalarReduction && !stCoupledMulti.UsedExactScalarReduction,
+                r.Name + " coupled reduced vs non-homogeneous paths exercised");
+
+            foreach (var pair in new (string Tag, DemographicResult Res, double Tol, bool CheckEq)[]
+            {
+                ("AdvanceFixed", stFixed, 1e-6, true),
+                ("AdvanceBudget", stBudget, 1e-6, true),
+                ("PlanningBudget", stPlan, 1e-5, true),
+                ("SurplusBudget", stSurplus, 1e-6, true),
+                ("SurplusPlanning", stSurplusPlan, 1e-5, true),
+                ("CoupledReduced", stCoupledReduced.Total, 1e-6, true),
+                ("CoupledMulti", stCoupledMulti.Total, 1e-5, false)
+            })
+            {
+                Check(Relative(pair.Res.FinalPopulation, r.ExactNStar) < pair.Tol,
+                    r.Name + " " + pair.Tag + " stationary at N*");
+                Check(Math.Abs(pair.Res.Births - pair.Res.Deaths) <= 1e-5 * r.ExactNStar,
+                    r.Name + " " + pair.Tag + " births equal deaths at N*");
+                Check(Math.Abs(pair.Res.ConservationError) <= 1e-8 * r.ExactNStar,
+                    r.Name + " " + pair.Tag + " conserves population at N*");
+                if (pair.CheckEq)
+                    Check(Relative(pair.Res.EquilibriumPopulation, r.DocNStar) < 0.001,
+                        r.Name + " " + pair.Tag + " reports EquilibriumPopulation within 0.1%");
+            }
+        }
+
+        // Numerical safety at Phase 2 floor from N = 24 across 10 x 20-year turns (200 years total, ~124 log-bands)
+        double popClimb = 24;
+        int totalBands = 0, maxRoots = 0;
+        for (int step = 0; step < 10; step++)
+        {
+            var climb = PhysicalDemography.AdvanceFixed(cfg, popClimb, 20.0, 1, 1, ampleHousing, 0, true, 0, 1, 0.05, 0.15, 0);
+            Check(climb.HasPositiveEquilibrium && climb.RootEvaluations < cfg.DemographicMaxRootIterations
+                && climb.BandsCrossed < cfg.DemographicMaxBands && climb.FinalPopulation > popClimb && climb.FinalPopulation < 11995,
+                "Phase 2 floor 20-yr climb step " + step + " stays well inside solver budgets");
+            totalBands += climb.BandsCrossed;
+            maxRoots = Math.Max(maxRoots, climb.RootEvaluations);
+            popClimb = climb.FinalPopulation;
+        }
+        Check(popClimb > 10000 && popClimb < 11995 && totalBands < cfg.DemographicMaxBands && maxRoots < cfg.DemographicMaxRootIterations,
+            "Phase 2 floor 200-yr climb from N=24 approaches 11,994.29 cleanly (end=" + popClimb.ToString("G7") + ", bands=" + totalBands + ", maxRoots=" + maxRoots + ")");
+
+        // Part 2: Independent RK4 reference verification at non-unit (Mc, Md, f, a)
+        foreach (var sc in new (double N, double Mc, double Md, double F, double A)[]
+        {
+            (1500, 0.05, 0.15, 1.0, 0.0),
+            (800, 0.25, 0.4, 1.35, 0.008)
+        })
+        {
+            var native = PhysicalDemography.AdvanceFixed(cfg, sc.N, 20, 0.92, 0.75, sc.N * 0.85, 0, false, 0, sc.F, sc.Mc, sc.Md, sc.A);
+            var reference = ReferenceFlows(cfg, sc.N, 20, 0.92, 0.75, sc.N * 0.85, false, sc.Mc, sc.Md, sc.F, sc.A);
+            Check(Relative(native.FinalPopulation, reference.Final) <= 3.2e-4, "Scalar RK4 mitigated endpoint agrees");
+            Check(Relative(native.PersonYears, reference.PersonYears) <= 3.2e-4, "Scalar RK4 mitigated PY agrees");
+            Check(Relative(native.Births, reference.Births) <= 3.2e-4, "Scalar RK4 mitigated births agree");
+            double scale = Math.Max(1, reference.Deaths);
+            Check(Math.Abs(native.Deaths - reference.Deaths) / scale <= 5e-4, "Scalar RK4 mitigated deaths agree");
+            Check(Math.Abs(native.ExposureDeaths - reference.Exposure) / scale <= 5e-4, "Scalar RK4 exposure agrees");
+            Check(Math.Abs(native.CrowdingDeaths - reference.Crowding) / scale <= 5e-4, "Scalar RK4 crowding agrees");
+            Check(Math.Abs(native.DiseaseDeaths - reference.Disease) / scale <= 5e-4, "Scalar RK4 disease agrees");
+            Check(Math.Abs(native.AdditionalDeaths - reference.Additional) / scale <= 5e-4, "Scalar RK4 additional agrees");
+        }
+
+        double grace = PhysicalDemography.StarvationGraceYears(cfg);
+        var rkPools = new[]
+        {
+            new DemographicServicePoolInput(new[] { new DemographicCohortInput(1400, 0), new DemographicCohortInput(600, grace + 5) }, 0, 0, 1500),
+            new DemographicServicePoolInput(new[] { new DemographicCohortInput(900, grace - 2.5) }, 0, 0, 300),
+            new DemographicServicePoolInput(new[] { new DemographicCohortInput(400, 0) }, 0, 0, 0)
+        };
+        double[] rkNut = { .75, .5, 1.0 }, rkClo = { .8, .25, 0.0 };
+        var coupledMit = PhysicalDemography.AdvanceCoupledFixed(cfg, rkPools, 6, rkNut, rkClo, 0.075, 0.265, 1.25, 0.007);
+        var coupledRef = CoupledReferenceFixed(cfg, rkPools, 6, rkNut, rkClo, .00005, 0.075, 0.265, 1.25, 0.007);
+        int member = 0; double worstCoupled = 0;
+        for (int p = 0; p < rkPools.Length; p++)
+        for (int c = 0; c < rkPools[p].Cohorts.Length; c++, member++)
+        {
+            var actual = coupledMit.Cohorts[p][c];
+            worstCoupled = Math.Max(worstCoupled, Relative(actual.FinalPopulation, coupledRef.Final[member]));
+            worstCoupled = Math.Max(worstCoupled, Relative(actual.PersonYears, coupledRef.PersonYears[member]));
+            worstCoupled = Math.Max(worstCoupled, Relative(actual.Births, coupledRef.Births[member]));
+            double ds = Math.Max(1, coupledRef.Exposure[member] + coupledRef.Crowding[member]
+                + coupledRef.Disease[member] + coupledRef.Starvation[member] + coupledRef.Additional[member]);
+            worstCoupled = Math.Max(worstCoupled, Math.Abs(actual.ExposureDeaths - coupledRef.Exposure[member]) / ds);
+            worstCoupled = Math.Max(worstCoupled, Math.Abs(actual.CrowdingDeaths - coupledRef.Crowding[member]) / ds);
+            worstCoupled = Math.Max(worstCoupled, Math.Abs(actual.DiseaseDeaths - coupledRef.Disease[member]) / ds);
+            worstCoupled = Math.Max(worstCoupled, Math.Abs(actual.LegacyStarvationDeaths - coupledRef.Starvation[member]) / ds);
+            worstCoupled = Math.Max(worstCoupled, Math.Abs(actual.AdditionalDeaths - coupledRef.Additional[member]) / ds);
+        }
+        Check(worstCoupled <= 2e-7, "Coupled mitigated RK4 error <= 2e-7: " + worstCoupled.ToString("G8"));
+
+        // Part 3: PlanningBudget vs AdvanceBudget agreement across dt, modifiers, and SurplusFundedBirths
+        double foodRate = PhysicalDemography.FoodPerPersonYear(cfg);
+        double clothRate = PhysicalDemography.ClothingPerPersonYear(cfg);
+        var modMatrix = new (double Mc, double Md, double F, double A)[]
+        {
+            (0.4909, 1.0, 1.0, 0.0),
+            (0.0973, 1.0, 1.0, 0.0),
+            (0.075, 0.265, 1.0, 0.0),
+            (0.05, 0.15, 1.0, 0.0),
+            (0.2, 0.5, 1.4, 0.01),
+            (0.3, 0.6, 0.5, 0.005),
+            (0.5, 0.5, 0.0, 0.002)
+        };
+        foreach (var c in new[] { cfg, surplusCfg })
+        foreach (double dt in new[] { 1.0 / cfg.DaysPerYear, 1.0, 5.0, 20.0 })
+        foreach (var m in modMatrix)
+        foreach (double pop in new[] { 240.0, 1500.0, 8000.0 })
+        foreach (double fShare in new[] { .55, 1.05, 2.5 })
+        {
+            double basis = pop * dt;
+            double fb = fShare * foodRate * basis, cb = .6 * clothRate * basis, h = .8 * pop;
+            var exact = PhysicalDemography.AdvanceBudget(c, pop, dt, fb, cb, h, 0, true, 0, m.Mc, m.Md, m.F, m.A);
+            var fast = PhysicalDemography.PlanningBudget(c, pop, dt, fb, cb, h, 0, true, 0, m.Mc, m.Md, m.F, m.A);
+            Check(Relative(fast.PersonYears, exact.PersonYears) <= 1e-6, "Mitigated PlanningBudget PY agrees");
+            Check(Relative(fast.FinalPopulation, exact.FinalPopulation) <= 1e-6, "Mitigated PlanningBudget FinalPopulation agrees");
+            Check(Math.Abs(fast.Nutrition - exact.Nutrition) <= 1e-6
+                && Math.Abs(fast.ClothingCoverage - exact.ClothingCoverage) <= 1e-6
+                && Math.Abs(fast.AverageHousingCoverage - exact.AverageHousingCoverage) <= 1e-6,
+                "Mitigated PlanningBudget coverages agree");
+            if (m.F == 0)
+                Check(exact.Births == 0 && fast.Births == 0, "Zero fertilityFactor yields exact zero births");
+            else
+                Check(Relative(fast.Births, exact.Births) <= 1e-5, "Mitigated PlanningBudget births agree");
+            Check(Relative(fast.Deaths, exact.Deaths) <= 1e-5, "Mitigated PlanningBudget deaths agree");
+        }
+
+        // Direct SurplusBudget out-g contract at non-unit fertilityFactor (0.5, 1.0, 1.5)
+        foreach (double f in new[] { 0.5, 1.0, 1.5 })
+        {
+            double pop = 800, dt = 20;
+            double fullPy = PhysicalDemography.AdvanceFixed(surplusCfg, pop, dt, 1, .7, pop, 0, true, 0, f, 0.1, 0.3, 0.002).PersonYears;
+            double nonePy = PhysicalDemography.AdvanceFixed(surplusCfg, pop, dt, 1, .7, pop, 0, true, 0, 0, 0.1, 0.3, 0.002).PersonYears;
+            double midFood = foodRate * (0.5 * (fullPy + nonePy));
+            double cloth = clothRate * fullPy * .7;
+            var sEx = PhysicalDemography.SurplusBudget(surplusCfg, pop, dt, midFood, cloth, pop, 0, true, 0, out double gEx, false, 0.1, 0.3, f, 0.002);
+            var sFa = PhysicalDemography.SurplusBudget(surplusCfg, pop, dt, midFood, cloth, pop, 0, true, 0, out double gFa, true, 0.1, 0.3, f, 0.002);
+            Check(gEx > 0 && gEx < 1 && gFa > 0 && gFa < 1, "Food-bound surplus g lies strictly in (0, 1) at f=" + f);
+            Check(Math.Abs(gFa - gEx) <= 1e-5, "FastSurplus g agrees with exact SurplusBudget g at f=" + f);
+            Check(Relative(sEx.PersonYears, midFood / foodRate) <= 1e-5 && Relative(sFa.PersonYears, midFood / foodRate) <= 1e-5,
+                "Food-bound surplus PY matches foodBudget/foodRate at f=" + f);
+
+            var fullEx = PhysicalDemography.SurplusBudget(surplusCfg, pop, dt, ampleBudget, ampleBudget, ampleHousing, 0, true, 0, out double gFullEx, false, 0.1, 0.3, f, 0.002);
+            var fullFa = PhysicalDemography.SurplusBudget(surplusCfg, pop, dt, ampleBudget, ampleBudget, ampleHousing, 0, true, 0, out double gFullFa, true, 0.1, 0.3, f, 0.002);
+            Check(gFullEx == 1 && gFullFa == 1, "Full-birth branch returns g == 1 (never f*g) at f=" + f);
+            Check(Relative(fullEx.Births / fullEx.PersonYears, cfg.BaseBirthRate * f) < 1e-5
+                && Relative(fullFa.Births / fullFa.PersonYears, cfg.BaseBirthRate * f) < 1e-5,
+                "Full-birth branch birth rate equals BaseBirthRate * f at f=" + f);
+        }
+
+        // Part 4: Coupled scalar-reduction bit-parity & multi-pool scaling + regression traps + zero boundaries
+        foreach (var c in new[] { cfg, surplusCfg })
+        {
+            double pop = 1600, dt = 20, fb = foodRate * pop * dt * 1.15, cb = clothRate * pop * dt * .65, h = 1400;
+            var scalar = PhysicalDemography.AdvanceBudget(c, pop, dt, fb, cb, h, 0, true, 0, 0.075, 0.265, 1.25, 0.006);
+            foreach (int split in new[] { 2, 4 })
+            {
+                var hom = Enumerable.Range(0, split).Select(_ => new DemographicServicePoolInput(
+                    new[] { new DemographicCohortInput(pop / split) }, fb / split, cb / split, h / split)).ToArray();
+                var red = PhysicalDemography.AdvanceCoupledBudget(c, hom, dt, 0.075, 0.265, 1.25, 0.006);
+                Check(red.UsedExactScalarReduction, "Mitigated proportional pools use exact scalar reduction");
+                AssertResultBitEqual(red.Total, scalar, "Mitigated coupled scalar reduction bit-exact split=" + split + " surplus=" + c.SurplusFundedBirths);
+            }
+        }
+
+        var mp = new[]
+        {
+            new DemographicServicePoolInput(new[] { new DemographicCohortInput(1100, 0), new DemographicCohortInput(300, 5) },
+                foodRate * 1400 * 10 * 1.8, clothRate * 1400 * 10 * 0.8, 1200),
+            new DemographicServicePoolInput(new[] { new DemographicCohortInput(400, 10) },
+                foodRate * 400 * 10 * 0.9, clothRate * 400 * 10 * 0.4, 300),
+            new DemographicServicePoolInput(new[] { new DemographicCohortInput(200, 0) },
+                foodRate * 200 * 10 * 1.3, clothRate * 200 * 10 * 0.5, 100)
+        };
+        var baseMp = PhysicalDemography.AdvanceCoupledBudget(cfg, mp, 10, 1, 1, 1, 0);
+        var lowCrowd = PhysicalDemography.AdvanceCoupledBudget(cfg, mp, 10, 0.1, 1, 1, 0);
+        var lowDis = PhysicalDemography.AdvanceCoupledBudget(cfg, mp, 10, 1, 0.2, 1, 0);
+        var addMort = PhysicalDemography.AdvanceCoupledBudget(cfg, mp, 10, 1, 1, 1, 0.015);
+        Check(!baseMp.UsedExactScalarReduction, "Multi-pool scaling fixture runs coupled path");
+        Check(lowCrowd.Total.CrowdingDeaths < baseMp.Total.CrowdingDeaths * 0.2
+            && (lowCrowd.Total.CrowdingDeaths / lowCrowd.Total.PersonYears) < (baseMp.Total.CrowdingDeaths / baseMp.Total.PersonYears) * 0.2
+            && lowCrowd.Total.FinalPopulation > baseMp.Total.FinalPopulation,
+            "Multi-pool Mc=0.1 strongly reduces crowding deaths and raises endpoint");
+        Check(lowDis.Total.DiseaseDeaths < baseMp.Total.DiseaseDeaths * 0.3
+            && (lowDis.Total.DiseaseDeaths / lowDis.Total.PersonYears) < (baseMp.Total.DiseaseDeaths / baseMp.Total.PersonYears) * 0.3
+            && lowDis.Total.FinalPopulation > baseMp.Total.FinalPopulation,
+            "Multi-pool Md=0.2 strongly reduces disease deaths and raises endpoint");
+        Check(addMort.Total.AdditionalDeaths > 0
+            && Relative(addMort.Total.AdditionalDeaths, 0.015 * addMort.Total.PersonYears) < 1e-5
+            && addMort.Total.Deaths > baseMp.Total.Deaths
+            && addMort.Total.FinalPopulation < baseMp.Total.FinalPopulation,
+            "Multi-pool additionalMortality=0.015 accumulates accurately and lowers endpoint");
+
+        foreach (var c in new[] { cfg, surplusCfg })
+        {
+            var r0 = PhysicalDemography.AdvanceCoupledBudget(c, mp, 10, 0.5, 0.5, 0.0, 0);
+            var r05 = PhysicalDemography.AdvanceCoupledBudget(c, mp, 10, 0.5, 0.5, 0.5, 0);
+            var r1 = PhysicalDemography.AdvanceCoupledBudget(c, mp, 10, 0.5, 0.5, 1.0, 0);
+            var r15 = PhysicalDemography.AdvanceCoupledBudget(c, mp, 10, 0.5, 0.5, 1.5, 0);
+            Check(r0.Total.Births == 0, "Multi-pool f=0 gives exact zero births surplus=" + c.SurplusFundedBirths);
+            Check(0 < r05.Total.Births && r05.Total.Births < r1.Total.Births && r1.Total.Births < r15.Total.Births,
+                "Multi-pool births increase strictly with fertilityFactor surplus=" + c.SurplusFundedBirths);
+            Check(r0.Total.FinalPopulation < r05.Total.FinalPopulation && r05.Total.FinalPopulation < r1.Total.FinalPopulation
+                && r1.Total.FinalPopulation < r15.Total.FinalPopulation,
+                "Multi-pool FinalPopulation increases strictly with fertilityFactor surplus=" + c.SurplusFundedBirths);
+
+            // Bracket-scaling trap (f=1.5 finite closure) + double-multiplication trap (ample food with surplusCfg)
+            var ampleMp = new[]
+            {
+                new DemographicServicePoolInput(new[] { new DemographicCohortInput(500, 0) }, ampleBudget, ampleBudget, ampleHousing),
+                new DemographicServicePoolInput(new[] { new DemographicCohortInput(300, 1) }, ampleBudget, ampleBudget, ampleHousing)
+            };
+            var ample15 = PhysicalDemography.AdvanceCoupledBudget(c, ampleMp, 10, 0.2, 0.3, 1.5, 0);
+            Check(!ample15.UsedExactScalarReduction, "Ample f=1.5 trap runs non-homogeneous coupled path");
+            Check(Relative(ample15.Total.Births / ample15.Total.PersonYears, 1.5 * cfg.BaseBirthRate) < 1e-4,
+                "Coupled f=1.5 birth rate is 1.5*BaseBirthRate (never 2.25) surplus=" + c.SurplusFundedBirths);
+        }
+
+        // Zero-boundary acceptance tests: (0, 1), (1, 0), (0, 0) unconstrained, (0, 0) housing-limited, and (0, 0, f=0)
+        var zCrowd = PhysicalDemography.AdvanceFixed(cfg, 1000, 20, 1, 1, ampleHousing, 0, true, 0, 1, 0, 1, 0);
+        Check(zCrowd.CrowdingDeaths == 0 && zCrowd.HasPositiveEquilibrium && Relative(zCrowd.EquilibriumPopulation, 3846.677248) < 1e-5,
+            "Zero crowding mitigation reaches pure disease equilibrium 3846.68");
+        var zDis = PhysicalDemography.AdvanceFixed(cfg, 1000, 20, 1, 1, ampleHousing, 0, true, 0, 1, 1, 0, 0);
+        Check(zDis.DiseaseDeaths == 0 && zDis.HasPositiveEquilibrium && Relative(zDis.EquilibriumPopulation, 1331.123389) < 1e-5,
+            "Zero disease mitigation reaches pure crowding equilibrium 1331.12");
+
+        var zBothGrowFixed = PhysicalDemography.AdvanceFixed(cfg, 100, 20, 1, 1, ampleHousing, 0, true, 0, 1, 0, 0, 0);
+        var zBothGrowPlan = PhysicalDemography.PlanningBudget(surplusCfg, 100, 20, ampleBudget, ampleBudget, ampleHousing, 0, true, 0, 0, 0, 1, 0);
+        double expectedExp = 100 * Math.Exp((cfg.BaseBirthRate - cfg.ExposureMortalityRate * .1) * 20);
+        Check(!zBothGrowFixed.HasPositiveEquilibrium && zBothGrowFixed.EquilibriumPopulation == 0 && !zBothGrowFixed.DeclineToExtinction
+            && zBothGrowFixed.CrowdingDeaths == 0 && zBothGrowFixed.DiseaseDeaths == 0
+            && Relative(zBothGrowFixed.FinalPopulation, expectedExp) < 1e-6
+            && Relative(zBothGrowPlan.FinalPopulation, expectedExp) < 1e-6,
+            "Zero crowding and disease mitigation integrates unbounded exponential growth cleanly");
+
+        var zBothHousingEx = PhysicalDemography.AdvanceBudget(cfg, 10, 20, ampleBudget, ampleBudget, 50, 0, true, 0, 0, 0, 0.4, 0);
+        var zBothHousingFast = PhysicalDemography.PlanningBudget(cfg, 10, 20, ampleBudget, ampleBudget, 50, 0, true, 0, 0, 0, 0.4, 0);
+        Check(!zBothHousingEx.HasPositiveEquilibrium, "Full clothing/housing at f=0.4 stays growing");
+        var zHousingEqEx = PhysicalDemography.AdvanceFixed(cfg, 10, 20, 1, 0, 50, 0, true, 0, 0.4, 0, 0, 0);
+        var zHousingEqFast = PhysicalDemography.PlanningBudget(cfg, 10, 20, ampleBudget, 0, 50, 0, true, 0, 0, 0, 0.4, 0);
+        Check(zHousingEqEx.HasPositiveEquilibrium && zHousingEqEx.EquilibriumPopulation > 50
+            && zHousingEqFast.HasPositiveEquilibrium
+            && Relative(zHousingEqFast.EquilibriumPopulation, zHousingEqEx.EquilibriumPopulation) < 1e-5,
+            "Zero crowding and disease mitigation still brackets housing-dilution equilibrium cleanly");
+
+        var zExtFixed = PhysicalDemography.AdvanceFixed(cfg, 100, 20, 1, 1, ampleHousing, 0, true, 0, 0, 0, 0, 0);
+        var zExtBudget = PhysicalDemography.AdvanceBudget(cfg, 100, 20, ampleBudget, ampleBudget, ampleHousing, 0, true, 0, 0, 0, 0, 0);
+        var zExtPlan = PhysicalDemography.PlanningBudget(surplusCfg, 100, 20, ampleBudget, ampleBudget, ampleHousing, 0, true, 0, 0, 0, 0, 0);
+        var zExtCoupled = PhysicalDemography.AdvanceCoupledBudget(cfg, rkPools, 6, 0, 0, 0, 0);
+        var zExtCoupledFixed = PhysicalDemography.AdvanceCoupledFixed(cfg, rkPools, 6, rkNut, rkClo, 0, 0, 0, 0);
+        Check(zExtFixed.CrowdingDeaths == 0 && zExtFixed.DiseaseDeaths == 0 && zExtFixed.Births == 0 && zExtFixed.DeclineToExtinction
+            && zExtBudget.CrowdingDeaths == 0 && zExtBudget.DiseaseDeaths == 0 && zExtBudget.Births == 0 && zExtBudget.DeclineToExtinction
+            && zExtPlan.CrowdingDeaths == 0 && zExtPlan.DiseaseDeaths == 0 && zExtPlan.Births == 0 && zExtPlan.DeclineToExtinction
+            && zExtCoupled.Total.CrowdingDeaths == 0 && zExtCoupled.Total.DiseaseDeaths == 0 && zExtCoupled.Total.Births == 0
+            && zExtCoupledFixed.Total.CrowdingDeaths == 0 && zExtCoupledFixed.Total.DiseaseDeaths == 0 && zExtCoupledFixed.Total.Births == 0,
+            "(0, 0, f=0, 0) succeeds across all 5 solvers with zero crowding, disease, and births");
+    }
+
+    private static void ExpectArgumentException(Action call, string label)
+    {
+        bool caught = false;
+        try { call(); }
+        catch (ArgumentException) { caught = true; }
+        Check(caught, "Expected ArgumentException for " + label);
+    }
+
+    private static void ExpectArgumentNullException(Action call, string label)
+    {
+        bool caught = false;
+        try { call(); }
+        catch (ArgumentNullException) { caught = true; }
+        Check(caught, "Expected ArgumentNullException for " + label);
+    }
+
+    private static void Phase0InvalidInputRejection(SimulationConfig cfg)
+    {
+        var surplusCfg = new SimulationConfig
+        {
+            DemographicModel = DemographicModel.PhysicalMortalityV1,
+            QoLMortalityEnabled = false,
+            SurplusFundedBirths = true
+        };
+        surplusCfg.Validate();
+
+        var singlePool = new[] { new DemographicServicePoolInput(new[] { new DemographicCohortInput(100) }, 1e5, 1e4, 100) };
+        var twoPools = new[]
+        {
+            new DemographicServicePoolInput(new[] { new DemographicCohortInput(100, 0) }, 1e5, 1e4, 100),
+            new DemographicServicePoolInput(new[] { new DemographicCohortInput(50, 1) }, 2e4, 2e3, 30)
+        };
+        double[] twoNut = { 1.0, .8 }, twoClo = { 1.0, .5 };
+
+        // Null config rejected across all entry points (including SurplusBudget fast=true)
+        ExpectArgumentNullException(() => PhysicalDemography.Rates(null, 100, 1, 1, 100), "Rates null config");
+        ExpectArgumentNullException(() => PhysicalDemography.AdvanceFixed(null, 100, 20, 1, 1, 100), "AdvanceFixed null config");
+        ExpectArgumentNullException(() => PhysicalDemography.AdvanceBudget(null, 100, 20, 1e6, 1e5, 100), "AdvanceBudget null config");
+        ExpectArgumentNullException(() => PhysicalDemography.PlanningBudget(null, 100, 20, 1e6, 1e5, 100), "PlanningBudget null config");
+        ExpectArgumentNullException(() => PhysicalDemography.SurplusBudget(null, 100, 20, 1e6, 1e5, 100, 0, true, 0, out _, false), "SurplusBudget exact null config");
+        ExpectArgumentNullException(() => PhysicalDemography.SurplusBudget(null, 100, 20, 1e6, 1e5, 100, 0, true, 0, out _, true), "SurplusBudget fast null config");
+        ExpectArgumentNullException(() => PhysicalDemography.AdvanceCoupledBudget(null, singlePool, 20), "AdvanceCoupledBudget null config");
+        ExpectArgumentNullException(() => PhysicalDemography.AdvanceCoupledFixed(null, twoPools, 20, twoNut, twoClo), "AdvanceCoupledFixed null config");
+
+        double[] badValues = { double.NaN, double.PositiveInfinity, double.NegativeInfinity, -1e-9, -1.0 };
+        for (int slot = 0; slot < 4; slot++)
+        foreach (double bad in badValues)
+        {
+            double mc = slot == 0 ? bad : 1.0;
+            double md = slot == 1 ? bad : 1.0;
+            double ff = slot == 2 ? bad : 1.0;
+            double am = slot == 3 ? bad : 0.0;
+            string tag = "slot=" + slot + " val=" + bad;
+
+            ExpectArgumentException(() => PhysicalDemography.Rates(cfg, 100, 1, 1, 100, false, 0, mc, md, ff, am), "Rates " + tag);
+            ExpectArgumentException(() => PhysicalDemography.RatesAtDensityCoverage(cfg, 100, 1, 1, 1, false, mc, md, ff, am), "RatesAtDensityCoverage " + tag);
+
+            foreach (double yrs in new[] { 20.0, 0.0 })
+            {
+                ExpectArgumentException(() => PhysicalDemography.AdvanceFixed(cfg, 100, yrs, 1, 1, 100, 0, true, 0, ff, mc, md, am), "AdvanceFixed yrs=" + yrs + " " + tag);
+                ExpectArgumentException(() => PhysicalDemography.AdvanceBudget(cfg, 100, yrs, 1e6, 1e5, 100, 0, true, 0, mc, md, ff, am), "AdvanceBudget yrs=" + yrs + " " + tag);
+                ExpectArgumentException(() => PhysicalDemography.AdvanceBudget(surplusCfg, 100, yrs, 1e6, 1e5, 100, 0, true, 0, mc, md, ff, am), "AdvanceBudget(surplus) yrs=" + yrs + " " + tag);
+                ExpectArgumentException(() => PhysicalDemography.PlanningBudget(cfg, 100, yrs, 1e6, 1e5, 100, 0, true, 0, mc, md, ff, am), "PlanningBudget yrs=" + yrs + " " + tag);
+                ExpectArgumentException(() => PhysicalDemography.PlanningBudget(surplusCfg, 100, yrs, 1e6, 1e5, 100, 0, true, 0, mc, md, ff, am), "PlanningBudget(surplus) yrs=" + yrs + " " + tag);
+                ExpectArgumentException(() => PhysicalDemography.SurplusBudget(surplusCfg, 100, yrs, 1e6, 1e5, 100, 0, true, 0, out _, false, mc, md, ff, am), "SurplusBudget exact yrs=" + yrs + " " + tag);
+                ExpectArgumentException(() => PhysicalDemography.SurplusBudget(surplusCfg, 100, yrs, 1e6, 1e5, 100, 0, true, 0, out _, true, mc, md, ff, am), "SurplusBudget fast yrs=" + yrs + " " + tag);
+                ExpectArgumentException(() => PhysicalDemography.AdvanceCoupledBudget(cfg, singlePool, yrs, mc, md, ff, am), "AdvanceCoupledBudget(1) yrs=" + yrs + " " + tag);
+                ExpectArgumentException(() => PhysicalDemography.AdvanceCoupledBudget(surplusCfg, twoPools, yrs, mc, md, ff, am), "AdvanceCoupledBudget(2,surplus) yrs=" + yrs + " " + tag);
+                ExpectArgumentException(() => PhysicalDemography.AdvanceCoupledFixed(cfg, twoPools, yrs, twoNut, twoClo, mc, md, ff, am), "AdvanceCoupledFixed yrs=" + yrs + " " + tag);
+            }
+            ExpectArgumentException(() => PhysicalDemography.PlanningBudget(surplusCfg, 100, 20, 0, 0, 100, 0, true, 0, mc, md, ff, am), "PlanningBudget(surplus,food=0) " + tag);
+            ExpectArgumentException(() => PhysicalDemography.SurplusBudget(surplusCfg, 0, 20, 1e6, 1e5, 100, 0, true, 0, out _, true, mc, md, ff, am), "SurplusBudget(fast,pop=0) " + tag);
+        }
+    }
+
+    private static void Phase0ProductionCallSitePlumbing()
+    {
+        var prevF = PhysicalDemography.FertilityFactorOverride;
+        var prevC = PhysicalDemography.CrowdingMitigationOverride;
+        var prevD = PhysicalDemography.DiseaseMitigationOverride;
+        var prevA = PhysicalDemography.AdditionalMortalityOverride;
+        bool prevExact = DemandController.KernelExactScoringThreadDiagnostic;
+        try
+        {
+            var baseWorld = PhysicalWorld(.8);
+            var baseCamp = baseWorld.Camps.Single();
+            baseCamp.Population = 1000;
+            baseCamp.Workforce.Normalize(1000);
+            baseCamp.PlantFood = 1e7;
+            baseCamp.Inventory.Cloth = 1e5;
+            baseCamp.Inventory.LightHousingUnits = 1e9;
+            var mitWorld = SaveCodec.Load(SaveCodec.Save(baseWorld));
+            var modWorld = SaveCodec.Load(SaveCodec.Save(baseWorld));
+            double turnYears = baseWorld.Config.TurnDays / baseWorld.Config.DaysPerYear;
+
+            // 1. GenerationalEconomy.cs:1224 (ReconcilePhysicalDemography -> AdvanceCoupledBudget)
+            PhysicalDemography.FertilityFactorOverride = null;
+            PhysicalDemography.CrowdingMitigationOverride = null;
+            PhysicalDemography.DiseaseMitigationOverride = null;
+            PhysicalDemography.AdditionalMortalityOverride = null;
+            var baseTurn = new TurnResolver().Resolve(baseWorld, new Dictionary<int, List<Order>>());
+            var baseDemo = baseTurn.Demographics.Single();
+
+            PhysicalDemography.CrowdingMitigationOverride = (_, __) => 0.05;
+            PhysicalDemography.DiseaseMitigationOverride = (_, __) => 0.15;
+            PhysicalDemography.FertilityFactorOverride = (_, __) => 1.0;
+            PhysicalDemography.AdditionalMortalityOverride = (_, __) => 0.0;
+            var mitTurn = new TurnResolver().Resolve(mitWorld, new Dictionary<int, List<Order>>());
+            var mitDemo = mitTurn.Demographics.Single();
+            var expMit = PhysicalDemography.AdvanceBudget(mitWorld.Config, 1000, turnYears, 1e9, 1e9, 1e9, 0, true, 0, 0.05, 0.15, 1.0, 0.0);
+            Check(Relative(mitDemo.CrowdingDeaths, expMit.CrowdingDeaths) < 1e-6
+                && mitDemo.CrowdingMortalityRate < baseDemo.CrowdingMortalityRate * 0.12,
+                "ReconcilePhysicalDemography plumbs CrowdingMitigation into AdvanceCoupledBudget");
+            Check(Relative(mitDemo.DiseaseDeaths, expMit.DiseaseDeaths) < 1e-6
+                && mitDemo.DiseaseMortalityRate < baseDemo.DiseaseMortalityRate * 0.30,
+                "ReconcilePhysicalDemography plumbs DiseaseMitigation into AdvanceCoupledBudget");
+            Check(Relative(mitDemo.PersonYears, expMit.PersonYears) < 1e-6
+                && mitDemo.EndingPopulation > baseDemo.EndingPopulation + 500,
+                "Mitigated ReconcilePhysicalDemography matches AdvanceBudget and grows surviving cohort");
+
+            PhysicalDemography.CrowdingMitigationOverride = (_, __) => 1.0;
+            PhysicalDemography.DiseaseMitigationOverride = (_, __) => 1.0;
+            PhysicalDemography.FertilityFactorOverride = (_, __) => 0.5;
+            PhysicalDemography.AdditionalMortalityOverride = (_, __) => 0.02;
+            var modTurn = new TurnResolver().Resolve(modWorld, new Dictionary<int, List<Order>>());
+            var modDemo = modTurn.Demographics.Single();
+            var expMod = PhysicalDemography.AdvanceBudget(modWorld.Config, 1000, turnYears, 1e9, 1e9, 1e9, 0, true, 0, 1.0, 1.0, 0.5, 0.02);
+            Check(Relative(modDemo.ContinuousBirths, expMod.Births) < 1e-6
+                && Relative(modDemo.AdditionalDeaths, expMod.AdditionalDeaths) < 1e-6
+                && modDemo.ContinuousBirths < baseDemo.ContinuousBirths * 0.6
+                && modDemo.AdditionalDeaths > 50
+                && modDemo.EndingPopulation < baseDemo.EndingPopulation - 100,
+                "ReconcilePhysicalDemography plumbs FertilityFactor and AdditionalMortality into AdvanceCoupledBudget");
+
+            // 2. GenerationalEconomy.cs:999 (PlanningResidentPopulation -> AdvanceBudget)
+            var planWorld = PhysicalWorld(.8);
+            var planCamp = planWorld.Camps.Single();
+            planCamp.Population = 1000;
+            planCamp.Workforce.Normalize(1000);
+            planCamp.PlantFood = 1e7;
+            planCamp.Inventory.Cloth = 1e5;
+
+            PhysicalDemography.CrowdingMitigationOverride = null;
+            PhysicalDemography.DiseaseMitigationOverride = null;
+            PhysicalDemography.FertilityFactorOverride = null;
+            PhysicalDemography.AdditionalMortalityOverride = null;
+            double basePlanPop = TurnResolver.PlanningResidentPopulation(planWorld, planCamp, 1e6);
+
+            PhysicalDemography.CrowdingMitigationOverride = (_, __) => 0.05;
+            PhysicalDemography.DiseaseMitigationOverride = (_, __) => 0.15;
+            PhysicalDemography.FertilityFactorOverride = (_, __) => 1.2;
+            PhysicalDemography.AdditionalMortalityOverride = (_, __) => 0.005;
+            double mitPlanPop = TurnResolver.PlanningResidentPopulation(planWorld, planCamp, 1e6);
+            double years = planWorld.Config.TurnDays / planWorld.Config.DaysPerYear;
+            double housing = NeolithicProduction.HousingCapacity(planWorld, planCamp, planWorld.Days).Total;
+            double expectedMitPlan = PhysicalDemography.AdvanceBudget(planWorld.Config, 1000, years, 1e9, 1e5,
+                housing, planCamp.FoodDeficitYears, true, 0, 0.05, 0.15, 1.2, 0.005).FinalPopulation;
+            Check(mitPlanPop > basePlanPop + 100,
+                "PlanningResidentPopulation plumbs all 4 modifiers into AdvanceBudget");
+            Near(mitPlanPop, expectedMitPlan, 1e-8,
+                "PlanningResidentPopulation matches mitigated AdvanceBudget.FinalPopulation");
+
+            // 3 & 4. DemandControl.cs:1285 & :1287 (KernelSplit -> exact AdvanceBudget and fast PlanningBudget, hoisted once on c)
+            var dcWorld = PhysicalWorld(.8);
+            dcWorld.Config.EconomicAllocation = EconomicAllocationStrategy.DemandControl;
+            dcWorld.Config.ElderKernelSplit = true;
+            dcWorld.Config.SurplusFundedBirths = true;
+            var dcCamp = dcWorld.Camps.Single();
+            dcCamp.Population = 1000;
+            dcCamp.Workforce.Normalize(1000);
+            dcCamp.PlantFood = 1e7;
+            dcCamp.Inventory.Cloth = 1e5;
+            dcCamp.Inventory.HandTools = 200;
+            dcCamp.Inventory.Tools = 200;
+            dcCamp.Inventory.Wood = 500;
+            dcCamp.Inventory.Clay = 500;
+            dcCamp.Inventory.Stone = 500;
+            dcCamp.Technology = Technology.Cultivation;
+            dcCamp.Technologies[(int)Technology.Cultivation] = true;
+            dcCamp.People.Progression.Era = Era.Neolithic;
+            foreach (string tech in NeolithicTech.FirstTier)
+                if (!dcCamp.People.NeolithicTechnologies.Contains(tech))
+                    dcCamp.People.NeolithicTechnologies.Add(tech);
+            foreach (string role in WorkforceRoles.Specialists)
+                if (!dcCamp.People.UnlockedSpecialists.Contains(role))
+                    dcCamp.People.UnlockedSpecialists.Add(role);
+            dcCamp.IsVillage = true;
+
+            PhysicalDemography.CrowdingMitigationOverride = null;
+            PhysicalDemography.DiseaseMitigationOverride = null;
+            PhysicalDemography.FertilityFactorOverride = null;
+            PhysicalDemography.AdditionalMortalityOverride = null;
+            DemandController.KernelExactScoringThreadDiagnostic = false;
+            DemandController.Plan(dcWorld, dcCamp, EconomicIntent.From(dcCamp), out _, out var baseFastAlloc);
+            DemandController.KernelExactScoringThreadDiagnostic = true;
+            DemandController.Plan(dcWorld, dcCamp, EconomicIntent.From(dcCamp), out _, out var baseExactAlloc);
+
+            var seenFastC = new List<Camp>(); var seenFastD = new List<Camp>(); var seenFastF = new List<Camp>(); var seenFastA = new List<Camp>();
+            PhysicalDemography.CrowdingMitigationOverride = (_, c) => { seenFastC.Add(c); return 0.05; };
+            PhysicalDemography.DiseaseMitigationOverride = (_, c) => { seenFastD.Add(c); return 0.15; };
+            PhysicalDemography.FertilityFactorOverride = (_, c) => { seenFastF.Add(c); return 1.15; };
+            PhysicalDemography.AdditionalMortalityOverride = (_, c) => { seenFastA.Add(c); return 0.004; };
+            DemandController.KernelExactScoringThreadDiagnostic = false;
+            DemandController.Plan(dcWorld, dcCamp, EconomicIntent.From(dcCamp), out _, out var mitFastAlloc);
+
+            var seenExactC = new List<Camp>(); var seenExactD = new List<Camp>(); var seenExactF = new List<Camp>(); var seenExactA = new List<Camp>();
+            PhysicalDemography.CrowdingMitigationOverride = (_, c) => { seenExactC.Add(c); return 0.05; };
+            PhysicalDemography.DiseaseMitigationOverride = (_, c) => { seenExactD.Add(c); return 0.15; };
+            PhysicalDemography.FertilityFactorOverride = (_, c) => { seenExactF.Add(c); return 1.15; };
+            PhysicalDemography.AdditionalMortalityOverride = (_, c) => { seenExactA.Add(c); return 0.004; };
+            DemandController.KernelExactScoringThreadDiagnostic = true;
+            DemandController.Plan(dcWorld, dcCamp, EconomicIntent.From(dcCamp), out _, out var mitExactAlloc);
+
+            Check(baseFastAlloc.ElderAction != null && mitFastAlloc.ElderAction != null
+                && baseExactAlloc.ElderAction != null && mitExactAlloc.ElderAction != null,
+                "DemandController.Plan executed both fast and exact KernelSplit for crowded Neolithic village");
+            Check(seenFastC.Count == 1 && seenFastD.Count == 1 && seenFastA.Count == 1 && seenFastF.Count >= 1
+                && seenExactC.Count == 1 && seenExactD.Count == 1 && seenExactA.Count == 1 && seenExactF.Count >= 1
+                && seenFastC.Concat(seenFastD).Concat(seenFastF).Concat(seenFastA)
+                    .Concat(seenExactC).Concat(seenExactD).Concat(seenExactF).Concat(seenExactA)
+                    .All(seen => ReferenceEquals(seen, dcCamp)),
+                "DemandController.Plan hoists KernelSplit PhysicalDemography hooks once on c (never stripped candidate)");
+            Check(mitFastAlloc.ElderAction.PersonYears > baseFastAlloc.ElderAction.PersonYears + 1000,
+                "DemandController.Plan fast KernelSplit plumbs modifiers into PlanningBudget");
+            Check(mitExactAlloc.ElderAction.PersonYears > baseExactAlloc.ElderAction.PersonYears + 1000,
+                "DemandController.Plan exact KernelSplit plumbs modifiers into AdvanceBudget");
+            Check(Relative(mitFastAlloc.ElderAction.PersonYears, mitExactAlloc.ElderAction.PersonYears) < 1e-5,
+                "DemandController.Plan fast and exact mitigated KernelSplit agree on PersonYears");
+        }
+        finally
+        {
+            DemandController.KernelExactScoringThreadDiagnostic = prevExact;
+            PhysicalDemography.FertilityFactorOverride = prevF;
+            PhysicalDemography.CrowdingMitigationOverride = prevC;
+            PhysicalDemography.DiseaseMitigationOverride = prevD;
+            PhysicalDemography.AdditionalMortalityOverride = prevA;
+        }
+    }
+
+    private static void Phase0CampaignFingerprintDeterminism()
+    {
+        var cfg = SimulationConfig.Small(4);
+        cfg.DemographicModel = DemographicModel.PhysicalMortalityV1;
+        cfg.QoLMortalityEnabled = false;
+        cfg.SurplusFundedBirths = true;
+        cfg.ElderKernelSplit = true;
+        cfg.ElderMixedRoutes = true;
+        cfg.EconomicAllocation = EconomicAllocationStrategy.DemandControl;
+        cfg.FissionEnabled = true;
+        cfg.ImmigrationEnabled = true;
+        cfg.TradeEnabled = true;
+        var w = new WorldGenerator().Generate(1729, cfg);
+        var replay = SaveCodec.Load(SaveCodec.Save(w));
+        var resolver = new TurnResolver();
+        var policy = new HeuristicTribePolicy();
+        var builder = new AgentObservationBuilder();
+        int neolithicTurns = 0;
+        for (int turn = 0; turn < 15 && w.Camps.Count > 0; turn++)
+        {
+            if (w.Camps.Any(c => c.People.Progression.Era != Era.Paleolithic)) neolithicTurns++;
+            var orders = new Dictionary<int, List<Order>>();
+            var planningIndex = new PlanningIndex(w);
+            foreach (var camp in w.Camps.OrderBy(c => c.Player))
+            {
+                if (orders.ContainsKey(camp.Player)) continue;
+                var observed = builder.Build(w, camp.Player, planningIndex);
+                orders[camp.Player] = policy.Decide(observed, camp.Mandate).Orders;
+            }
+            resolver.Resolve(w, orders);
+            replay.Camps.Reverse();
+            replay.Hunters.Reverse();
+            replay.Herds.Reverse();
+            resolver.Resolve(replay, orders.Reverse().ToDictionary(p => p.Key, p => p.Value.AsEnumerable().Reverse().ToList()));
+            string fp = SaveCodec.Fingerprint(w);
+            string replayFp = SaveCodec.Fingerprint(replay);
+            Check(fp == replayFp, "Phase 0 multi-tribe physical campaign replay diverged at turn " + turn);
+        }
+        Check(neolithicTurns > 0, "Phase 0 multi-tribe campaign reached Neolithic turns");
+        Console.WriteLine("DEMOGRAPHY_PHASE0_CAMPAIGN_FINGERPRINT=" + SaveCodec.Fingerprint(w));
     }
 }

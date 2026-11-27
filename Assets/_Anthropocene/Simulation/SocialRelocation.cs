@@ -797,7 +797,7 @@ namespace Anthropocene.Simulation
             // nonnegative and full-nutrition fertility is the maximum birth rate.
             // This avoids an authoritative per-candidate demographic solve while
             // ensuring the service envelope can never spend unfunded food/textile.
-            double fertility = PhysicalDemography.FertilityFactor(world, state.Origin);
+            double fertility = PhysicalDemography.FertilityFactor(world, c);
             double servicePersonYears = PhysicalDemography.BirthOnlyPersonYears(c.Population,
                 cfg.BaseBirthRate * fertility, years);
             double foodNeed = servicePersonYears * PhysicalDemography.FoodPerPersonYear(cfg);
@@ -851,9 +851,9 @@ namespace Anthropocene.Simulation
             double graceRemaining = deficient
                 ? Math.Max(0, PhysicalDemography.StarvationGraceYears(cfg) - state.DeficitYears) : years;
             double firstYears = Math.Min(years, graceRemaining);
-            double crowding = PhysicalDemography.CrowdingMitigation(world, state.Origin);
-            double disease = PhysicalDemography.DiseaseMitigation(world, state.Origin);
-            double additional = PhysicalDemography.AdditionalMortality(world, state.Origin);
+            double crowding = PhysicalDemography.CrowdingMitigation(world, c);
+            double disease = PhysicalDemography.DiseaseMitigation(world, c);
+            double additional = PhysicalDemography.AdditionalMortality(world, c);
             double MinimumDeath(bool legacyStarvation)
             {
                 double best = double.PositiveInfinity;
@@ -942,17 +942,14 @@ namespace Anthropocene.Simulation
             double graceRemaining = deficient
                 ? Math.Max(0, PhysicalDemography.StarvationGraceYears(cfg) - state.DeficitYears) : years;
             double firstYears = Math.Min(years, graceRemaining);
+            double crowding = PhysicalDemography.CrowdingMitigation(world, c);
+            double disease = PhysicalDemography.DiseaseMitigation(world, c);
+            double additional = PhysicalDemography.AdditionalMortality(world, c);
             var first = PhysicalDemography.Rates(cfg, c.Population, nutrition, clothingCoverage,
-                shelter.Total, false, state.DensityPopulationOffset,
-                PhysicalDemography.CrowdingMitigation(world, state.Origin),
-                PhysicalDemography.DiseaseMitigation(world, state.Origin),
-                fertility, PhysicalDemography.AdditionalMortality(world, state.Origin));
+                shelter.Total, false, state.DensityPopulationOffset, crowding, disease, fertility, additional);
             var second = deficient && firstYears < years
                 ? PhysicalDemography.Rates(cfg, c.Population, nutrition, clothingCoverage, shelter.Total, true,
-                    state.DensityPopulationOffset,
-                    PhysicalDemography.CrowdingMitigation(world, state.Origin),
-                    PhysicalDemography.DiseaseMitigation(world, state.Origin),
-                    fertility, PhysicalDemography.AdditionalMortality(world, state.Origin))
+                    state.DensityPopulationOffset, crowding, disease, fertility, additional)
                 : first;
             double population = c.Population, personYears = 0, exposureDeaths = 0, crowdingDeaths = 0, diseaseDeaths = 0, starvationDeaths = 0;
             void Segment(double duration, DemographicRates rates)

@@ -57,6 +57,7 @@ namespace Anthropocene.Simulation
         [ThreadStatic] internal static bool ConsumptionFirstDiagnostic;
         [ThreadStatic] internal static bool ExcludeGrowthFromSurvivalDiagnostic;
         [ThreadStatic] internal static bool NoFieldDevelopmentDiagnostic;
+        [ThreadStatic] internal static bool KernelExactScoringThreadDiagnostic;
         // Diagnostic overrides of the configured Elder split (headless probes). They can only switch the split on; the
         // authoritative setting is SimulationConfig.ElderKernelSplit / ElderSplitObjective / ElderSplitLexTolerance /
         // ElderMixedRoutes. Process-wide so parallel preparation sees them. Objectives: 0 person-years, 1 QoL-weighted
@@ -1206,8 +1207,12 @@ namespace Anthropocene.Simulation
                 CraftGood durable = ShelterRoute(deficitPreferred, totalGapPeople);
                 double clothingStock = Math.Max(0, c.Inventory.Cloth - c.TradeExport(CraftGood.Cloth))
                     + Math.Max(0, c.Inventory.AnimalFabric - c.TradeExport(CraftGood.AnimalFabric));
+                double crowdingMitigation = PhysicalDemography.CrowdingMitigation(w, c);
+                double diseaseMitigation = PhysicalDemography.DiseaseMitigation(w, c);
+                double fertilityFactor = PhysicalDemography.FertilityFactor(w, c);
+                double additionalMortality = PhysicalDemography.AdditionalMortality(w, c);
                 double effective = Math.Max(0, c.Population + c.GrowthRemainder - c.DeathRemainder + (d.Consumers - c.Population));
-                double maximumYears = PhysicalDemography.BirthOnlyPersonYears(effective, cfg.BaseBirthRate, years);
+                double maximumYears = PhysicalDemography.BirthOnlyPersonYears(effective, cfg.BaseBirthRate * fertilityFactor, years);
                 RouteCost ClothingCost(CraftGood good)
                 {
                     if (!byGood.ContainsKey(good) || !Usable(byGood[good]) || !(NeolithicProduction.Priority(candidate, good) > 0)) return null;
@@ -1278,8 +1283,10 @@ namespace Anthropocene.Simulation
                 {
                     calls++;
                     var result = exact
-                        ? PhysicalDemography.AdvanceBudget(cfg, population, years, food, clothing, capacity, deficit, true)
-                        : PhysicalDemography.PlanningBudget(cfg, population, years, food, clothing, capacity, deficit, true);
+                        ? PhysicalDemography.AdvanceBudget(cfg, population, years, food, clothing, capacity, deficit, true, 0,
+                            crowdingMitigation, diseaseMitigation, fertilityFactor, additionalMortality)
+                        : PhysicalDemography.PlanningBudget(cfg, population, years, food, clothing, capacity, deficit, true, 0,
+                            crowdingMitigation, diseaseMitigation, fertilityFactor, additionalMortality);
                     System.Threading.Interlocked.Add(ref KernelServiceIterations, result.ServiceIterations);
                     return result;
                 }
@@ -1373,8 +1380,9 @@ namespace Anthropocene.Simulation
                     }
                     return (best, pool);
                 }
-                var decision = Decide(KernelExactScoringDiagnostic);
-                if (KernelVerifyDiagnostic && !KernelExactScoringDiagnostic && decision.split != null)
+                bool exactScoring = KernelExactScoringDiagnostic || KernelExactScoringThreadDiagnostic;
+                var decision = Decide(exactScoring);
+                if (KernelVerifyDiagnostic && !exactScoring && decision.split != null)
                 {
                     var exactDecision = Decide(true);
                     lock (KernelVerifyLock)

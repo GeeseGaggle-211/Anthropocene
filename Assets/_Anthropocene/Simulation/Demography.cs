@@ -69,10 +69,15 @@ namespace Anthropocene.Simulation
         public static bool Enabled(SimulationConfig config) => config.DemographicModel == DemographicModel.PhysicalMortalityV1;
 
         // Future hooks. They are explicit and inert in v1.1; no technology-name exception enters the calibrated law.
-        public static double FertilityFactor(WorldState world, Camp camp) => 1;
-        public static double CrowdingMitigation(WorldState world, Camp camp) => 1;
-        public static double DiseaseMitigation(WorldState world, Camp camp) => 1;
-        public static double AdditionalMortality(WorldState world, Camp camp) => 0;
+        [ThreadStatic] internal static Func<WorldState, Camp, double> FertilityFactorOverride;
+        [ThreadStatic] internal static Func<WorldState, Camp, double> CrowdingMitigationOverride;
+        [ThreadStatic] internal static Func<WorldState, Camp, double> DiseaseMitigationOverride;
+        [ThreadStatic] internal static Func<WorldState, Camp, double> AdditionalMortalityOverride;
+
+        public static double FertilityFactor(WorldState world, Camp camp) => FertilityFactorOverride != null ? FertilityFactorOverride(world, camp) : 1;
+        public static double CrowdingMitigation(WorldState world, Camp camp) => CrowdingMitigationOverride != null ? CrowdingMitigationOverride(world, camp) : 1;
+        public static double DiseaseMitigation(WorldState world, Camp camp) => DiseaseMitigationOverride != null ? DiseaseMitigationOverride(world, camp) : 1;
+        public static double AdditionalMortality(WorldState world, Camp camp) => AdditionalMortalityOverride != null ? AdditionalMortalityOverride(world, camp) : 0;
 
         // Read-only settlement projection used only by migration/fission diagnostics. It consumes explicit physical
         // coverage and headcount; composite QoL is intentionally not accepted by this API.
@@ -113,13 +118,15 @@ namespace Anthropocene.Simulation
             double crowdingMitigation = 1, double diseaseMitigation = 1, double fertilityFactor = 1,
             double additionalMortality = 0)
         {
+            if (config == null) throw new ArgumentNullException(nameof(config));
             if (!(density >= 0) || !Finite(density))
                 throw new DemographicNumericalException("Demographic density must be finite and nonnegative.");
+            ValidateModifiers(crowdingMitigation, diseaseMitigation, fertilityFactor, additionalMortality);
             double f = Numbers.Clamp(nutrition, 0, 1), c = Numbers.Clamp(clothingCoverage, 0, 1);
             double h = Numbers.Clamp(housingCoverage, 0, 1);
             double exposure = config.ExposureMortalityRate * Math.Max(0, 1 - config.ExposureClothingReduction * c - config.ExposureHousingReduction * h);
-            double crowding = config.CrowdingMortalityRateAt1000 * ExponentialExcess(density, config.CrowdingExponent) * crowdingMitigation;
-            double disease = config.DiseaseMortalityRateAt1000 * ExponentialExcess(density, config.DiseaseExponent) * diseaseMitigation;
+            double crowding = crowdingMitigation > 0 ? config.CrowdingMortalityRateAt1000 * ExponentialExcess(density, config.CrowdingExponent) * crowdingMitigation : 0;
+            double disease = diseaseMitigation > 0 ? config.DiseaseMortalityRateAt1000 * ExponentialExcess(density, config.DiseaseExponent) * diseaseMitigation : 0;
             double starvation = legacyStarvationActive && f < 1
                 ? -Math.Log(Math.Max(1e-15, 1 - config.Mortality * (1 - f))) / config.Neolithic.ReferenceTurnYears : 0;
             double birth = config.BaseBirthRate * f * fertilityFactor;
@@ -132,17 +139,20 @@ namespace Anthropocene.Simulation
         // legacy-starvation compatibility hazard begins only at its physical grace boundary.
         public static DemographicResult AdvanceFixed(SimulationConfig config, double population, double years,
             double nutrition, double clothingCoverage, double housingCapacity, double deficitYears = 0,
-            bool includeLegacyStarvation = true, double densityPopulationOffset = 0, double fertilityFactor = 1)
+            bool includeLegacyStarvation = true, double densityPopulationOffset = 0, double fertilityFactor = 1,
+            double crowdingMitigation = 1, double diseaseMitigation = 1, double additionalMortality = 0)
             => AdvanceFixed(config, population, years, nutrition, clothingCoverage, housingCapacity, deficitYears,
-                includeLegacyStarvation, densityPopulationOffset, fertilityFactor, false);
+                includeLegacyStarvation, densityPopulationOffset, fertilityFactor, false,
+                crowdingMitigation, diseaseMitigation, additionalMortality);
 
         // fast = true is the planning solver (PlanningBudget): bracketed Brent roots instead of bisection and reused band
         // edge rates. Same law and tolerances; results differ from the authoritative solve only within those tolerances.
         private static DemographicResult AdvanceFixed(SimulationConfig config, double population, double years,
             double nutrition, double clothingCoverage, double housingCapacity, double deficitYears,
-            bool includeLegacyStarvation, double densityPopulationOffset, double fertilityFactor, bool fast)
+            bool includeLegacyStarvation, double densityPopulationOffset, double fertilityFactor, bool fast,
+            double crowdingMitigation = 1, double diseaseMitigation = 1, double additionalMortality = 0)
         {
-            ValidateCall(config, population, years);
+            ValidateCall(config, population, years, crowdingMitigation, diseaseMitigation, fertilityFactor, additionalMortality);
             var total = new DemographicResult
             {
                 InitialPopulation = population, FinalPopulation = population,
@@ -156,13 +166,15 @@ namespace Anthropocene.Simulation
             if (unexposed > 0)
             {
                 var part = AdvanceCore(config, current, unexposed, total.Nutrition, total.ClothingCoverage,
-                    housingCapacity, false, densityPopulationOffset, fertilityFactor, fast);
+                    housingCapacity, false, densityPopulationOffset, fertilityFactor, fast,
+                    crowdingMitigation, diseaseMitigation, additionalMortality);
                 total.Add(part); current = part.FinalPopulation; remaining -= unexposed;
             }
             if (remaining > 1e-14)
             {
                 var part = AdvanceCore(config, current, remaining, total.Nutrition, total.ClothingCoverage,
-                    housingCapacity, includeLegacyStarvation && deficient, densityPopulationOffset, fertilityFactor, fast);
+                    housingCapacity, includeLegacyStarvation && deficient, densityPopulationOffset, fertilityFactor, fast,
+                    crowdingMitigation, diseaseMitigation, additionalMortality);
                 total.Add(part);
             }
             total.FinalPopulation = Math.Max(0, total.FinalPopulation);
@@ -176,10 +188,16 @@ namespace Anthropocene.Simulation
         // person-years that births and deaths create; it never invokes production, trade, ecology or a planner.
         public static DemographicResult AdvanceBudget(SimulationConfig config, double population, double years,
             double foodBudget, double clothingBudget, double housingCapacity, double deficitYears = 0,
-            bool includeLegacyStarvation = true, double densityPopulationOffset = 0)
+            bool includeLegacyStarvation = true, double densityPopulationOffset = 0,
+            double crowdingMitigation = 1, double diseaseMitigation = 1, double fertilityFactor = 1,
+            double additionalMortality = 0)
             => SurplusFunded(config)
-                ? SurplusBudget(config, population, years, foodBudget, clothingBudget, housingCapacity, deficitYears, includeLegacyStarvation, densityPopulationOffset, out _)
-                : AdvanceBudgetCore(config, population, years, foodBudget, clothingBudget, housingCapacity, deficitYears, includeLegacyStarvation, densityPopulationOffset, 1);
+                ? SurplusBudget(config, population, years, foodBudget, clothingBudget, housingCapacity, deficitYears,
+                    includeLegacyStarvation, densityPopulationOffset, out _, false,
+                    crowdingMitigation, diseaseMitigation, fertilityFactor, additionalMortality)
+                : AdvanceBudgetCore(config, population, years, foodBudget, clothingBudget, housingCapacity, deficitYears,
+                    includeLegacyStarvation, densityPopulationOffset, fertilityFactor, false,
+                    crowdingMitigation, diseaseMitigation, additionalMortality);
 
         // Planning evaluation of AdvanceBudget (the Elder's candidate scoring; never resolution). The same law and
         // tolerances, solved with bracketed Brent steps: the person-year closure is bracketed by one fixed-point step from
@@ -189,21 +207,29 @@ namespace Anthropocene.Simulation
         // DemographicServiceTolerance / DemographicRootTolerance (Docs/ClothingCoverageAndSurplusBirths.md §7).
         internal static DemographicResult PlanningBudget(SimulationConfig config, double population, double years,
             double foodBudget, double clothingBudget, double housingCapacity, double deficitYears = 0,
-            bool includeLegacyStarvation = true, double densityPopulationOffset = 0)
+            bool includeLegacyStarvation = true, double densityPopulationOffset = 0,
+            double crowdingMitigation = 1, double diseaseMitigation = 1, double fertilityFactor = 1,
+            double additionalMortality = 0)
             => SurplusFunded(config)
-                ? SurplusBudget(config, population, years, foodBudget, clothingBudget, housingCapacity, deficitYears, includeLegacyStarvation, densityPopulationOffset, out _, true)
-                : AdvanceBudgetCore(config, population, years, foodBudget, clothingBudget, housingCapacity, deficitYears, includeLegacyStarvation, densityPopulationOffset, 1, true);
+                ? SurplusBudget(config, population, years, foodBudget, clothingBudget, housingCapacity, deficitYears,
+                    includeLegacyStarvation, densityPopulationOffset, out _, true,
+                    crowdingMitigation, diseaseMitigation, fertilityFactor, additionalMortality)
+                : AdvanceBudgetCore(config, population, years, foodBudget, clothingBudget, housingCapacity, deficitYears,
+                    includeLegacyStarvation, densityPopulationOffset, fertilityFactor, true,
+                    crowdingMitigation, diseaseMitigation, additionalMortality);
 
         private static DemographicResult AdvanceBudgetCore(SimulationConfig config, double population, double years,
             double foodBudget, double clothingBudget, double housingCapacity, double deficitYears,
-            bool includeLegacyStarvation, double densityPopulationOffset, double fertilityFactor, bool fast = false)
+            bool includeLegacyStarvation, double densityPopulationOffset, double fertilityFactor, bool fast = false,
+            double crowdingMitigation = 1, double diseaseMitigation = 1, double additionalMortality = 0)
         {
-            ValidateCall(config, population, years);
+            ValidateCall(config, population, years, crowdingMitigation, diseaseMitigation, fertilityFactor, additionalMortality);
             foodBudget = Math.Max(0, foodBudget); clothingBudget = Math.Max(0, clothingBudget);
             if (years == 0 || population <= 0)
                 return new DemographicResult { InitialPopulation = population, FinalPopulation = population, Nutrition = 1, ClothingCoverage = 1 };
             double foodRate = FoodPerPersonYear(config), clothingRate = ClothingPerPersonYear(config);
-            double maximumPersonYears = BirthOnlyPersonYears(population, config.BaseBirthRate, years);
+            double upperBirthRate = fertilityFactor > 1 ? config.BaseBirthRate * fertilityFactor : config.BaseBirthRate;
+            double maximumPersonYears = BirthOnlyPersonYears(population, upperBirthRate, years);
             // Funding is physical stock, so an absolute epsilon must not turn a microscopic zero budget into
             // free full service. Exact equality is sufficient for the birth-only upper envelope shortcut.
             bool fullFood = foodBudget >= foodRate * maximumPersonYears;
@@ -215,7 +241,8 @@ namespace Anthropocene.Simulation
                 double food = fullFood ? 1 : Numbers.Clamp(foodBudget / (foodRate * denominator), 0, 1);
                 double clothing = fullClothing ? 1 : Numbers.Clamp(clothingBudget / (clothingRate * denominator), 0, 1);
                 var value = AdvanceFixed(config, population, years, food, clothing, housingCapacity,
-                    deficitYears, includeLegacyStarvation, densityPopulationOffset, fertilityFactor, fast);
+                    deficitYears, includeLegacyStarvation, densityPopulationOffset, fertilityFactor, fast,
+                    crowdingMitigation, diseaseMitigation, additionalMortality);
                 evaluations++;
                 allRoot += value.RootEvaluations; allBands += value.BandsCrossed; allHazards += value.HazardEvaluations; allQuadrature += value.QuadratureEvaluations;
                 return value;
@@ -254,24 +281,30 @@ namespace Anthropocene.Simulation
         // largest birth fraction whose newborn person-years the remaining food still feeds in full. When food cannot
         // feed even a birthless cohort, g = 0 and the ordinary nutrition closure and hunger hazards apply.
         internal static volatile bool SurplusFundedBirthsDiagnostic;
-        internal static bool SurplusFunded(SimulationConfig config) => SurplusFundedBirthsDiagnostic || config.SurplusFundedBirths;
+        internal static bool SurplusFunded(SimulationConfig config) => SurplusFundedBirthsDiagnostic || (config != null && config.SurplusFundedBirths);
         internal static long SurplusCalls, SurplusFullCalls, SurplusShortageCalls, SurplusBoundCalls;
         internal static DemographicResult SurplusBudget(SimulationConfig config, double population, double years,
             double foodBudget, double clothingBudget, double housingCapacity, double deficitYears,
-            bool includeLegacyStarvation, double densityPopulationOffset, out double fertility, bool fast = false)
+            bool includeLegacyStarvation, double densityPopulationOffset, out double fertility, bool fast = false,
+            double crowdingMitigation = 1, double diseaseMitigation = 1, double fertilityFactor = 1,
+            double additionalMortality = 0)
         {
+            ValidateCall(config, population, years, crowdingMitigation, diseaseMitigation, fertilityFactor, additionalMortality);
             System.Threading.Interlocked.Increment(ref SurplusCalls);
             if (fast && years > 0 && population > 0 && foodBudget > 0)
                 return FastSurplus(config, population, years, foodBudget, clothingBudget, housingCapacity, deficitYears,
-                    includeLegacyStarvation, densityPopulationOffset, out fertility);
+                    includeLegacyStarvation, densityPopulationOffset, out fertility,
+                    crowdingMitigation, diseaseMitigation, fertilityFactor, additionalMortality);
             fertility = 1;
             var full = AdvanceBudgetCore(config, population, years, foodBudget, clothingBudget, housingCapacity,
-                deficitYears, includeLegacyStarvation, densityPopulationOffset, 1, fast);
+                deficitYears, includeLegacyStarvation, densityPopulationOffset, fertilityFactor, fast,
+                crowdingMitigation, diseaseMitigation, additionalMortality);
             if (years == 0 || population <= 0 || full.Nutrition >= 1 - 1e-12)
             { System.Threading.Interlocked.Increment(ref SurplusFullCalls); return full; }
             fertility = 0;
             var none = AdvanceBudgetCore(config, population, years, foodBudget, clothingBudget, housingCapacity,
-                deficitYears, includeLegacyStarvation, densityPopulationOffset, 0, fast);
+                deficitYears, includeLegacyStarvation, densityPopulationOffset, 0, fast,
+                crowdingMitigation, diseaseMitigation, additionalMortality);
             if (none.Nutrition < 1 - 1e-12)
             { System.Threading.Interlocked.Increment(ref SurplusShortageCalls); return none; }
             System.Threading.Interlocked.Increment(ref SurplusBoundCalls);
@@ -285,14 +318,16 @@ namespace Anthropocene.Simulation
             {
                 double mid = (lo + hi) * .5;
                 var trial = AdvanceFixed(config, population, years, 1, c, housingCapacity, deficitYears,
-                    includeLegacyStarvation, densityPopulationOffset, mid);
+                    includeLegacyStarvation, densityPopulationOffset, fertilityFactor * mid, false,
+                    crowdingMitigation, diseaseMitigation, additionalMortality);
                 evaluations++;
                 if (trial.PersonYears > target) hi = mid; else lo = mid;
                 if (hi - lo <= 1e-12 || Math.Abs(trial.PersonYears - target) <= config.DemographicServiceTolerance * Math.Max(1, target)) break;
             }
             fertility = lo;
             var result = AdvanceFixed(config, population, years, 1, c, housingCapacity, deficitYears,
-                includeLegacyStarvation, densityPopulationOffset, lo);
+                includeLegacyStarvation, densityPopulationOffset, fertilityFactor * lo, false,
+                crowdingMitigation, diseaseMitigation, additionalMortality);
             result.FoodConsumed = Math.Min(Math.Max(0, foodBudget), foodRate * result.PersonYears);
             result.ClothingConsumed = Math.Min(Math.Max(0, clothingBudget), clothingRate * result.PersonYears);
             result.Nutrition = result.PersonYears > 0 ? Numbers.Clamp(result.FoodConsumed / (foodRate * result.PersonYears), 0, 1) : 1;
@@ -308,7 +343,9 @@ namespace Anthropocene.Simulation
         // closures, and in the bound case they already bracket g.
         private static DemographicResult FastSurplus(SimulationConfig config, double population, double years,
             double foodBudget, double clothingBudget, double housingCapacity, double deficitYears,
-            bool includeLegacyStarvation, double densityPopulationOffset, out double fertility)
+            bool includeLegacyStarvation, double densityPopulationOffset, out double fertility,
+            double crowdingMitigation = 1, double diseaseMitigation = 1, double fertilityFactor = 1,
+            double additionalMortality = 0)
         {
             double foodRate = FoodPerPersonYear(config), clothingRate = ClothingPerPersonYear(config);
             double target = foodBudget / foodRate;
@@ -319,7 +356,8 @@ namespace Anthropocene.Simulation
             {
                 evaluations++;
                 return AdvanceFixed(config, population, years, 1, double.IsNaN(clothing) ? c : clothing, housingCapacity, deficitYears,
-                    includeLegacyStarvation, densityPopulationOffset, g, true);
+                    includeLegacyStarvation, densityPopulationOffset, fertilityFactor * g, true,
+                    crowdingMitigation, diseaseMitigation, additionalMortality);
             }
             var one = At(1);
             double f1 = one.PersonYears - target;
@@ -337,7 +375,8 @@ namespace Anthropocene.Simulation
                     return clothed;
                 }
                 var full = AdvanceBudgetCore(config, population, years, foodBudget, clothingBudget, housingCapacity,
-                    deficitYears, includeLegacyStarvation, densityPopulationOffset, 1, true);
+                    deficitYears, includeLegacyStarvation, densityPopulationOffset, fertilityFactor, true,
+                    crowdingMitigation, diseaseMitigation, additionalMortality);
                 full.ServiceIterations += evaluations;
                 return full;
             }
@@ -348,7 +387,8 @@ namespace Anthropocene.Simulation
                 System.Threading.Interlocked.Increment(ref SurplusShortageCalls);
                 fertility = 0;
                 var none = AdvanceBudgetCore(config, population, years, foodBudget, clothingBudget, housingCapacity,
-                    deficitYears, includeLegacyStarvation, densityPopulationOffset, 0, true);
+                    deficitYears, includeLegacyStarvation, densityPopulationOffset, 0, true,
+                    crowdingMitigation, diseaseMitigation, additionalMortality);
                 none.ServiceIterations += evaluations;
                 return none;
             }
@@ -440,11 +480,13 @@ namespace Anthropocene.Simulation
 
         private static DemographicResult AdvanceCore(SimulationConfig config, double population, double years,
             double nutrition, double clothing, double housingCapacity, bool starvationActive, double densityOffset,
-            double fertilityFactor = 1, bool fast = false)
+            double fertilityFactor = 1, bool fast = false,
+            double crowdingMitigation = 1, double diseaseMitigation = 1, double additionalMortality = 0)
         {
             var result = new DemographicResult { InitialPopulation = population, FinalPopulation = population, Nutrition = nutrition, ClothingCoverage = clothing };
             if (years <= 0 || population <= 0) return result;
-            Func<double, DemographicRates> ratesAtPopulation = n => Rates(config, n, nutrition, clothing, housingCapacity, starvationActive, densityOffset, fertilityFactor: fertilityFactor);
+            Func<double, DemographicRates> ratesAtPopulation = n => Rates(config, n, nutrition, clothing, housingCapacity,
+                starvationActive, densityOffset, crowdingMitigation, diseaseMitigation, fertilityFactor, additionalMortality);
             int rootEvaluations = 0;
             double RateAtLog(double x)
             {
@@ -456,21 +498,22 @@ namespace Anthropocene.Simulation
                 return fast ? FastNet(n) : ratesAtPopulation(n).Net;
             }
             // Planning solver: Rates(...).Net for n > 0 with the per-interval constants hoisted. The same operations in
-            // the same order (mitigations are 1 and additional mortality 0 on this path), so the value is identical.
+            // the same order as RatesAtDensityCoverage, so the value is bit-identical.
             double fastF = Numbers.Clamp(nutrition, 0, 1), fastC = Numbers.Clamp(clothing, 0, 1);
             double fastBirth = config.BaseBirthRate * fastF * fertilityFactor;
             double fastStarvation = starvationActive && fastF < 1
                 ? -Math.Log(Math.Max(1e-15, 1 - config.Mortality * (1 - fastF))) / config.Neolithic.ReferenceTurnYears : 0;
             double fastCapacity = Math.Max(0, housingCapacity);
+            double fastAdditional = Math.Max(0, additionalMortality);
             double FastNet(double n)
             {
                 double h = Numbers.Clamp(Math.Min(1, fastCapacity / n), 0, 1), density = n + densityOffset;
                 double exposure = config.ExposureMortalityRate * Math.Max(0, 1 - config.ExposureClothingReduction * fastC - config.ExposureHousingReduction * h);
-                double crowding = config.CrowdingMortalityRateAt1000 * ExponentialExcess(density, config.CrowdingExponent) * 1.0;
-                double disease = config.DiseaseMortalityRateAt1000 * ExponentialExcess(density, config.DiseaseExponent) * 1.0;
-                if (!Finite(fastBirth) || !Finite(exposure) || !Finite(crowding) || !Finite(disease) || !Finite(fastStarvation))
+                double crowding = crowdingMitigation > 0 ? config.CrowdingMortalityRateAt1000 * ExponentialExcess(density, config.CrowdingExponent) * crowdingMitigation : 0;
+                double disease = diseaseMitigation > 0 ? config.DiseaseMortalityRateAt1000 * ExponentialExcess(density, config.DiseaseExponent) * diseaseMitigation : 0;
+                if (!Finite(fastBirth) || !Finite(exposure) || !Finite(crowding) || !Finite(disease) || !Finite(fastStarvation) || !Finite(additionalMortality))
                     throw new DemographicNumericalException("A physical demographic hazard overflowed; no mortality ceiling was applied.");
-                return fastBirth - (exposure + crowding + disease + fastStarvation + 0.0);
+                return fastBirth - (exposure + crowding + disease + fastStarvation + fastAdditional);
             }
             // Planning solver: consecutive bands share edges (a crossed edge is the next band's start and, without a
             // new knot, its near edge), so the same log-population is asked for repeatedly. Reuse is exact.
@@ -486,57 +529,65 @@ namespace Anthropocene.Simulation
             }
 
             double equilibrium = 0, rootX = double.NaN;
+            bool hasDensityLimit = crowdingMitigation > 0 || diseaseMitigation > 0;
             double lowLimit = ratesAtPopulation(0).Net; rootEvaluations++;
             if (lowLimit > 0)
             {
-                double lo = LogSmallestPositivePopulation, hi = Math.Log(Math.Max(1, population));
-                double rhi = RateAtLog(hi);
-                int bracket = 0;
-                while (rhi > 0 && bracket++ < config.DemographicMaxRootIterations)
+                bool hasEquilibrium = hasDensityLimit
+                    || (Finite(housingCapacity) && RatesAtDensityCoverage(config, 0, nutrition, clothing, 0, starvationActive,
+                        0, 0, fertilityFactor, additionalMortality).Net < 0);
+                if (hasEquilibrium)
                 {
-                    hi += Math.Log(2);
-                    rhi = RateAtLog(hi);
-                }
-                if (rhi <= 0 && fast)
-                {
-                    // Planning solver: walk down by halving the population to a positive rate (the bracket loop above
-                    // usually leaves it one step away), then Brent in log-population.
-                    double a = hi - Math.Log(2), ra = a > LogSmallestPositivePopulation ? RateAtLog(a) : lowLimit;
-                    while (ra <= 0 && a > LogSmallestPositivePopulation)
+                    double lo = LogSmallestPositivePopulation;
+                    double hi = Math.Log(Math.Max(1, hasDensityLimit ? population : Math.Max(population, housingCapacity)));
+                    double rhi = RateAtLog(hi);
+                    int bracket = 0;
+                    while (rhi > 0 && bracket++ < config.DemographicMaxRootIterations)
                     {
-                        hi = a; rhi = ra; a -= Math.Log(2);
-                        ra = a > LogSmallestPositivePopulation ? RateAtLog(a) : lowLimit;
+                        hi += Math.Log(2);
+                        rhi = RateAtLog(hi);
                     }
-                    a = Math.Max(a, LogSmallestPositivePopulation);
-                    if (Math.Abs(rhi) <= config.DemographicRootTolerance) rootX = hi;
-                    else
+                    if (rhi <= 0 && fast)
                     {
-                        if (!Brent<object>(a, ra, null, hi, rhi, null, z => (RateAtLog(z), null),
-                            _ => config.DemographicRootTolerance, 1e-13, config.DemographicMaxRootIterations, out double z0, out _))
-                            throw new DemographicNumericalException("Positive demographic equilibrium solve did not converge.");
-                        rootX = z0;
-                    }
-                    equilibrium = Math.Exp(rootX);
-                    result.HasPositiveEquilibrium = true; result.EquilibriumPopulation = equilibrium;
-                }
-                else if (rhi <= 0)
-                {
-                    bool converged = false;
-                    for (int i = 0; i < config.DemographicMaxRootIterations; i++)
-                    {
-                        double mid = (lo + hi) * .5, rm = RateAtLog(mid);
-                        if (Math.Abs(rm) <= config.DemographicRootTolerance || hi - lo <= 1e-13)
+                        // Planning solver: walk down by halving the population to a positive rate (the bracket loop above
+                        // usually leaves it one step away), then Brent in log-population.
+                        double a = hi - Math.Log(2), ra = a > LogSmallestPositivePopulation ? RateAtLog(a) : lowLimit;
+                        while (ra <= 0 && a > LogSmallestPositivePopulation)
                         {
-                            lo = hi = mid; converged = true; break;
+                            hi = a; rhi = ra; a -= Math.Log(2);
+                            ra = a > LogSmallestPositivePopulation ? RateAtLog(a) : lowLimit;
                         }
-                        if (rm > 0) lo = mid; else hi = mid;
+                        a = Math.Max(a, LogSmallestPositivePopulation);
+                        if (Math.Abs(rhi) <= config.DemographicRootTolerance) rootX = hi;
+                        else
+                        {
+                            if (!Brent<object>(a, ra, null, hi, rhi, null, z => (RateAtLog(z), null),
+                                _ => config.DemographicRootTolerance, 1e-13, config.DemographicMaxRootIterations, out double z0, out _))
+                                throw new DemographicNumericalException("Positive demographic equilibrium solve did not converge.");
+                            rootX = z0;
+                        }
+                        equilibrium = Math.Exp(rootX);
+                        result.HasPositiveEquilibrium = true; result.EquilibriumPopulation = equilibrium;
                     }
-                    if (!converged)
-                        throw new DemographicNumericalException("Positive demographic equilibrium solve did not converge.");
-                    rootX = (lo + hi) * .5; equilibrium = Math.Exp(rootX);
-                    result.HasPositiveEquilibrium = true; result.EquilibriumPopulation = equilibrium;
+                    else if (rhi <= 0)
+                    {
+                        bool converged = false;
+                        for (int i = 0; i < config.DemographicMaxRootIterations; i++)
+                        {
+                            double mid = (lo + hi) * .5, rm = RateAtLog(mid);
+                            if (Math.Abs(rm) <= config.DemographicRootTolerance || hi - lo <= 1e-13)
+                            {
+                                lo = hi = mid; converged = true; break;
+                            }
+                            if (rm > 0) lo = mid; else hi = mid;
+                        }
+                        if (!converged)
+                            throw new DemographicNumericalException("Positive demographic equilibrium solve did not converge.");
+                        rootX = (lo + hi) * .5; equilibrium = Math.Exp(rootX);
+                        result.HasPositiveEquilibrium = true; result.EquilibriumPopulation = equilibrium;
+                    }
+                    else throw new DemographicNumericalException("Unable to bracket the positive demographic equilibrium.");
                 }
-                else throw new DemographicNumericalException("Unable to bracket the positive demographic equilibrium.");
             }
             else result.DeclineToExtinction = true;
 
@@ -696,13 +747,26 @@ namespace Anthropocene.Simulation
             return sum;
         }
 
-        private static void ValidateCall(SimulationConfig config, double population, double years)
+        private static void ValidateCall(SimulationConfig config, double population, double years,
+            double crowdingMitigation = 1, double diseaseMitigation = 1,
+            double fertilityFactor = 1, double additionalMortality = 0)
         {
             if (config == null) throw new ArgumentNullException(nameof(config));
             if (!Finite(population) || !Finite(years) || population < 0 || years < 0)
                 throw new ArgumentException("Demographic population and duration must be finite and nonnegative.");
             if (config.DemographicLogBandWidth <= 0 || config.DemographicMaxBands <= 0)
                 throw new ArgumentException("Invalid demographic numerical configuration.");
+            ValidateModifiers(crowdingMitigation, diseaseMitigation, fertilityFactor, additionalMortality);
+        }
+
+        private static void ValidateModifiers(double crowdingMitigation, double diseaseMitigation,
+            double fertilityFactor, double additionalMortality)
+        {
+            if (!Finite(crowdingMitigation) || crowdingMitigation < 0
+                || !Finite(diseaseMitigation) || diseaseMitigation < 0
+                || !Finite(fertilityFactor) || fertilityFactor < 0
+                || !Finite(additionalMortality) || additionalMortality < 0)
+                throw new ArgumentException("Demographic mitigations, fertility factor and additional mortality must be finite and nonnegative.");
         }
 
         private static bool Finite(double value) => !double.IsNaN(value) && !double.IsInfinity(value);

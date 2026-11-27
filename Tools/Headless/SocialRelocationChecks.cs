@@ -88,7 +88,7 @@ internal static class SocialRelocationChecks
         SharedDensity(); FiniteMaterialEnvelope(); DaughterFoodEnvelope(); DaughterCapacityOrder();
         HerdCapacitySplit(); OpportunityLaborClosure(); NeutralParity();
         NonmonotoneSizing(); ReservationRevalidation(); PendingBaselineRevalidation();
-        WorkforceAccounting(); PersistenceSurface();
+        WorkforceAccounting(); PersistenceSurface(); CounterfactualViewMitigationAndBounds();
         Console.WriteLine("PASS: " + checks + " social relocation assertions"); return checks;
     }
 
@@ -556,5 +556,233 @@ internal static class SocialRelocationChecks
         Check(back.Config.DemographicModel == DemographicModel.PhysicalMortalityV1
             && back.Camps.Select(c => c.Population).SequenceEqual(w.Camps.Select(c => c.Population)),
             "ordinary physical worlds round-trip without a social schema migration");
+    }
+
+    private static void CounterfactualViewMitigationAndBounds()
+    {
+        var prevF = PhysicalDemography.FertilityFactorOverride;
+        var prevC = PhysicalDemography.CrowdingMitigationOverride;
+        var prevD = PhysicalDemography.DiseaseMitigationOverride;
+        var prevA = PhysicalDemography.AdditionalMortalityOverride;
+        try
+        {
+            // 1. Daughter view isolation (no hooks required)
+            var wIso = World(1);
+            var parent = wIso.Camps[0];
+            parent.Population = 1000;
+            parent.IsVillage = true;
+            parent.Inventory.HousingUnits = 50;
+            parent.Workforce.Normalize(1000);
+            var isoCache = new SocialRelocationForecastCache(wIso, wIso.Camps);
+            int daughterTile = wIso.Map.Neighbors(parent.Tile).First();
+            var daughterState = isoCache.Daughter(parent, 200, daughterTile, new CampInventory(), new PopulationLedger(),
+                1000, 0, 0, new SocialNewSiteCapacity(10000, 0));
+            Check(!ReferenceEquals(daughterState.View, daughterState.Origin), "daughter view is distinct from parent origin");
+            Check(daughterState.View.Id == -1 - parent.Id && daughterState.View.Id < 0, "daughter view uses negative transient id");
+            Check(!daughterState.View.IsVillage && daughterState.View.Inventory.HousingUnits == 0 && daughterState.View.Population == 200,
+                "daughter view clears village flag and fixed housing units");
+            Check(parent.Population == 1000 && parent.IsVillage && parent.Inventory.HousingUnits == 50,
+                "creating a daughter view does not mutate parent origin");
+
+            // 2. Argument-identity & analytical rate verification across Daughter, Existing, Existing+Opportunity, and Starvation-crossing
+            var w = World(1);
+            var origin = w.Camps[0];
+            origin.Population = 600;
+            origin.IsVillage = true;
+            origin.PlantFood = 1e6;
+            origin.Inventory.Cloth = 1e5;
+            origin.Inventory.LightHousingUnits = 1e9;
+            origin.Workforce.Normalize(600);
+            var cache = new SocialRelocationForecastCache(w, w.Camps);
+            // Warm ExistingCapacity(origin) once so its lazy CampProductionDemand.BuildPhysical -> PlanningFoodDemand
+            // diagnostic call (whose d.Biological result is discarded by Build) does not confound the counterfactual hook spy.
+            // Cold-cache invariance to origin modifiers is independently verified in section 3 below.
+            cache.Baseline(origin);
+            var policy = new SocialRelocationPolicy(.05, 0, .05, .05, welfareWeight: 1.0, mortalityWeight: 1.0, jobWeight: 0.2);
+
+            var existingFed = SocialRelocationForecastCache.Existing(origin, 450, 1e6, 0, 0, origin.Workforce,
+                new CampInventory { Cloth = 1e5, LightHousingUnits = 1e9 }, deficitYears: 0);
+            var daughterFed = cache.Daughter(origin, 200, w.Map.Neighbors(origin.Tile).First(),
+                new CampInventory { Cloth = 1e5, LightHousingUnits = 1e9 }, new PopulationLedger(),
+                1e6, 0, 0, new SocialNewSiteCapacity(1e6, 0));
+            var oppProvider = new RecordsProvider(_ => new[] { new EmploymentOpportunityRecord(
+                WorkforceRoles.Gatherer, 5, 5, 5, 5, 5, foodPerWorker: 2, preferencePerWorker: 0.1) });
+            var oppMatch = EmploymentOpportunityMatcher.Match(oppProvider,
+                new EmploymentOpportunityRequest(origin.Id, origin.Id, 5, SocialRelocationDestination.ExistingSettlement,
+                    new Dictionary<string, int> { [WorkforceRoles.Gatherer] = 5 }));
+            Check(oppMatch.Matched == 5 && oppMatch.Reservations.Count > 0, "opportunity fixture reserves workers into cloned view");
+
+            double grace = PhysicalDemography.StarvationGraceYears(w.Config);
+            var existingStarving = SocialRelocationForecastCache.Existing(origin, 450, 100, 0, 0, origin.Workforce,
+                new CampInventory { Cloth = 1e5, LightHousingUnits = 1e9 }, deficitYears: grace - 5);
+
+            var variants = new (string Label, SocialSettlementState State, EmploymentOpportunityMatch Opp, bool ExpectStarving)[]
+            {
+                ("Daughter", daughterFed, null, false),
+                ("Existing", existingFed, null, false),
+                ("Existing+Opportunity", existingFed, oppMatch, false),
+                ("Existing+StarvationCrossing", existingStarving, null, true)
+            };
+
+            var modifierPairs = new (double OMc, double OMd, double OF, double OA, double VMc, double VMd, double VF, double VA)[]
+            {
+                (0.05, 0.15, 1.6, 0.05, 0.35, 0.45, 0.8, 0.012),
+                (0.75, 0.85, 0.5, 0.002, 0.12, 0.22, 1.35, 0.028)
+            };
+
+            foreach (var mp in modifierPairs)
+            foreach (var v in variants)
+            {
+                var seenF = new List<Camp>();
+                var seenC = new List<Camp>();
+                var seenD = new List<Camp>();
+                var seenA = new List<Camp>();
+                PhysicalDemography.FertilityFactorOverride = (_, c) => { seenF.Add(c); return ReferenceEquals(c, v.State.Origin) ? mp.OF : mp.VF; };
+                PhysicalDemography.CrowdingMitigationOverride = (_, c) => { seenC.Add(c); return ReferenceEquals(c, v.State.Origin) ? mp.OMc : mp.VMc; };
+                PhysicalDemography.DiseaseMitigationOverride = (_, c) => { seenD.Add(c); return ReferenceEquals(c, v.State.Origin) ? mp.OMd : mp.VMd; };
+                PhysicalDemography.AdditionalMortalityOverride = (_, c) => { seenA.Add(c); return ReferenceEquals(c, v.State.Origin) ? mp.OA : mp.VA; };
+
+                var fc = cache.Forecast(v.State, v.Opp);
+                Check(seenF.Count > 0 && seenC.Count > 0 && seenD.Count > 0 && seenA.Count > 0,
+                    v.Label + " Forecast called all 4 PhysicalDemography hooks");
+                Check(seenF.Concat(seenC).Concat(seenD).Concat(seenA).All(c =>
+                    !ReferenceEquals(c, v.State.Origin) && c.Population == v.State.View.Population && c.Id == v.State.View.Id),
+                    v.Label + " Forecast never passed state.Origin to PhysicalDemography hooks");
+                if (v.Opp != null)
+                    Check(seenF.Concat(seenC).Concat(seenD).Concat(seenA).All(c =>
+                        !ReferenceEquals(c, v.State.View) && c.Workforce.Assignments.Any(a => a.Role == "__SocialOpportunity")),
+                        v.Label + " Forecast evaluated hooks on post-reservation f.Camp");
+
+                double years = w.Config.TurnDays / w.Config.DaysPerYear;
+                double expectedPy = PhysicalDemography.BirthOnlyPersonYears(v.State.View.Population, w.Config.BaseBirthRate * mp.VF, years);
+                double expectedFoodNeed = expectedPy * PhysicalDemography.FoodPerPersonYear(w.Config);
+                Near(fc.FoodNeed, expectedFoodNeed, v.Label + " FoodNeed uses counterfactual fertility factor");
+
+                double firstYears = v.ExpectStarving ? Math.Min(years, Math.Max(0, grace - v.State.DeficitYears)) : years;
+                var r1 = PhysicalDemography.Rates(w.Config, v.State.View.Population, fc.Nutrition, fc.ClothingCoverage,
+                    fc.ShelterCapacity, false, v.State.DensityPopulationOffset, mp.VMc, mp.VMd, mp.VF, mp.VA);
+                var r2 = v.ExpectStarving && firstYears < years
+                    ? PhysicalDemography.Rates(w.Config, v.State.View.Population, fc.Nutrition, fc.ClothingCoverage,
+                        fc.ShelterCapacity, true, v.State.DensityPopulationOffset, mp.VMc, mp.VMd, mp.VF, mp.VA)
+                    : r1;
+                if (v.ExpectStarving)
+                    Check(fc.Nutrition < 1 - 1e-12 && firstYears < years && fc.StarvationRate > 0,
+                        v.Label + " exercised starvation-crossing second segment");
+                double expectedBirth = (r1.Birth * firstYears + r2.Birth * (years - firstYears)) / years;
+                double expectedCrowding = (r1.Crowding * firstYears + r2.Crowding * (years - firstYears)) / years;
+                double expectedDisease = (r1.Disease * firstYears + r2.Disease * (years - firstYears)) / years;
+                double expectedDeath = (r1.Death * firstYears + r2.Death * (years - firstYears)) / years;
+                Near(fc.BirthRate, expectedBirth, v.Label + " BirthRate uses counterfactual modifiers");
+                Near(fc.CrowdingRate, expectedCrowding, v.Label + " CrowdingRate uses counterfactual modifiers");
+                Near(fc.DiseaseRate, expectedDisease, v.Label + " DiseaseRate uses counterfactual modifiers");
+                Near(fc.MortalityRate, expectedDeath, v.Label + " MortalityRate uses counterfactual modifiers");
+
+                seenF.Clear(); seenC.Clear(); seenD.Clear(); seenA.Clear();
+                double jobPref = v.Opp?.Preference ?? 0;
+                double bound = cache.UtilityUpperBound(v.State, v.Opp, policy, jobPref);
+                Check(seenF.Count > 0 && seenC.Count > 0 && seenD.Count > 0 && seenA.Count > 0,
+                    v.Label + " UtilityUpperBound called all 4 PhysicalDemography hooks");
+                Check(seenF.Concat(seenC).Concat(seenD).Concat(seenA).All(c =>
+                    !ReferenceEquals(c, v.State.Origin) && c.Population == v.State.View.Population && c.Id == v.State.View.Id),
+                    v.Label + " UtilityUpperBound never passed state.Origin to PhysicalDemography hooks");
+                if (v.Opp != null)
+                    Check(seenF.Concat(seenC).Concat(seenD).Concat(seenA).All(c =>
+                        !ReferenceEquals(c, v.State.View) && c.Workforce.Assignments.Any(a => a.Role == "__SocialOpportunity")),
+                        v.Label + " UtilityUpperBound evaluated hooks on post-reservation f.Camp");
+                double exactUtility = policy.WelfareWeight * fc.QoL - policy.MortalityWeight * fc.MortalityRisk + policy.JobWeight * jobPref;
+                Check(bound >= exactUtility - 1e-12,
+                    v.Label + " UtilityUpperBound (" + bound + ") >= exactUtility (" + exactUtility + ")");
+            }
+
+            // 3. Bit-exact origin-modifier invariance (cold cache proves discarded BuildPhysical call cannot affect results)
+            SocialServiceForecast RunInvariance(SocialSettlementState st, double omc, double omd, double of, double oa, out double bound)
+            {
+                var coldCache = new SocialRelocationForecastCache(w, w.Camps);
+                PhysicalDemography.FertilityFactorOverride = (_, c) => ReferenceEquals(c, st.Origin) ? of : 0.9;
+                PhysicalDemography.CrowdingMitigationOverride = (_, c) => ReferenceEquals(c, st.Origin) ? omc : 0.25;
+                PhysicalDemography.DiseaseMitigationOverride = (_, c) => ReferenceEquals(c, st.Origin) ? omd : 0.4;
+                PhysicalDemography.AdditionalMortalityOverride = (_, c) => ReferenceEquals(c, st.Origin) ? oa : 0.005;
+                bound = coldCache.UtilityUpperBound(st, null, policy, 0);
+                return coldCache.Forecast(st);
+            }
+            foreach (var st in new[] { existingFed, daughterFed, existingStarving })
+            {
+                var a = RunInvariance(st, 1.0, 1.0, 1.0, 0.0, out double ba);
+                var b = RunInvariance(st, 0.05, 0.15, 1.8, 0.08, out double bb);
+                Check(BitConverter.DoubleToInt64Bits(a.FoodNeed) == BitConverter.DoubleToInt64Bits(b.FoodNeed)
+                    && BitConverter.DoubleToInt64Bits(a.BirthRate) == BitConverter.DoubleToInt64Bits(b.BirthRate)
+                    && BitConverter.DoubleToInt64Bits(a.CrowdingRate) == BitConverter.DoubleToInt64Bits(b.CrowdingRate)
+                    && BitConverter.DoubleToInt64Bits(a.DiseaseRate) == BitConverter.DoubleToInt64Bits(b.DiseaseRate)
+                    && BitConverter.DoubleToInt64Bits(a.MortalityRate) == BitConverter.DoubleToInt64Bits(b.MortalityRate)
+                    && BitConverter.DoubleToInt64Bits(a.MortalityRisk) == BitConverter.DoubleToInt64Bits(b.MortalityRisk)
+                    && BitConverter.DoubleToInt64Bits(a.QoL) == BitConverter.DoubleToInt64Bits(b.QoL)
+                    && BitConverter.DoubleToInt64Bits(ba) == BitConverter.DoubleToInt64Bits(bb),
+                    "counterfactual Forecast and UtilityUpperBound are bit-invariant to origin modifiers");
+            }
+
+            // 4. Upper-bound soundness across non-unit (Mc, Md, f, a) tuples x {Existing, Daughter} x {fed, starving}
+            var daughterStarving = cache.Daughter(origin, 200, w.Map.Neighbors(origin.Tile).First(),
+                new CampInventory { Cloth = 1e5, LightHousingUnits = 1e9 }, new PopulationLedger(),
+                50, 0, 0, new SocialNewSiteCapacity(0, 0));
+            daughterStarving.DeficitYears = grace - 5;
+            var tuples = new (double Mc, double Md, double F, double A)[]
+            {
+                (1.0, 1.0, 1.0, 0.0),
+                (0.05, 0.15, 1.0, 0.0),
+                (0.075, 0.265, 1.3, 0.01),
+                (0.4909, 1.0, 0.6, 0.025)
+            };
+            foreach (var t in tuples)
+            foreach (var st in new[] { existingFed, existingStarving, daughterFed, daughterStarving })
+            {
+                PhysicalDemography.CrowdingMitigationOverride = (_, __) => t.Mc;
+                PhysicalDemography.DiseaseMitigationOverride = (_, __) => t.Md;
+                PhysicalDemography.FertilityFactorOverride = (_, __) => t.F;
+                PhysicalDemography.AdditionalMortalityOverride = (_, __) => t.A;
+                var fc = cache.Forecast(st);
+                double bound = cache.UtilityUpperBound(st, null, policy, 0.15);
+                double exact = policy.WelfareWeight * fc.QoL - policy.MortalityWeight * fc.MortalityRisk + policy.JobWeight * 0.15;
+                Check(bound >= exact - 1e-12,
+                    "UtilityUpperBound sound at (" + t.Mc + "," + t.Md + "," + t.F + "," + t.A + ")");
+            }
+
+            // 5. Live Immigration.Resolve with population-dependent counterfactual mitigation (checked under --bound-audit)
+            WorldState MakeLiveImmWorld()
+            {
+                var wi = World(2);
+                var s = wi.Camps[0]; var d = wi.Camps[1];
+                s.Population = 200; s.Workforce.Normalize(200); s.WaterNeedsMetRatio = 0.05;
+                s.PlantFood = 1e6; s.Inventory.Cloth = 1e5; s.Inventory.LightHousingUnits = 1e9;
+                d.Population = 900; d.Workforce.Normalize(900); d.WaterNeedsMetRatio = 1.0;
+                d.PlantFood = 1e7; d.Inventory.Cloth = 1e6; d.Inventory.LightHousingUnits = 1e9;
+                ContactKnowledge.MemoryOf(wi, s.People).Upsert(d.Id, d.Player, d.Tile, wi.Turn, ContactSource.Sighting);
+                return wi;
+            }
+            var wDilute = MakeLiveImmWorld();
+            int diluteHookCalls = 0;
+            PhysicalDemography.FertilityFactorOverride = null;
+            PhysicalDemography.DiseaseMitigationOverride = (_, __) => 0.5;
+            PhysicalDemography.AdditionalMortalityOverride = null;
+            PhysicalDemography.CrowdingMitigationOverride = (_, c) => { diluteHookCalls++; return c.Population > 900 ? 0.95 : 0.05; };
+            var diluteRecord = ResolveImmigration(wDilute);
+            Check(diluteHookCalls > 0 && wDilute.Camps[0].Population + wDilute.Camps[1].Population == 1100,
+                "live immigration with crowding dilution evaluates counterfactual mitigation and conserves people");
+            Check(diluteRecord.Migrations.Count == 0,
+                "live immigration rejects move when counterfactual crowding dilution harms destination incumbents");
+
+            var wAccept = MakeLiveImmWorld();
+            PhysicalDemography.CrowdingMitigationOverride = (_, c) => c.Population > 900 ? 0.06 : 0.05;
+            var acceptRecord = ResolveImmigration(wAccept);
+            Check(wAccept.Camps[0].Population + wAccept.Camps[1].Population == 1100 && acceptRecord.Migrations.Count == 1
+                && acceptRecord.Migrations[0].DestinationCamp == wAccept.Camps[1].Id && acceptRecord.Migrations[0].Migrants > 0,
+                "live immigration commits flow to mitigated destination cleanly under --bound-audit");
+        }
+        finally
+        {
+            PhysicalDemography.FertilityFactorOverride = prevF;
+            PhysicalDemography.CrowdingMitigationOverride = prevC;
+            PhysicalDemography.DiseaseMitigationOverride = prevD;
+            PhysicalDemography.AdditionalMortalityOverride = prevA;
+        }
     }
 }

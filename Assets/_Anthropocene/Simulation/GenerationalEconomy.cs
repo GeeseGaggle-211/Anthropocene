@@ -997,7 +997,9 @@ namespace Anthropocene.Simulation
                     .OrderBy(h => h.Id).Sum(h => h.GrowthRemainder - h.DeathRemainder);
                 double effective = Math.Max(0, reproductive + camp.GrowthRemainder - camp.DeathRemainder + hunterRemainders);
                 var physical = PhysicalDemography.AdvanceBudget(w.Config, effective, years, foodBudget, clothingBudget,
-                    housing, camp.FoodDeficitYears, true);
+                    housing, camp.FoodDeficitYears, true, 0,
+                    PhysicalDemography.CrowdingMitigation(w, camp), PhysicalDemography.DiseaseMitigation(w, camp),
+                    PhysicalDemography.FertilityFactor(w, camp), PhysicalDemography.AdditionalMortality(w, camp));
                 double change = physical.FinalPopulation - effective;
                 return change >= 0 ? camp.Population + change
                     : Math.Max(0, camp.Population + change * camp.Population / Math.Max(1, reproductive));
@@ -1221,7 +1223,9 @@ namespace Anthropocene.Simulation
                         new[] { new DemographicCohortInput(EffectivePopulation(detached[i]), detached[i].FoodDeficitYears) },
                         detachedFood[i].Total, 0, 0));
                 }
-                CoupledDemographicResult coupled = PhysicalDemography.AdvanceCoupledBudget(w.Config, pools, years);
+                CoupledDemographicResult coupled = PhysicalDemography.AdvanceCoupledBudget(w.Config, pools, years,
+                    PhysicalDemography.CrowdingMitigation(w, camp), PhysicalDemography.DiseaseMitigation(w, camp),
+                    PhysicalDemography.FertilityFactor(w, camp), PhysicalDemography.AdditionalMortality(w, camp));
                 DemographicResult result = coupled.Pools[0];
 
                 // Reconstruct textile stocks from their pre-needs provenance, then debit exactly the closed budget.
