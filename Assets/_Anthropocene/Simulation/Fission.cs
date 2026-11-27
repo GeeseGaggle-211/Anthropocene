@@ -303,8 +303,10 @@ namespace Anthropocene.Simulation
         public static double EffectiveMoverThreshold(WorldState w, Camp camp)
         {
             var cfg = w.Config;
+            if (camp == null)
+                return Kinship.GainThreshold(cfg, FissionPolicy.Neutral);
             double baseThreshold = Kinship.GainThreshold(cfg, camp.FissionPolicy);
-            if (!CivicGovernance.Enabled(cfg) || camp == null || !(camp.CivicComplexity > 1e-12))
+            if (!CivicGovernance.Enabled(cfg) || !(camp.CivicComplexity > 1e-12))
                 return baseThreshold;
             var cs = cfg.Civic;
             double cov = CivicGovernance.CivicCoverage(w, camp);

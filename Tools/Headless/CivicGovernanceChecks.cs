@@ -45,6 +45,7 @@ internal static class CivicGovernanceChecks
         WelfareOnlyQoLIsolationGate();
         ToolAndStorageConservationGates();
         FamineShockCollapseDivergenceGate();
+        DemandControlProtectedAndQoLRegressionGates();
         Phase1BFeatureContractsAndZeroRegression();
         Console.WriteLine("PASS: " + checks + " civic governance assertions");
         return checks;
@@ -3059,6 +3060,339 @@ internal static class CivicGovernanceChecks
             $"Stratified CivicCapital declines when famine starves civic upkeep ({wStratShock.Camps[0].CivicCapital:F1} < {stratInitialCap:F1})");
     }
 
+    private static void DemandControlProtectedAndQoLRegressionGates()
+    {
+        // ---- Bug #1 Regression: Lower-class civic requests must NEVER steal freeMaterial before KernelSplit / Protected ----
+        WorldState MakeScarceHmMixedVillage(bool withCivic, bool mixedRoutes, double hmStock, double woodStock, double toolsStock, double stoneStock, bool survivalTight, double openingC)
+        {
+            var w = Phase1VillageFixture(enableCivic: true, sanitation: false, population: 500);
+            w.Config.ElderKernelSplit = true;
+            w.Config.ElderMixedRoutes = mixedRoutes;
+            var c = w.Camps[0];
+            c.Technologies[(int)Technology.AnimalHusbandry] = true;
+            c.PlantFood = 12000;
+            c.AnimalFood = 400;
+            c.AquaticFood = 0;
+            c.Inventory.Cloth = 800;
+            c.Inventory.AnimalFabric = 400;
+            c.Inventory.HousingMaterial = hmStock;
+            c.Inventory.Wood = woodStock;
+            c.Inventory.Clay = 0;
+            c.Inventory.Stone = stoneStock;
+            c.Inventory.Tools = toolsStock;
+            c.Inventory.HandTools = 0;
+            c.Inventory.FarmTools = 200;
+            c.RudimentaryExpectation = 1.0;
+            w.FixedHousing.Clear();
+            NeolithicProduction.FixedHousingChanged(w);
+            for (int i = 0; i < w.Tiles.Length; i++)
+            {
+                w.Resources.Wood[i] = 0;
+                w.Resources.Clay[i] = 0;
+                if (stoneStock <= 0) w.Resources.Stone[i] = 0;
+            }
+            w.Herds.Add(new Herd { Id = w.NextId++, Tile = c.Tile, Animals = 80, DomesticCamp = c.Id });
+            if (survivalTight)
+            {
+                // Saturate Survival food gathering so zero labor slack remains beyond Protected shelter.
+                c.People.NeolithicTechnologies.Remove(NeolithicTech.Plough);
+                foreach (int id in w.Map.Radius(c.Tile, 1))
+                {
+                    w.Tiles[id].CultivationCapital = 0;
+                    w.Tiles[id].Cultivation = 0;
+                    w.Tiles[id].Cultivated = false;
+                    w.Tiles[id].CultivationOperator = -1;
+                    w.Tiles[id].Food = 25000;
+                    w.Tiles[id].PotentialFood = 250000;
+                    for (int s = 0; s < 4; s++) { w.Tiles[id].Seasons[s].MaxFood = 25000f; w.Tiles[id].Seasons[s].MaxPotentialFood = 250000f; }
+                }
+                w.Hunters.Add(new Hunter { Id = w.NextId++, Player = c.Player, SourceCamp = c.Id, Tile = c.Tile, Population = 500 });
+            }
+            if (withCivic)
+            {
+                c.People.CivicPrecedents.AddRange(new[] { CivicPrecedents.CeremonialIntegration, CivicPrecedents.CivicOrganization });
+                c.CivicComplexity = openingC;
+                c.CivicStratification = 0.50;
+                c.LastEnvironmentalComplexity = 0.75;
+                c.LastEnvironmentalStratification = 0.50;
+                c.CivicCapital = openingC > 0 ? 50.0 : 15.0;
+                // Zero Stewards => I_civic == 0 (identical crowding/cohesion/QoL to NoCiv at planning time).
+            }
+            return w;
+        }
+
+        // 1A: Shipped defaults (ElderMixedRoutes=true, I_civic=0, HM=40, Wood=63).
+        // Case (0.0, tools=62.5/OutputsPerTool, stone=0): exact 62.5 tool outputs for Protected shelter -> both civic HM requests
+        // receive Granted == 0 and 0 Stewards are staffed -> 100% bit-exact Plan AND live Resolve parity.
+        // Case (0.75, tools=0, stone=500): exact chal_iter1_1 reproducer parameters -> Protected shelter stays bit-exact
+        // 62.50/62.50 (ReservedMaterial=40.0, never slashed to 50.40), fixed Housing bit-exact, deaths never worse.
+        foreach (var tc in new[] { (openingC: 0.0, tools: 62.5 / ToolCoverageBudget.OutputsPerTool, stone: 0.0), (openingC: 0.75, tools: 0.0, stone: 500.0) })
+        {
+            double openingC = tc.openingC;
+            var wNo = MakeScarceHmMixedVillage(withCivic: false, mixedRoutes: true, hmStock: 40, woodStock: 63, toolsStock: tc.tools, stoneStock: tc.stone, survivalTight: true, openingC: openingC);
+            var wCiv = MakeScarceHmMixedVillage(withCivic: true, mixedRoutes: true, hmStock: 40, woodStock: 63, toolsStock: tc.tools, stoneStock: tc.stone, survivalTight: true, openingC: openingC);
+            Check(CivicGovernance.CivicCoverage(wCiv, wCiv.Camps[0]) == 0.0, $"Bug #1A (C={openingC}) setup has I_civic == 0");
+
+            DemandController.Plan(wNo, wNo.Camps[0], EconomicIntent.From(wNo.Camps[0]), out _, out var aNo);
+            DemandController.Plan(wCiv, wCiv.Camps[0], EconomicIntent.From(wCiv.Camps[0]), out _, out var aCiv);
+            var pNo = aNo.Requests.FirstOrDefault(r => r.Service == "shelter protected");
+            var pCiv = aCiv.Requests.FirstOrDefault(r => r.Service == "shelter protected");
+            Check(pNo != null && pCiv != null && pNo.Granted > 60.0,
+                $"Bug #1A (mixed=true, C={openingC}): Protected shelter requested and fulfilled ({pNo?.Granted:F3} vs {pCiv?.Granted:F3})");
+            Check(pCiv.Granted == pNo.Granted && pCiv.ReservedMaterial == pNo.ReservedMaterial && pCiv.Unmet == pNo.Unmet,
+                $"Bug #1A (mixed=true, C={openingC}): Protected shelter bit-exact identical with civic ({pCiv.Granted:F3} vs {pNo.Granted:F3}, resHM={pCiv.ReservedMaterial:F1} vs {pNo.ReservedMaterial:F1}, unmet='{pCiv.Unmet}')");
+            Check(aCiv.ElderAction.ShelterRoute == aNo.ElderAction.ShelterRoute &&
+                  aCiv.ElderAction.ShelterLevel == aNo.ElderAction.ShelterLevel &&
+                  aCiv.ElderAction.ClothingLevel == aNo.ElderAction.ClothingLevel,
+                $"Bug #1A (mixed=true, C={openingC}): ElderAction bit-exact identical with civic");
+
+            // Continuity execution ordering: tools/canal/shelter replacement strictly before civic maintenance (and before core stewards when C>0).
+            int idxMaint = aCiv.Requests.FindIndex(r => r.Service == "civic maintenance");
+            int idxDev = aCiv.Requests.FindIndex(r => r.Service == "civic development");
+            Check(idxMaint >= 0 && idxDev >= 0, $"Bug #1A (C={openingC}) creates both civic maintenance and civic development requests");
+            if (openingC > 0)
+            {
+                int idxCore = aCiv.Requests.FindIndex(r => r.Service == "core stewards");
+                Check(idxCore > idxMaint, $"Bug #1A (C={openingC}) places core stewards after civic maintenance");
+            }
+            foreach (var r in aCiv.Requests.Where(r => r.Class == DemandController.ServiceClass.Continuity &&
+                r.Service != "civic maintenance" && r.Service != "core stewards"))
+                Check(aCiv.Requests.IndexOf(r) < idxMaint,
+                    $"Bug #1A (C={openingC}) Continuity order: '{r.Service}' precedes 'civic maintenance'");
+            if (openingC == 0.0)
+            {
+                double civicGranted = aCiv.Requests
+                    .Where(r => r.Service == "civic maintenance" || r.Service == "core stewards" || r.Service == "civic development" || r.Service == "civic stewards")
+                    .Sum(r => r.Granted);
+                Check(civicGranted <= 1e-7, $"Bug #1A (C=0, exact tools): all civic requests receive ~0 grant within bisection epsilon (got {civicGranted})");
+            }
+
+            var resolver = new TurnResolver();
+            var recNo = resolver.Resolve(wNo, new Dictionary<int, List<Order>>());
+            var recCiv = resolver.Resolve(wCiv, new Dictionary<int, List<Order>>());
+            var cNo = wNo.Camps[0];
+            var cCiv = wCiv.Camps[0];
+            Check(NeolithicProduction.FixedHousingAt(wCiv, cCiv, wCiv.Days) == NeolithicProduction.FixedHousingAt(wNo, cNo, wNo.Days),
+                $"Bug #1A (C={openingC}) live Resolve: bit-exact fixed Housing built");
+            if (openingC == 0.0)
+            {
+                Check(recCiv.Demographics[0].Deaths == recNo.Demographics[0].Deaths && cCiv.Population == cNo.Population,
+                    $"Bug #1A (C=0) live Resolve: bit-exact deaths ({recCiv.Demographics[0].Deaths} vs {recNo.Demographics[0].Deaths}) and pop ({cCiv.Population} vs {cNo.Population})");
+                Check(cCiv.ExposureMortalityRate == cNo.ExposureMortalityRate && cCiv.HousingPerCapita == cNo.HousingPerCapita,
+                    $"Bug #1A (C=0) live Resolve: bit-exact ExposureMortalityRate ({cCiv.ExposureMortalityRate:F6} vs {cNo.ExposureMortalityRate:F6}) and HousingPerCapita");
+            }
+            else
+            {
+                Check(recCiv.Demographics[0].Deaths <= recNo.Demographics[0].Deaths,
+                    $"Bug #1A (C=0.75) live Resolve: civic presence never increases deaths ({recCiv.Demographics[0].Deaths} <= {recNo.Demographics[0].Deaths})");
+                Check(cCiv.EffectiveMortalityRate <= cNo.EffectiveMortalityRate + 1e-12,
+                    $"Bug #1A (C=0.75) live Resolve: EffectiveMortalityRate never increases ({cCiv.EffectiveMortalityRate:F6} <= {cNo.EffectiveMortalityRate:F6})");
+            }
+        }
+
+        // 1B: ElderMixedRoutes=false, I_civic=0, HM=200, Wood=80 — RouteFeasible must not flip Housing -> LightHousing.
+        foreach (var tc in new[] { (openingC: 0.0, tools: 125.0 / ToolCoverageBudget.OutputsPerTool, stone: 0.0), (openingC: 0.75, tools: 200.0, stone: 500.0) })
+        {
+            double openingC = tc.openingC;
+            var wNo = MakeScarceHmMixedVillage(withCivic: false, mixedRoutes: false, hmStock: 200, woodStock: 80, toolsStock: tc.tools, stoneStock: tc.stone, survivalTight: true, openingC: openingC);
+            var wCiv = MakeScarceHmMixedVillage(withCivic: true, mixedRoutes: false, hmStock: 200, woodStock: 80, toolsStock: tc.tools, stoneStock: tc.stone, survivalTight: true, openingC: openingC);
+            DemandController.Plan(wNo, wNo.Camps[0], EconomicIntent.From(wNo.Camps[0]), out _, out var aNo);
+            DemandController.Plan(wCiv, wCiv.Camps[0], EconomicIntent.From(wCiv.Camps[0]), out _, out var aCiv);
+            Check(aNo.ElderAction.ShelterRoute == CraftGood.Housing && aCiv.ElderAction.ShelterRoute == CraftGood.Housing,
+                $"Bug #1B (mixed=false, C={openingC}): ShelterRoute stays Housing ({aCiv.ElderAction.ShelterRoute} vs {aNo.ElderAction.ShelterRoute})");
+            Check(aCiv.ElderAction.ShelterLevel == aNo.ElderAction.ShelterLevel &&
+                  aCiv.ElderAction.ClothingLevel == aNo.ElderAction.ClothingLevel,
+                $"Bug #1B (mixed=false, C={openingC}): ElderAction levels bit-exact identical");
+            var pNo = aNo.Requests.FirstOrDefault(r => r.Service == "shelter protected");
+            var pCiv = aCiv.Requests.FirstOrDefault(r => r.Service == "shelter protected");
+            Check(pNo != null && pCiv != null && pCiv.Granted == pNo.Granted && pCiv.ReservedMaterial == pNo.ReservedMaterial,
+                $"Bug #1B (mixed=false, C={openingC}): Protected shelter bit-exact ({pCiv?.Granted:F3} vs {pNo?.Granted:F3})");
+
+            var resolver = new TurnResolver();
+            var recNo = resolver.Resolve(wNo, new Dictionary<int, List<Order>>());
+            var recCiv = resolver.Resolve(wCiv, new Dictionary<int, List<Order>>());
+            Check(NeolithicProduction.FixedHousingAt(wCiv, wCiv.Camps[0], wCiv.Days) == NeolithicProduction.FixedHousingAt(wNo, wNo.Camps[0], wNo.Days),
+                $"Bug #1B (mixed=false, C={openingC}) live Resolve: bit-exact fixed Housing");
+            if (openingC == 0.0)
+            {
+                Check(recCiv.Demographics[0].Deaths == recNo.Demographics[0].Deaths &&
+                      wCiv.Camps[0].ExposureMortalityRate == wNo.Camps[0].ExposureMortalityRate,
+                    $"Bug #1B (mixed=false, C=0) live Resolve: bit-exact deaths ({recCiv.Demographics[0].Deaths} vs {recNo.Demographics[0].Deaths}) and exposure mortality");
+            }
+            else
+            {
+                Check(recCiv.Demographics[0].Deaths <= recNo.Demographics[0].Deaths &&
+                      wCiv.Camps[0].EffectiveMortalityRate <= wNo.Camps[0].EffectiveMortalityRate + 1e-12,
+                    $"Bug #1B (mixed=false, C=0.75) live Resolve: deaths and effective mortality never increase ({recCiv.Demographics[0].Deaths} <= {recNo.Demographics[0].Deaths})");
+            }
+        }
+
+        // 1C: civic development (Development) must NEVER steal freeMaterial from Protected, Continuity, or Recovery
+        // (tested both with ElderKernelSplit=true and ElderKernelSplit=false).
+        foreach (bool kernelSplitOn in new[] { true, false })
+        {
+            WorldState MakeDevNoStealWorld(bool withCivic)
+            {
+                var w = Phase1VillageFixture(enableCivic: true, sanitation: false, population: 400);
+                w.Config.ElderKernelSplit = kernelSplitOn;
+                var c = w.Camps[0];
+                w.FixedHousing.Clear();
+                NeolithicProduction.FixedHousingChanged(w);
+                c.Inventory.HousingMaterial = 100.0; // exact stock needed for 400/4 = 100 fixed Housing units
+                c.Inventory.Wood = 0; c.Inventory.Clay = 0;
+                c.Inventory.Tools = 200; c.Inventory.FarmTools = 200;
+                for (int i = 0; i < w.Tiles.Length; i++) { w.Resources.Wood[i] = 0; w.Resources.Clay[i] = 0; }
+                if (withCivic)
+                {
+                    c.People.CivicPrecedents.AddRange(new[] { CivicPrecedents.CeremonialIntegration, CivicPrecedents.CivicOrganization });
+                    c.CivicComplexity = 0.75; c.LastEnvironmentalComplexity = 0.75;
+                    c.CivicCapital = 0.0; // zero upkeep -> only civic development competes for HM
+                }
+                return w;
+            }
+            var wNo = MakeDevNoStealWorld(false);
+            var wCiv = MakeDevNoStealWorld(true);
+            DemandController.Plan(wNo, wNo.Camps[0], EconomicIntent.From(wNo.Camps[0]), out _, out var aNo);
+            DemandController.Plan(wCiv, wCiv.Camps[0], EconomicIntent.From(wCiv.Camps[0]), out _, out var aCiv);
+            double shelterNo = aNo.Requests.Where(r => r.Good == CraftGood.Housing).Sum(r => r.Granted);
+            double shelterCiv = aCiv.Requests.Where(r => r.Good == CraftGood.Housing).Sum(r => r.Granted);
+            var devReq = aCiv.Requests.FirstOrDefault(r => r.Service == "civic development");
+            Check(shelterNo > 99.9 && shelterCiv == shelterNo,
+                $"Bug #1C (kernelSplit={kernelSplitOn}): civic development never steals freeMaterial from Protected/Recovery shelter ({shelterCiv:F3} vs {shelterNo:F3})");
+            Check(devReq != null && devReq.ReservedMaterial == 0.0 && devReq.Granted == 0.0,
+                $"Bug #1C (kernelSplit={kernelSplitOn}): civic development reserves 0 HM and grants 0 when higher classes claim stock (res={devReq?.ReservedMaterial}, grant={devReq?.Granted})");
+        }
+
+        // 1D: Strict Continuity > Recovery freeMaterial priority when ElderKernelSplit=false (civic maintenance uses stock HM ahead of shelter deficit).
+        {
+            var wOff = Phase1VillageFixture(enableCivic: true, sanitation: false, population: 400);
+            wOff.Config.ElderKernelSplit = false;
+            var cOff = wOff.Camps[0];
+            wOff.FixedHousing.Clear();
+            NeolithicProduction.FixedHousingChanged(wOff);
+            cOff.People.CivicPrecedents.AddRange(new[] { CivicPrecedents.CeremonialIntegration, CivicPrecedents.CivicOrganization });
+            cOff.CivicComplexity = 0.75; cOff.LastEnvironmentalComplexity = 0.75;
+            cOff.CivicCapital = 50.0;
+            cOff.Inventory.HousingMaterial = 40.0;
+            cOff.Inventory.Wood = 0; cOff.Inventory.Clay = 0;
+            cOff.Inventory.Tools = 200; cOff.Inventory.FarmTools = 200;
+            for (int i = 0; i < wOff.Tiles.Length; i++) { wOff.Resources.Wood[i] = 0; wOff.Resources.Clay[i] = 0; }
+            DemandController.Plan(wOff, cOff, EconomicIntent.From(cOff), out _, out var aOff);
+            var cmReq = aOff.Requests.FirstOrDefault(r => r.Service == "civic maintenance");
+            Check(cmReq != null && cmReq.Units > 0, "Bug #1D (kernelSplit=false): civic maintenance created");
+            NearRelative(cmReq.Granted, cmReq.Units, "Bug #1D (kernelSplit=false): Continuity civic maintenance funded from stock HM ahead of Recovery shelter deficit", 1e-12);
+        }
+
+        // ---- Bug #2 Regression: KernelSplit welfare-only QoL isolation & zero upper-tail tie-collapse ----
+        WorldState MakeAutoQoLWorld(int pop, double dtYears, double cCoord, double pCoord, double q1, double q2, int objective = 2)
+        {
+            var w = Phase1VillageFixture(enableCivic: true, sanitation: false, population: pop);
+            w.Config.TurnDays = dtYears * w.Config.DaysPerYear;
+            w.Config.ElderKernelSplit = true;
+            w.Config.ElderSplitObjective = objective;
+            w.Config.Civic.QoLEqualityLinear = q1;
+            w.Config.Civic.QoLEqualityQuadratic = q2;
+            w.Config.Validate();
+            var c = w.Camps[0];
+            c.People.CivicPrecedents.AddRange(new[] { CivicPrecedents.CeremonialIntegration, CivicPrecedents.CivicOrganization, CivicPrecedents.TokensAndAccounting });
+            c.CivicComplexity = cCoord;
+            c.CivicStratification = pCoord;
+            c.LastEnvironmentalComplexity = cCoord;
+            c.LastEnvironmentalStratification = pCoord;
+            c.CivicCapital = CivicGovernance.RequiredCivicCapital(w, c) * 2.0;
+            int reqStew = (int)Math.Ceiling(CivicGovernance.RequiredStewards(w, c)) + 5;
+            c.Workforce = new PopulationLedger();
+            c.Workforce.Assign(WorkforceRoles.Farmer, Math.Max(20, pop / 3), c.Population);
+            c.Workforce.Assign(WorkforceRoles.Steward, reqStew, c.Population);
+            c.Inventory.Cloth = 0;
+            c.Inventory.AnimalFabric = 0;
+            c.RudimentaryExpectation = 1.0;
+            c.EconomyAutomationTurns = -1; // full automatic DemandController path!
+            return w;
+        }
+
+        var qolScenarios = new[]
+        {
+            (pop: 300, dt: 20.0, c: 1.0),
+            (pop: 400, dt: 20.0, c: 0.2),
+            (pop: 400, dt: 5.0, c: 1.0),
+            (pop: 1200, dt: 5.0, c: 1.0),
+            (pop: 2000, dt: 5.0, c: 1.0)
+        };
+        var qolPs = new[] { -1.0, -0.5, 0.5, 1.0 };
+        var qolArms = new[] { (q1: 0.09, q2: 0.01, label: "default"), (q1: 0.25, q2: 0.01, label: "high") };
+        var autoResolver = new TurnResolver();
+        int autoQoLChecked = 0;
+
+        foreach (var sc in qolScenarios)
+        {
+            foreach (double pCoord in qolPs)
+            {
+                var wBase = MakeAutoQoLWorld(sc.pop, sc.dt, sc.c, pCoord, 0.0, 0.0);
+                DemandController.Plan(wBase, wBase.Camps[0], EconomicIntent.From(wBase.Camps[0]), out var prodBase, out var allocBase);
+                var recBase = autoResolver.Resolve(wBase, new Dictionary<int, List<Order>>());
+                var cBase = wBase.Camps[0];
+                var dBase = recBase.Demographics[0];
+
+                foreach (var arm in qolArms)
+                {
+                    var wArm = MakeAutoQoLWorld(sc.pop, sc.dt, sc.c, pCoord, arm.q1, arm.q2);
+                    double qMultPlan = CivicGovernance.QoLEqualityMultiplier(wArm, wArm.Camps[0]);
+                    DemandController.Plan(wArm, wArm.Camps[0], EconomicIntent.From(wArm.Camps[0]), out var prodArm, out var allocArm);
+
+                    // Bit-exact 0 delta in ElderAction decision & ProtectedClothingUnits.
+                    var eb = allocBase.ElderAction;
+                    var ea = allocArm.ElderAction;
+                    Check(ea.ClothingRoute == eb.ClothingRoute && ea.ClothingLevel == eb.ClothingLevel && ea.ClothingUnits == eb.ClothingUnits &&
+                          ea.ShelterRoute == eb.ShelterRoute && ea.ShelterLevel == eb.ShelterLevel && ea.ShelterPeople == eb.ShelterPeople &&
+                          ea.PersonYears == eb.PersonYears && prodArm.ProtectedClothingUnits == prodBase.ProtectedClothingUnits,
+                        $"Bug #2 plan isolation ({arm.label} q1={arm.q1}, N={sc.pop}, dt={sc.dt}, C={sc.c}, P={pCoord}): bit-exact ElderAction ({ea.ClothingLevel},{ea.ShelterLevel},{ea.ShelterRoute}) == ({eb.ClothingLevel},{eb.ShelterLevel},{eb.ShelterRoute})");
+                    if (eb.QoL > 0)
+                        NearRelative(ea.QoL, Numbers.Clamp(eb.QoL * qMultPlan, 0, 1),
+                            $"Bug #2 ElderAction.QoL reflects Q_civic ({arm.label}, N={sc.pop}, P={pCoord})", 1e-12);
+
+                    // Live TurnResolver.Resolve under automatic DemandController: bit-exact 0 physical demography delta.
+                    var recArm = autoResolver.Resolve(wArm, new Dictionary<int, List<Order>>());
+                    var cArm = wArm.Camps[0];
+                    var dArm = recArm.Demographics[0];
+                    Check(cArm.Population == cBase.Population && dArm.Additions == dBase.Additions && dArm.Deaths == dBase.Deaths &&
+                          cArm.ExposureMortalityRate == cBase.ExposureMortalityRate &&
+                          cArm.CrowdingMortalityRate == cBase.CrowdingMortalityRate &&
+                          cArm.DiseaseMortalityRate == cBase.DiseaseMortalityRate &&
+                          cArm.EffectiveMortalityRate == cBase.EffectiveMortalityRate &&
+                          cArm.EffectiveFertilityRate == cBase.EffectiveFertilityRate &&
+                          cArm.ClothPerCapita == cBase.ClothPerCapita &&
+                          cArm.HousingPerCapita == cBase.HousingPerCapita,
+                        $"Bug #2 live Resolve isolation ({arm.label} q1={arm.q1}, N={sc.pop}, dt={sc.dt}, C={sc.c}, P={pCoord}): bit-exact physical demography (pop {cArm.Population} vs {cBase.Population}, expMort {cArm.ExposureMortalityRate:F6} vs {cBase.ExposureMortalityRate:F6})");
+
+                    if (cBase.QoL > 0)
+                    {
+                        double expectedWelfareQoL = Numbers.Clamp(cBase.QoL * qMultPlan, 0, 1);
+                        NearRelative(cArm.QoL, expectedWelfareQoL,
+                            $"Bug #2 live Camp.QoL shifts by exact Q_civic ({arm.label}, N={sc.pop}, P={pCoord})", 1e-12);
+                    }
+                    autoQoLChecked++;
+                }
+            }
+        }
+        Check(autoQoLChecked == qolScenarios.Length * qolPs.Length * qolArms.Length,
+            $"Bug #2 full automatic QoL isolation grid executed ({autoQoLChecked} cases)");
+
+        // Verify bit-exact QoLEqualityLinear isolation across ALL QoL-sensitive ElderSplitObjective modes (1, 2, 3).
+        foreach (int obj in new[] { 1, 2, 3 })
+        {
+            var wObj0 = MakeAutoQoLWorld(300, 20.0, 1.0, -1.0, 0.0, 0.0, obj);
+            var wObjHi = MakeAutoQoLWorld(300, 20.0, 1.0, -1.0, 0.25, 0.01, obj);
+            DemandController.Plan(wObj0, wObj0.Camps[0], EconomicIntent.From(wObj0.Camps[0]), out _, out var aObj0);
+            DemandController.Plan(wObjHi, wObjHi.Camps[0], EconomicIntent.From(wObjHi.Camps[0]), out _, out var aObjHi);
+            Check(aObjHi.ElderAction.ClothingLevel == aObj0.ElderAction.ClothingLevel &&
+                  aObjHi.ElderAction.ShelterLevel == aObj0.ElderAction.ShelterLevel &&
+                  aObjHi.ElderAction.ShelterRoute == aObj0.ElderAction.ShelterRoute &&
+                  aObjHi.ElderAction.ClothingRoute == aObj0.ElderAction.ClothingRoute,
+                $"Bug #2 ElderSplitObjective={obj}: bit-exact ElderAction between q1=0 and q1=0.25");
+        }
+    }
+
     private static void Phase1BFeatureContractsAndZeroRegression()
     {
         // ---- 6.1 HasInfrastructure, CopyForPreparation, ReconcileInfrastructure & dt-invariant CivicCapital ----
@@ -3608,12 +3942,14 @@ internal static class CivicGovernanceChecks
             src.Workforce.Assign(WorkforceRoles.Steward, (int)Math.Ceiling(CivicGovernance.RequiredStewards(wPol, src)) + 10, src.Population);
             NearRelative(Fission.EffectiveMoverThreshold(wPol, src), 0.0815, "Coerced Stratified open-frontier EffectiveMoverThreshold == 0.0815", 1e-12);
 
-            // C == 0 preserves custom FissionGainThreshold (0 and 5.0) bit-identically.
+            // C == 0 preserves custom FissionGainThreshold (0 and 5.0) bit-identically; null camp never throws.
             src.CivicComplexity = 0.0;
             wPol.Config.FissionGainThreshold = 0.0;
             Check(Fission.EffectiveMoverThreshold(wPol, src) == 0.0, "EffectiveMoverThreshold preserves G*=0 when C==0");
             wPol.Config.FissionGainThreshold = 5.0;
             Check(Fission.EffectiveMoverThreshold(wPol, src) == 5.0, "EffectiveMoverThreshold preserves G*=5 when C==0");
+            Check(Fission.EffectiveMoverThreshold(wPol, null) == Kinship.GainThreshold(wPol.Config, FissionPolicy.Neutral),
+                "EffectiveMoverThreshold(w, null) safely returns Neutral threshold without throwing");
 
             // Live multi-camp Immigration.Resolve + Fission.Resolve under AuditBounds = true (0 bound violations).
             wPol.Config.FissionGainThreshold = 0.113;
@@ -3630,16 +3966,17 @@ internal static class CivicGovernanceChecks
             }
             bool savedAudit = SocialRelocationForecastCache.AuditBounds;
             SocialRelocationForecastCache.AuditBounds = true;
+            var liveMetrics = new ResolutionMetrics();
             try
             {
                 var rLive = new TurnRecord();
-                var liveMetrics = new ResolutionMetrics();
                 var liveForecasts = new SocialRelocationForecastCache(wPol, wPol.Camps);
                 var sat = Immigration.Resolve(wPol, rLive, null, liveMetrics, null, liveForecasts);
                 Fission.Resolve(wPol, rLive, null, liveMetrics, sat, null, liveForecasts);
             }
             finally { SocialRelocationForecastCache.AuditBounds = savedAudit; }
-            Check(true, "Live multi-camp Immigration.Resolve + Fission.Resolve passed with AuditBounds=true (0 bound violations)");
+            Check(liveMetrics.SocialCandidatesEvaluated > 0,
+                $"Live multi-camp Immigration.Resolve + Fission.Resolve evaluated {liveMetrics.SocialCandidatesEvaluated} social candidates with AuditBounds=true (0 bound violations)");
         }
 
         // ---- 6.6 HoverDetails owner-only CIVIC line, zero rival leakage & multi-policy determinism ----
