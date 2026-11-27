@@ -403,6 +403,44 @@ internal static class CivicGovernanceChecks
         Near(CivicGovernance.QoLEqualityMultiplierFor(cfg, 1.0, 1.0, 1.0), 0.920, "Q_civic(C=1,P=+1,I=1) = 0.920", 1e-12);
         Near(CivicGovernance.AlignmentFriction(cfg, 0.5, -0.5), 1.35, "AlignmentFriction(|dP|=1) = 1.35", 1e-12);
 
+        // Regression (Bug #3): tiny valid CrowdingShapeRate > 0 converges to exact C^p limit (never collapses to 0),
+        // and DiseaseMitigationFor handles tiny/huge valid DiseaseHalfScale > 0 cleanly without NaN or overflow.
+        foreach (double tinyRate in new[] { 1e-13, double.Epsilon })
+        {
+            var tinyCrowdCfg = new SimulationConfig
+            {
+                Civic = new CivicGovernanceSettings { Enabled = true, SanitationEnabled = true, CrowdingShapeRate = tinyRate }
+            };
+            tinyCrowdCfg.Validate();
+            Near(CivicGovernance.CrowdingMitigationFor(tinyCrowdCfg, 1.0, 1.0, 1.0), 0.050,
+                $"M_c at tiny CrowdingShapeRate={tinyRate} and (C=1,P=1,cov=1) matches exact floor 0.050", 1e-11);
+            double expectedHalf = 1.0 - 0.925 * Math.Pow(0.5, tinyCrowdCfg.Civic.CrowdingShapeExponent);
+            Near(CivicGovernance.CrowdingMitigationFor(tinyCrowdCfg, 0.5, 0.0, 1.0), expectedHalf,
+                $"M_c at tiny CrowdingShapeRate={tinyRate} and (C=0.5,P=0,cov=1) matches exact C^p limit", 1e-11);
+        }
+        foreach (double tinyH in new[] { 1e-13, double.Epsilon })
+        {
+            var tinyDisCfg = new SimulationConfig
+            {
+                Civic = new CivicGovernanceSettings { Enabled = true, SanitationEnabled = true, DiseaseHalfScale = tinyH }
+            };
+            tinyDisCfg.Validate();
+            double mdTiny = CivicGovernance.DiseaseMitigationFor(tinyDisCfg, 0.5, 0.0, 1.0);
+            Check(!double.IsNaN(mdTiny) && !double.IsInfinity(mdTiny), $"M_d finite for tiny DiseaseHalfScale={tinyH}");
+            Near(mdTiny, 1.0 - 0.735, $"M_d at tiny DiseaseHalfScale={tinyH} approaches f_d=1 limit", 1e-11);
+        }
+        foreach (double hugeH in new[] { 1e100, 1e300 })
+        {
+            var hugeDisCfg = new SimulationConfig
+            {
+                Civic = new CivicGovernanceSettings { Enabled = true, SanitationEnabled = true, DiseaseHalfScale = hugeH }
+            };
+            hugeDisCfg.Validate();
+            double mdHuge = CivicGovernance.DiseaseMitigationFor(hugeDisCfg, 0.5, 0.0, 1.0);
+            Check(!double.IsNaN(mdHuge) && !double.IsInfinity(mdHuge), $"M_d finite for huge DiseaseHalfScale={hugeH}");
+            Near(mdHuge, 1.0 - 0.735 * 0.5, $"M_d at huge DiseaseHalfScale={hugeH} approaches f_d=C limit", 1e-11);
+        }
+
         double sEgal1k = CivicGovernance.RequiredStewards(cfg, 1000, 0.75, -1.0, false, -1.0);
         double sStrat1k = CivicGovernance.RequiredStewards(cfg, 1000, 0.75, 1.0, false, 1.0);
         double sEgal10kNo3A = CivicGovernance.RequiredStewards(cfg, 10000, 0.75, -1.0, false, -1.0);
@@ -442,6 +480,20 @@ internal static class CivicGovernanceChecks
         CivicGovernance.Close(paleoW, new TurnRecord(), 20.0);
         Check(!plc.People.CivicExperience.TryGetValue(CivicPrecedents.CeremonialIntegration, out double palExp) || palExp == 0,
             "Paleolithic camp accrues exact 0 Tier-1 practice");
+
+        // Regression (Bug #1a): Pre-seeded Paleolithic society MUST NOT unlock any civic precedent in Close (no cascade).
+        var paleoSeedW = CivicFixture(sanitation: true);
+        var psc = paleoSeedW.Camps[0];
+        psc.People.Progression.Era = Era.Paleolithic;
+        psc.Population = 1500; psc.StationaryTurns = 5; psc.StationaryYears = 100;
+        psc.People.NeolithicTechnologies.Add(NeolithicTech.Construction);
+        psc.People.CivicExperience[CivicPrecedents.CeremonialIntegration] = 50.0;
+        psc.People.CivicExperience[CivicPrecedents.CivicOrganization] = 100.0;
+        psc.People.CivicExperience[CivicPrecedents.TokensAndAccounting] = 150.0;
+        psc.People.CivicExperience[CivicPrecedents.PlannedQuartersAndDrainage] = 150.0;
+        CivicGovernance.Close(paleoSeedW, new TurnRecord(), 20.0);
+        Check(psc.People.CivicPrecedents.Count == 0 && !psc.People.HasCivicPrecedent(CivicPrecedents.CeremonialIntegration),
+            "pre-seeded Paleolithic society unlocks 0 civic precedents in Close");
 
         // Tier 1 analytical permanence ramp integral: 2x20y == 8x5y == 40x1y over [0, 40] yr.
         double RunTier1Ramp(int steps, double dt)
@@ -572,10 +624,43 @@ internal static class CivicGovernanceChecks
 
         // Inert RecordTradeDiffusion when PrecedentDiffusionPerTrade == 0
         var recv = new Society { Id = 10 };
+        recv.Progression.Era = Era.Neolithic;
         var part = new Society { Id = 11 };
+        part.Progression.Era = Era.Neolithic;
         part.CivicPrecedents.Add(CivicPrecedents.CeremonialIntegration);
         CivicGovernance.RecordTradeDiffusion(t3bW, recv, part, 500.0);
         Check(recv.CivicExperience.Count == 0, "RecordTradeDiffusion is a strict no-op when PrecedentDiffusionPerTrade == 0");
+
+        // Regression (Bug #1b): RecordTradeDiffusion onto Paleolithic receiver accrues 0 experience and unlocks 0 precedents.
+        var diffPaleoW = CivicFixture(sanitation: true);
+        diffPaleoW.Config.Civic.PrecedentDiffusionPerTrade = 1.0;
+        var paleoRecv = diffPaleoW.Camps[0].People;
+        paleoRecv.Progression.Era = Era.Paleolithic;
+        var allPrecPartner = new Society { Id = 777 };
+        allPrecPartner.Progression.Era = Era.Neolithic;
+        allPrecPartner.CivicPrecedents.AddRange(CivicPrecedents.All);
+        CivicGovernance.RecordTradeDiffusion(diffPaleoW, paleoRecv, allPrecPartner, 200.0);
+        Check(paleoRecv.CivicExperience.Count == 0, "RecordTradeDiffusion accrues 0 experience onto Paleolithic receiver");
+        CivicGovernance.Close(diffPaleoW, new TurnRecord(), 20.0);
+        Check(paleoRecv.CivicPrecedents.Count == 0, "Paleolithic receiver unlocks 0 precedents after trade diffusion + Close");
+
+        // Regression (Bug #1c): RecordTradeDiffusion with SanitationEnabled=false filters PlannedQuartersAndDrainage
+        // while still diffusing Tier 1/2/3A cleanly to a Neolithic receiver.
+        var diffNoSanW = CivicFixture(sanitation: false);
+        diffNoSanW.Config.Civic.PrecedentDiffusionPerTrade = 1.0;
+        var neoRecv = new Society { Id = 778 };
+        neoRecv.Progression.Era = Era.Neolithic;
+        CivicGovernance.RecordTradeDiffusion(diffNoSanW, neoRecv, allPrecPartner, 200.0);
+        Check(!neoRecv.CivicExperience.ContainsKey(CivicPrecedents.PlannedQuartersAndDrainage),
+            "RecordTradeDiffusion does not accrue PlannedQuartersAndDrainage when SanitationEnabled=false");
+        Near(neoRecv.CivicExperience[CivicPrecedents.CeremonialIntegration], 200.0, "Tier 1 diffuses to Neolithic receiver when SanitationEnabled=false", 1e-12);
+        Near(neoRecv.CivicExperience[CivicPrecedents.CivicOrganization], 200.0, "Tier 2 diffuses to Neolithic receiver when SanitationEnabled=false", 1e-12);
+        Near(neoRecv.CivicExperience[CivicPrecedents.TokensAndAccounting], 200.0, "Tier 3A diffuses to Neolithic receiver when SanitationEnabled=false", 1e-12);
+        var neoSanRecv = new Society { Id = 779 };
+        neoSanRecv.Progression.Era = Era.Neolithic;
+        CivicGovernance.RecordTradeDiffusion(diffPaleoW, neoSanRecv, allPrecPartner, 200.0);
+        Near(neoSanRecv.CivicExperience[CivicPrecedents.PlannedQuartersAndDrainage], 200.0,
+            "RecordTradeDiffusion diffuses PlannedQuartersAndDrainage to Neolithic receiver when SanitationEnabled=true", 1e-12);
 
         // InitializeDaughterView legacy guard: MUST set (0, 0), NEVER -0.15 when Civic disabled!
         var legW = CivicFixture(enableCivic: false);
@@ -584,6 +669,25 @@ internal static class CivicGovernanceChecks
         CivicGovernance.InitializeDaughterView(legW, legParent, legDaughter);
         Check(legDaughter.CivicComplexity == 0 && legDaughter.CivicStratification == 0 && legDaughter.CivicCapital == 0 && legDaughter.SanitationCapital == 0,
             "InitializeDaughterView keeps C=0, P=0 (never -0.15) when Civic governance is disabled");
+
+        // Regression (Bug #2): InitializeDaughterView on freshly constructed unbound Camp matches DaughterCoordinates exactly.
+        var unboundW = CivicFixture(sanitation: true);
+        var uParent = unboundW.Camps[0];
+        uParent.People.CivicPrecedents.Add(CivicPrecedents.CeremonialIntegration);
+        uParent.People.CivicPrecedents.Add(CivicPrecedents.CivicOrganization);
+        uParent.CivicComplexity = 0.60;
+        uParent.CivicStratification = 0.40;
+        var unboundView = new Camp { Id = 77, CivicCapital = 25, SanitationCapital = 10, RecentTradeVolume = 15, ImmigrationPolicy = ImmigrationPolicy.Restricted, CivicFocus = CivicFocus.Centralized };
+        CivicGovernance.InitializeDaughterView(unboundW, uParent, unboundView);
+        var expectedDaughter = CivicGovernance.DaughterCoordinates(unboundW, uParent);
+        Near(unboundView.CivicComplexity, expectedDaughter.Complexity, "unbound InitializeDaughterView matches DaughterCoordinates.Complexity (0.30)", 1e-12);
+        Near(unboundView.LastEnvironmentalComplexity, expectedDaughter.Complexity, "unbound InitializeDaughterView sets LastEnvironmentalComplexity (0.30)", 1e-12);
+        Near(unboundView.CivicStratification, expectedDaughter.Stratification, "unbound InitializeDaughterView matches DaughterCoordinates.Stratification (0.05)", 1e-12);
+        Near(unboundView.LastEnvironmentalStratification, expectedDaughter.Stratification, "unbound InitializeDaughterView sets LastEnvironmentalStratification (0.05)", 1e-12);
+        Check(unboundView.CivicComplexity > 0 && unboundView.LastEnvironmentalComplexity > 0 &&
+              unboundView.CivicCapital == 0 && unboundView.SanitationCapital == 0 && unboundView.RecentTradeVolume == 0 &&
+              unboundView.ImmigrationPolicy == ImmigrationPolicy.Neutral && unboundView.CivicFocus == CivicFocus.Auto,
+            "unbound InitializeDaughterView produces non-zero dampened complexity and zeroes capitals/policies");
 
         // SocialRelocationForecastCache.Daughter applies InitializeDaughterView
         var relocW = CivicFixture();

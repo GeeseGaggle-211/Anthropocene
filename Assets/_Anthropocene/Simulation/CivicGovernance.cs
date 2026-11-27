@@ -323,10 +323,11 @@ namespace Anthropocene.Simulation
             double c = Numbers.Clamp(complexity, 0, 1);
             double p = Numbers.Clamp(stratification, -1, 1);
             double cov = Numbers.Clamp(coverage, 0, 1);
+            double cp = Math.Pow(c, s.CrowdingShapeExponent);
             double denom = -PhysicalDemography.Expm1(-s.CrowdingShapeRate);
-            double fc = denom > Epsilon
-                ? (-PhysicalDemography.Expm1(-s.CrowdingShapeRate * Math.Pow(c, s.CrowdingShapeExponent))) / denom
-                : 0;
+            double fc = s.CrowdingShapeRate > 1e-16 && denom > 0
+                ? Numbers.Clamp((-PhysicalDemography.Expm1(-s.CrowdingShapeRate * cp)) / denom, 0, 1)
+                : cp;
             double alpha = Numbers.Clamp((s.CrowdingMitigationBase + s.CrowdingMitigationStratBonus * p * c) * fc, 0, 1 - s.MinCrowdingMitigation);
             return Numbers.Clamp(1 - alpha * cov, s.MinCrowdingMitigation, 1);
         }
@@ -341,7 +342,7 @@ namespace Anthropocene.Simulation
             double p = Numbers.Clamp(stratification, -1, 1);
             double cov = Numbers.Clamp(coverage, 0, 1);
             double h = s.DiseaseHalfScale;
-            double fd = (1 + h) * c / (c + h);
+            double fd = Numbers.Clamp(c * ((1 + h) / (c + h)), 0, 1);
             double alpha = Numbers.Clamp((s.DiseaseMitigationBase + s.DiseaseMitigationStratBonus * p) * fd, 0, 1 - s.MinDiseaseMitigation);
             return Numbers.Clamp(1 - alpha * cov, s.MinDiseaseMitigation, 1);
         }
@@ -483,10 +484,7 @@ namespace Anthropocene.Simulation
                 view.LastEnvironmentalStratification = 0;
                 return;
             }
-            var s = w.Config.Civic;
-            double cMax = MaxComplexity(w.Config, view.People ?? parent.People);
-            double c = Numbers.Clamp(s.DaughterComplexityRetention * parent.CivicComplexity, 0, cMax);
-            double p = Numbers.Clamp(s.DaughterStratificationRetention * parent.CivicStratification - s.DaughterFrontierEgalitarianShift, -1, 1);
+            var (c, p) = DaughterCoordinates(w, parent);
             view.CivicComplexity = c;
             view.CivicStratification = p;
             view.LastEnvironmentalComplexity = c;
@@ -569,15 +567,19 @@ namespace Anthropocene.Simulation
         // Inert trade diffusion hook (Docs/CivicGovernance.md §5 Choice #6; strictly no-op when PrecedentDiffusionPerTrade == 0)
         internal static void RecordTradeDiffusion(WorldState w, Society receiver, Society partner, double volume)
         {
-            if (w == null || receiver == null || partner == null || volume <= 0 || !Enabled(w.Config)) return;
+            if (w == null || receiver == null || partner == null || !(volume > 0) || double.IsInfinity(volume) ||
+                !Enabled(w.Config) || receiver.Progression == null || receiver.Progression.Era != Era.Neolithic)
+                return;
             double rate = w.Config.Civic.PrecedentDiffusionPerTrade;
             if (rate <= 0 || partner.CivicPrecedents == null || partner.CivicPrecedents.Count == 0) return;
-            if (receiver.CivicExperience == null) receiver.CivicExperience = new Dictionary<string, double>();
+            bool sanitationOn = SanitationEnabled(w.Config);
             double credit = volume * rate;
             foreach (string precedent in CivicPrecedents.All)
             {
+                if (precedent == CivicPrecedents.PlannedQuartersAndDrainage && !sanitationOn) continue;
                 if (partner.HasCivicPrecedent(precedent) && !receiver.HasCivicPrecedent(precedent))
                 {
+                    if (receiver.CivicExperience == null) receiver.CivicExperience = new Dictionary<string, double>();
                     receiver.CivicExperience.TryGetValue(precedent, out double prior);
                     receiver.CivicExperience[precedent] = prior + credit;
                 }
@@ -655,6 +657,7 @@ namespace Anthropocene.Simulation
                     if (soc == null) continue;
                     if (soc.CivicExperience == null) soc.CivicExperience = new Dictionary<string, double>();
                     if (soc.CivicPrecedents == null) soc.CivicPrecedents = new List<string>();
+                    if (soc.Progression == null || soc.Progression.Era != Era.Neolithic) continue;
 
                     // Anti-oscillation invariant: unboosted base housing cohesion scale N_{s,0}.
                     var shelter = NeolithicProduction.HousingCapacity(w, c, w.Days);
@@ -720,6 +723,7 @@ namespace Anthropocene.Simulation
                 // Canonical society-ID x tier order (1, 2, 3A, 3B) precedent unlock commit.
                 foreach (var soc in w.Societies.OrderBy(soc => soc.Id))
                 {
+                    if (soc.Progression == null || soc.Progression.Era != Era.Neolithic) continue;
                     if (soc.CivicExperience == null || soc.CivicExperience.Count == 0) continue;
                     if (soc.CivicPrecedents == null) soc.CivicPrecedents = new List<string>();
 
