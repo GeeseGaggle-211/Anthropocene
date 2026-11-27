@@ -450,6 +450,110 @@ internal static class CivicGovernanceChecks
         Check(sEgal10kNo3A > sStrat10kNo3A, "Without Tier 3A, Egalitarian Steward scaling exceeds Stratified at N=10000");
         Check(sEgal10k3A < sStrat10kNo3A, "Tier 3A flattens Egalitarian superlinear Steward scaling");
 
+        // Verify log-space RequiredStewards matches exact Math.Pow(1 + r^2, 0.5 * (beta - 1)) in normal range to < 1e-15.
+        foreach (double nNorm in new[] { 1000.0, 3500.0, 10000.0 })
+        {
+            double rNorm = nNorm / cfg.Civic.StewardScalingKnee;
+            double expectedEgal = 0.75 * nNorm * cfg.Civic.EgalitarianStewardRate * Math.Pow(1.0 + rNorm * rNorm, 0.5 * (cfg.Civic.EgalitarianStewardExponent - 1.0));
+            Near(CivicGovernance.RequiredStewards(cfg, nNorm, 0.75, -1.0, false, -1.0), expectedEgal,
+                $"log-space RequiredStewards matches exact formula at N={nNorm}", 1e-15);
+        }
+
+        // Regression (Iter 3 Bug #1a): tiny valid StewardScalingKnee must NOT prematurely overflow kneeRatio^2 and collapse CivicCoverage.
+        var tinyKneeWorld = CivicFixture(sanitation: true);
+        tinyKneeWorld.Config.Civic = new CivicGovernanceSettings
+        {
+            Enabled = true,
+            SanitationEnabled = true,
+            StewardScalingKnee = 1e-160,
+            EgalitarianStewardExponent = 1.001,
+            StratifiedStewardExponent = 1.001
+        };
+        tinyKneeWorld.Config.Validate();
+        var tinyKneeCamp = tinyKneeWorld.Camps[0];
+        tinyKneeCamp.Population = 1000;
+        tinyKneeCamp.CivicComplexity = 0.75;
+        tinyKneeCamp.CivicStratification = 0.0;
+        tinyKneeCamp.LastEnvironmentalStratification = 0.0;
+        tinyKneeCamp.CivicCapital = 1000.0;
+        tinyKneeCamp.Workforce = new PopulationLedger();
+        tinyKneeCamp.Workforce.Assign(WorkforceRoles.Steward, 100, 1000);
+        double reqTinyKnee = CivicGovernance.RequiredStewards(tinyKneeWorld, tinyKneeCamp);
+        double covTinyKnee = CivicGovernance.CivicCoverage(tinyKneeWorld, tinyKneeCamp);
+        Check(!double.IsNaN(reqTinyKnee) && !double.IsInfinity(reqTinyKnee), "RequiredStewards finite at StewardScalingKnee=1e-160, beta=1.001");
+        Near(reqTinyKnee, 81.86957328273559, "RequiredStewards matches exact value 81.86957328273559 at knee=1e-160", 1e-9);
+        Near(covTinyKnee, 1.0, "CivicCoverage remains 1.0 (no premature overflow collapse) at knee=1e-160", 1e-12);
+
+        // Regression (Iter 3 Bug #1b): default exponents across tiny valid StewardScalingKnee values down to double.Epsilon.
+        var tinyKneeCases = new (double Knee, double P, bool Has3A, string Label)[]
+        {
+            (1e-152, -1.0, false, "knee=1e-152 P=-1 no3A"),
+            (1e-160,  1.0, false, "knee=1e-160 P=+1 no3A"),
+            (1e-200,  1.0, false, "knee=1e-200 P=+1 no3A"),
+            (1e-300,  1.0, true,  "knee=1e-300 P=+1 has3A"),
+            (double.Epsilon, 1.0, true, "knee=double.Epsilon P=+1 has3A")
+        };
+        foreach (var tcCase in tinyKneeCases)
+        {
+            var tkCfg = new SimulationConfig { Civic = new CivicGovernanceSettings { Enabled = true, StewardScalingKnee = tcCase.Knee } };
+            tkCfg.Validate();
+            double actualReq = CivicGovernance.RequiredStewards(tkCfg, 1000.0, 0.75, tcCase.P, tcCase.Has3A, tcCase.P);
+            double uCase = 0.5 * (tcCase.P + 1.0);
+            double betaRawCase = tkCfg.Civic.EgalitarianStewardExponent + (tkCfg.Civic.StratifiedStewardExponent - tkCfg.Civic.EgalitarianStewardExponent) * uCase;
+            double excessCase = tcCase.Has3A ? tkCfg.Civic.AccountingExponentRetention * (betaRawCase - 1.0) : (betaRawCase - 1.0);
+            double rateCase = tkCfg.Civic.EgalitarianStewardRate + (tkCfg.Civic.StratifiedStewardRate - tkCfg.Civic.EgalitarianStewardRate) * uCase;
+            double expectedReq = Math.Exp(Math.Log(0.75) + Math.Log(1000.0) + Math.Log(rateCase) + excessCase * (Math.Log(1000.0) - Math.Log(tcCase.Knee)));
+            Check(!double.IsNaN(actualReq) && !double.IsInfinity(actualReq), "RequiredStewards finite for " + tcCase.Label);
+            Near(actualReq, expectedReq, "RequiredStewards matches exact log-space ground truth for " + tcCase.Label, 1e-9);
+        }
+
+        // Defensive finite saturation sweep for extreme valid parameters across pure helpers.
+        var extremeW = CivicFixture(sanitation: true);
+        extremeW.Config.Civic = new CivicGovernanceSettings
+        {
+            Enabled = true,
+            SanitationEnabled = true,
+            AlignmentFrictionRate = double.MaxValue,
+            EgalitarianCapitalPerPerson = 1e308,
+            StratifiedCapitalPerPerson = double.MaxValue,
+            SanitationCapitalPerPerson = double.MaxValue,
+            CohesionLinearGain = double.MaxValue,
+            CohesionUrbanGain = double.MaxValue,
+            StratifiedPublicWorksBonus = double.MaxValue,
+            StratifiedGranaryStorageBonus = double.MaxValue
+        };
+        extremeW.Config.Validate();
+        var extCamp = extremeW.Camps[0];
+        extCamp.Population = 1000;
+        extCamp.CivicComplexity = 1.0;
+        extCamp.CivicStratification = 1.0;
+        extCamp.LastEnvironmentalStratification = -1.0;
+        extCamp.CivicCapital = double.MaxValue;
+        extCamp.Workforce = new PopulationLedger();
+        extCamp.Workforce.Assign(WorkforceRoles.Steward, 1000, 1000);
+        double extFriction = CivicGovernance.AlignmentFriction(extremeW.Config, 1.0, -1.0);
+        double extReqCap = CivicGovernance.RequiredCivicCapital(extremeW.Config, 1000, 1.0, 1.0);
+        double extReqSan = CivicGovernance.RequiredSanitationCapital(extremeW.Config, 1000);
+        double extCohesion = CivicGovernance.CohesionMultiplierFor(extremeW.Config, 1.0, 1.0, 1.0);
+        double extPw = CivicGovernance.PublicWorksMobilizationMultiplier(extremeW, extCamp);
+        double extGranary = CivicGovernance.GranaryStorageMultiplier(extremeW, extCamp);
+        double extRelaxInfY = CivicGovernance.Relax(0.42, 0.90, 0.025, double.PositiveInfinity);
+        double extRelaxInfR = CivicGovernance.Relax(0.42, 0.90, double.PositiveInfinity, 20.0);
+        double extTradeVol = CivicGovernance.TradeRecordVolumePersonYears(cfg, new TradeRecord
+        {
+            Want = TradeGood.Cloth, WantQuantity = double.MaxValue / 20.0,
+            Give = TradeGood.Cloth, GiveQuantity = double.MaxValue / 20.0
+        });
+        Check(!double.IsInfinity(extFriction) && extFriction == double.MaxValue, "AlignmentFriction saturates cleanly to double.MaxValue");
+        Check(!double.IsInfinity(extReqCap) && extReqCap == double.MaxValue, "RequiredCivicCapital saturates cleanly to double.MaxValue");
+        Check(!double.IsInfinity(extReqSan) && extReqSan == double.MaxValue, "RequiredSanitationCapital saturates cleanly to double.MaxValue");
+        Check(!double.IsInfinity(extCohesion) && extCohesion == double.MaxValue, "CohesionMultiplierFor saturates cleanly to double.MaxValue");
+        Check(!double.IsInfinity(extPw) && extPw >= 1.0, "PublicWorksMobilizationMultiplier stays finite under extreme bonus");
+        Check(!double.IsInfinity(extGranary) && extGranary >= 1.0, "GranaryStorageMultiplier stays finite under extreme bonus");
+        Near(extRelaxInfY, 0.42, "Relax with +Infinity years safely returns current", 1e-15);
+        Near(extRelaxInfR, 0.42, "Relax with +Infinity rate safely returns current", 1e-15);
+        Check(!double.IsInfinity(extTradeVol) && extTradeVol > 0, "TradeRecordVolumePersonYears avoids intermediate sum overflow");
+
         var bonusCamp = new Camp { Population = 1000, CivicComplexity = 1.0, CivicStratification = 1.0, LastEnvironmentalStratification = 1.0, CivicCapital = 500 };
         bonusCamp.Workforce.Assign(WorkforceRoles.Steward, 500, 1000);
         Near(CivicGovernance.PublicWorksMobilizationMultiplier(plains, bonusCamp), 1.35, "Stratified PublicWorksMobilizationMultiplier = 1.35", 1e-12);
@@ -661,6 +765,68 @@ internal static class CivicGovernanceChecks
         CivicGovernance.RecordTradeDiffusion(diffPaleoW, neoSanRecv, allPrecPartner, 200.0);
         Near(neoSanRecv.CivicExperience[CivicPrecedents.PlannedQuartersAndDrainage], 200.0,
             "RecordTradeDiffusion diffuses PlannedQuartersAndDrainage to Neolithic receiver when SanitationEnabled=true", 1e-12);
+
+        // Regression (Iter 3 Bug #2a): RecordTradeDiffusion single-call product overflow AND two-call cumulative sum overflow
+        // MUST saturate cleanly to finite <= double.MaxValue without corrupting ValidateInvariants.
+        var ovProdW = CivicFixture(sanitation: true);
+        ovProdW.Config.Civic.PrecedentDiffusionPerTrade = 10.0;
+        ovProdW.Config.Validate();
+        var ovProdSoc = ovProdW.Camps[0].People;
+        ovProdSoc.Progression.Era = Era.Neolithic;
+        CivicGovernance.RecordTradeDiffusion(ovProdW, ovProdSoc, allPrecPartner, double.MaxValue);
+        Check(ovProdSoc.CivicExperience.Count == CivicPrecedents.All.Length &&
+              ovProdSoc.CivicExperience.Values.All(v => !double.IsNaN(v) && !double.IsInfinity(v) && v > 0 && v <= double.MaxValue),
+            "RecordTradeDiffusion single-call overflow saturates CivicExperience cleanly to finite double");
+        CivicGovernance.ValidateInvariants(ovProdW);
+        Check(true, "ValidateInvariants passes after RecordTradeDiffusion single-call overflow");
+
+        var ovSumW = CivicFixture(sanitation: true);
+        ovSumW.Config.Civic.PrecedentDiffusionPerTrade = 1.0;
+        ovSumW.Config.Validate();
+        var ovSumSoc = ovSumW.Camps[0].People;
+        ovSumSoc.Progression.Era = Era.Neolithic;
+        CivicGovernance.RecordTradeDiffusion(ovSumW, ovSumSoc, allPrecPartner, 1.2e308);
+        CivicGovernance.RecordTradeDiffusion(ovSumW, ovSumSoc, allPrecPartner, 1.2e308);
+        Check(ovSumSoc.CivicExperience.Count == CivicPrecedents.All.Length &&
+              ovSumSoc.CivicExperience.Values.All(v => !double.IsNaN(v) && !double.IsInfinity(v) && v == double.MaxValue),
+            "RecordTradeDiffusion two-call cumulative overflow saturates CivicExperience to double.MaxValue");
+        CivicGovernance.ValidateInvariants(ovSumW);
+        Check(true, "ValidateInvariants passes after RecordTradeDiffusion cumulative overflow");
+
+        // Regression (Iter 3 Bug #2b): Close(horizonYears = +Infinity) treats dt as 0, keeps CivicExperience finite, and passes ValidateInvariants.
+        var infCloseW = CivicFixture(sanitation: true);
+        var infCamp = infCloseW.Camps[0];
+        infCamp.Population = 1200;
+        infCamp.StationaryTurns = 4;
+        infCamp.StationaryYears = 80;
+        infCamp.CivicComplexity = 0.25;
+        infCamp.CivicStratification = 0.20;
+        infCamp.RecentTradeVolume = 45.0;
+        infCamp.People.Progression.Era = Era.Neolithic;
+        infCamp.People.CivicPrecedents.Add(CivicPrecedents.CeremonialIntegration);
+        infCamp.People.CivicExperience[CivicPrecedents.CivicOrganization] = 12.0;
+        infCamp.Workforce = new PopulationLedger();
+        infCamp.Workforce.Assign(WorkforceRoles.Steward, 20, infCamp.Population);
+        CivicGovernance.Close(infCloseW, new TurnRecord(), double.PositiveInfinity);
+        Near(infCamp.People.CivicExperience[CivicPrecedents.CivicOrganization], 12.0,
+            "Close(+Infinity) treats dt=0 and leaves CivicExperience finite and unchanged", 1e-12);
+        Near(infCamp.CivicComplexity, 0.25, "Close(+Infinity) leaves CivicComplexity unchanged", 1e-12);
+        Near(infCamp.CivicStratification, 0.20, "Close(+Infinity) leaves CivicStratification unchanged", 1e-12);
+        Near(infCamp.RecentTradeVolume, 45.0, "Close(+Infinity) leaves RecentTradeVolume unchanged", 1e-12);
+        CivicGovernance.ValidateInvariants(infCloseW);
+        Check(true, "ValidateInvariants passes after Close(horizonYears = +Infinity)");
+
+        // Step 1 Trade EMA saturation under extreme TradeRecord volume and tiny dt preserves finite RecentTradeVolume & invariants.
+        var emaOvW = CivicFixture(sanitation: true);
+        var emaOvCamp = emaOvW.Camps[0];
+        var emaOvRec = new TurnRecord();
+        emaOvRec.Trades.Add(new TradeRecord { Requester = emaOvCamp.Id, Responder = emaOvCamp.Id + 999, Want = TradeGood.Cloth, WantQuantity = double.MaxValue, Give = TradeGood.Cloth, GiveQuantity = double.MaxValue });
+        emaOvRec.Trades.Add(new TradeRecord { Requester = emaOvCamp.Id, Responder = emaOvCamp.Id + 999, Want = TradeGood.Cloth, WantQuantity = double.MaxValue, Give = TradeGood.Cloth, GiveQuantity = double.MaxValue });
+        CivicGovernance.Close(emaOvW, emaOvRec, 1e-6);
+        Check(!double.IsNaN(emaOvCamp.RecentTradeVolume) && !double.IsInfinity(emaOvCamp.RecentTradeVolume) && emaOvCamp.RecentTradeVolume >= 0,
+            "Close Step 1 Trade EMA stays finite non-negative under extreme TradeRecord overflow");
+        CivicGovernance.ValidateInvariants(emaOvW);
+        Check(true, "ValidateInvariants passes after extreme TradeRecord Close");
 
         // InitializeDaughterView legacy guard: MUST set (0, 0), NEVER -0.15 when Civic disabled!
         var legW = CivicFixture(enableCivic: false);

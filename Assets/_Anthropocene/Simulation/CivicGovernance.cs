@@ -247,7 +247,10 @@ namespace Anthropocene.Simulation
             if (!Enabled(cfg)) return 1;
             double p = Numbers.Clamp(stratification, -1, 1);
             double pEnv = Numbers.Clamp(envStratification, -1, 1);
-            return 1 + cfg.Civic.AlignmentFrictionRate * Math.Abs(p - pEnv);
+            double prod = cfg.Civic.AlignmentFrictionRate * Math.Abs(p - pEnv);
+            if (double.IsInfinity(prod)) return double.MaxValue;
+            double result = 1 + prod;
+            return double.IsInfinity(result) ? double.MaxValue : result;
         }
         public static double AlignmentFriction(WorldState w, Camp c)
             => c == null ? 1 : AlignmentFriction(w?.Config, c.CivicStratification, c.LastEnvironmentalStratification);
@@ -255,17 +258,50 @@ namespace Anthropocene.Simulation
         public static double RequiredStewards(SimulationConfig cfg, double population, double complexity,
             double stratification, bool hasAccounting, double envStratification)
         {
-            if (!Enabled(cfg) || population <= 0 || complexity <= Epsilon) return 0;
+            if (!Enabled(cfg) || !(population > 0) || !(complexity > Epsilon)) return 0;
             var s = cfg.Civic;
             double c = Numbers.Clamp(complexity, 0, 1);
             double p = Numbers.Clamp(stratification, -1, 1);
             double u = 0.5 * (p + 1);
             double betaRaw = s.EgalitarianStewardExponent + (s.StratifiedStewardExponent - s.EgalitarianStewardExponent) * u;
-            double beta = hasAccounting ? 1 + s.AccountingExponentRetention * (betaRaw - 1) : betaRaw;
+            if (double.IsInfinity(betaRaw)) betaRaw = double.MaxValue;
+            double excess = hasAccounting ? s.AccountingExponentRetention * (betaRaw - 1.0) : (betaRaw - 1.0);
+            if (double.IsInfinity(excess)) excess = double.MaxValue;
             double rate = s.EgalitarianStewardRate + (s.StratifiedStewardRate - s.EgalitarianStewardRate) * u;
-            double kneeRatio = population / s.StewardScalingKnee;
-            double knee = Math.Pow(1 + kneeRatio * kneeRatio, 0.5 * (beta - 1));
-            return c * population * rate * knee * AlignmentFriction(cfg, p, envStratification);
+            if (!(rate > 0)) return 0;
+            if (double.IsInfinity(rate)) rate = double.MaxValue;
+
+            double logKnee = 0.0;
+            if (excess > 0 && s.StewardScalingKnee > 0)
+            {
+                double logRatio = Math.Log(population) - Math.Log(s.StewardScalingKnee);
+                if (logRatio > 30.0)
+                    logKnee = excess * logRatio;
+                else if (logRatio < -20.0)
+                {
+                    double logLogKnee = Math.Log(excess) + 2.0 * logRatio - Math.Log(2.0);
+                    logKnee = logLogKnee >= 709.0 ? double.PositiveInfinity : Math.Exp(logLogKnee);
+                }
+                else
+                {
+                    double r = population / s.StewardScalingKnee;
+                    logKnee = excess * (0.5 * PhysicalDemography.Log1p(r * r));
+                }
+            }
+
+            double friction = AlignmentFriction(cfg, p, envStratification);
+            if (logKnee < 709.0)
+            {
+                double knee = logKnee > 0 ? Math.Exp(logKnee) : 1.0;
+                double required = c * population * rate * knee * friction;
+                if (required > 0 && !double.IsInfinity(required))
+                    return required;
+            }
+            double logTotal = Math.Log(c) + Math.Log(population) + Math.Log(rate) + logKnee + Math.Log(friction);
+            if (double.IsNaN(logTotal)) return 0;
+            if (logTotal >= 709.782712893384) return double.MaxValue;
+            double result = Math.Exp(logTotal);
+            return double.IsInfinity(result) ? double.MaxValue : result;
         }
         public static double RequiredStewards(WorldState w, Camp c, double? population = null)
         {
@@ -277,18 +313,32 @@ namespace Anthropocene.Simulation
 
         public static double RequiredCivicCapital(SimulationConfig cfg, double population, double complexity, double stratification)
         {
-            if (!Enabled(cfg) || population <= 0 || complexity <= Epsilon) return 0;
+            if (!Enabled(cfg) || !(population > 0) || !(complexity > Epsilon)) return 0;
             var s = cfg.Civic;
             double c = Numbers.Clamp(complexity, 0, 1);
             double u = 0.5 * (Numbers.Clamp(stratification, -1, 1) + 1);
             double rate = s.EgalitarianCapitalPerPerson + (s.StratifiedCapitalPerPerson - s.EgalitarianCapitalPerPerson) * u;
-            return c * population * rate;
+            if (!(rate > 0)) return 0;
+            if (double.IsInfinity(rate)) rate = double.MaxValue;
+            double required = c * population * rate;
+            if (double.IsInfinity(required))
+            {
+                double logTotal = Math.Log(c) + Math.Log(population) + Math.Log(rate);
+                if (double.IsNaN(logTotal)) return 0;
+                if (logTotal >= 709.782712893384) return double.MaxValue;
+                required = Math.Exp(logTotal);
+            }
+            return double.IsInfinity(required) ? double.MaxValue : required;
         }
         public static double RequiredCivicCapital(WorldState w, Camp c, double? population = null)
             => w == null || c == null ? 0 : RequiredCivicCapital(w.Config, population ?? c.Population, c.CivicComplexity, c.CivicStratification);
 
         public static double RequiredSanitationCapital(SimulationConfig cfg, double population)
-            => !SanitationEnabled(cfg) || population <= 0 ? 0 : cfg.Civic.SanitationCapitalPerPerson * population;
+        {
+            if (!SanitationEnabled(cfg) || !(population > 0)) return 0;
+            double required = cfg.Civic.SanitationCapitalPerPerson * population;
+            return double.IsInfinity(required) ? double.MaxValue : required;
+        }
 
         public static double ActiveSanitationCapital(Camp c)
             => c == null ? 0 : Math.Max(0, c.UseActiveSanitationCapital ? c.ActiveSanitationCapital : c.SanitationCapital);
@@ -356,9 +406,16 @@ namespace Anthropocene.Simulation
             double c = Numbers.Clamp(complexity, 0, 1);
             double p = Numbers.Clamp(stratification, -1, 1);
             double cov = Numbers.Clamp(coverage, 0, 1);
-            double g = (s.CohesionLinearGain * c + s.CohesionUrbanGain * Math.Pow(c, s.CohesionUrbanExponent))
-                * (1 + s.CohesionStratFactor * p * Math.Pow(c, 1.5));
-            return 1 + Math.Max(0, g) * cov;
+            double stratFactor = 1 + s.CohesionStratFactor * p * Math.Pow(c, 1.5);
+            double g = (s.CohesionLinearGain * c + s.CohesionUrbanGain * Math.Pow(c, s.CohesionUrbanExponent)) * stratFactor;
+            double result = 1 + Math.Max(0, g) * cov;
+            if (double.IsInfinity(result))
+            {
+                double scale = Math.Max(0, stratFactor) * cov;
+                double scaled = s.CohesionLinearGain * (c * scale) + s.CohesionUrbanGain * (Math.Pow(c, s.CohesionUrbanExponent) * scale);
+                result = double.IsInfinity(scaled) ? double.MaxValue : 1 + scaled;
+            }
+            return double.IsInfinity(result) ? double.MaxValue : result;
         }
         public static double CohesionMultiplier(WorldState w, Camp c)
             => w == null || c == null || !Enabled(w.Config) ? 1 : CohesionMultiplierFor(w.Config, c.CivicComplexity, c.CivicStratification, CivicCoverage(w, c));
@@ -381,7 +438,8 @@ namespace Anthropocene.Simulation
             double cov = CivicCoverage(w, c);
             if (cov <= 0) return 1;
             double u = 0.5 * (Numbers.Clamp(c.CivicStratification, -1, 1) + 1);
-            return 1 + w.Config.Civic.StratifiedPublicWorksBonus * u * u * Numbers.Clamp(c.CivicComplexity, 0, 1) * cov;
+            double result = 1 + w.Config.Civic.StratifiedPublicWorksBonus * u * u * Numbers.Clamp(c.CivicComplexity, 0, 1) * cov;
+            return double.IsInfinity(result) ? double.MaxValue : result;
         }
 
         public static double GranaryStorageMultiplier(WorldState w, Camp c, double? capitalOverride = null)
@@ -395,11 +453,13 @@ namespace Anthropocene.Simulation
                 double reqStewards = RequiredStewards(w, c);
                 if (reqCap <= Epsilon || reqStewards <= Epsilon) return 1;
                 int stewards = CultivationEconomy.Workers(c, WorkforceRoles.Steward);
-                cov = Numbers.Clamp(Math.Min(Math.Max(0, capitalOverride.Value) / reqCap, Math.Max(0, stewards) / reqStewards), 0, 1);
+                double cap = capitalOverride.Value > 0 ? capitalOverride.Value : 0;
+                cov = Numbers.Clamp(Math.Min(cap / reqCap, Math.Max(0, stewards) / reqStewards), 0, 1);
             }
             if (cov <= 0) return 1;
             double u = 0.5 * (Numbers.Clamp(c.CivicStratification, -1, 1) + 1);
-            return 1 + w.Config.Civic.StratifiedGranaryStorageBonus * u * u * Numbers.Clamp(c.CivicComplexity, 0, 1) * cov;
+            double result = 1 + w.Config.Civic.StratifiedGranaryStorageBonus * u * u * Numbers.Clamp(c.CivicComplexity, 0, 1) * cov;
+            return double.IsInfinity(result) ? double.MaxValue : result;
         }
 
         public static double ExitMismatch(Camp c)
@@ -431,7 +491,14 @@ namespace Anthropocene.Simulation
             => Numbers.Clamp(envStratification + SteeringOffset(cfg, fission, immigration, focus), -1, 1);
 
         public static double Relax(double current, double target, double rate, double years)
-            => years <= 0 || rate <= 0 ? current : current + (target - current) * (-PhysicalDemography.Expm1(-rate * years));
+        {
+            if (!(years > 0) || double.IsInfinity(years) || !(rate > 0) || double.IsInfinity(rate)) return current;
+            double w = -PhysicalDemography.Expm1(-rate * years);
+            double diff = target - current;
+            double result = double.IsInfinity(diff) ? (1.0 - w) * current + w * target : current + diff * w;
+            if (double.IsInfinity(result)) return result > 0 ? double.MaxValue : -double.MaxValue;
+            return result;
+        }
 
         public static double NextComplexity(WorldState w, Camp c, double years)
         {
@@ -524,24 +591,27 @@ namespace Anthropocene.Simulation
         {
             if (cfg == null || t == null) return 0;
             double foodPerPersonYear = Math.Max(Epsilon, PhysicalDemography.FoodPerPersonYear(cfg));
-            double pyWant = TradeLegPersonYears(t.Want, Math.Max(0, t.WantQuantity), foodPerPersonYear);
-            double pyGive = TradeLegPersonYears(t.Give, Math.Max(0, t.GiveQuantity), foodPerPersonYear);
-            return 0.5 * (pyWant + pyGive);
+            double pyWant = TradeLegPersonYears(t.Want, t.WantQuantity > 0 ? t.WantQuantity : 0, foodPerPersonYear);
+            double pyGive = TradeLegPersonYears(t.Give, t.GiveQuantity > 0 ? t.GiveQuantity : 0, foodPerPersonYear);
+            double vol = 0.5 * pyWant + 0.5 * pyGive;
+            return double.IsInfinity(vol) ? double.MaxValue : vol;
         }
 
         private static double TradeLegPersonYears(TradeGood good, double qty, double foodPerPersonYear)
         {
-            if (qty <= 0) return 0;
+            if (!(qty > 0)) return 0;
+            double py;
             switch (good)
             {
-                case TradeGood.Food: return qty / foodPerPersonYear;
+                case TradeGood.Food: py = qty / foodPerPersonYear; break;
                 case TradeGood.Cloth:
-                case TradeGood.AnimalFabric: return qty * 20.0;
+                case TradeGood.AnimalFabric: py = qty * 20.0; break;
                 case TradeGood.HousingMaterial:
-                case TradeGood.LightHousing: return qty * 4.0;
-                case TradeGood.Pots: return qty * 5.0;
-                default: return qty;
+                case TradeGood.LightHousing: py = qty * 4.0; break;
+                case TradeGood.Pots: py = qty * 5.0; break;
+                default: py = qty; break;
             }
+            return double.IsInfinity(py) ? double.MaxValue : py;
         }
 
         // Local clay availability for Tier 3A dry-clay / pottery prerequisite (Docs/CivicGovernance.md §5 Choice #6)
@@ -571,18 +641,15 @@ namespace Anthropocene.Simulation
                 !Enabled(w.Config) || receiver.Progression == null || receiver.Progression.Era != Era.Neolithic)
                 return;
             double rate = w.Config.Civic.PrecedentDiffusionPerTrade;
-            if (rate <= 0 || partner.CivicPrecedents == null || partner.CivicPrecedents.Count == 0) return;
+            if (!(rate > 0) || double.IsInfinity(rate) || partner.CivicPrecedents == null || partner.CivicPrecedents.Count == 0) return;
             bool sanitationOn = SanitationEnabled(w.Config);
             double credit = volume * rate;
+            if (double.IsInfinity(credit)) credit = double.MaxValue;
             foreach (string precedent in CivicPrecedents.All)
             {
                 if (precedent == CivicPrecedents.PlannedQuartersAndDrainage && !sanitationOn) continue;
                 if (partner.HasCivicPrecedent(precedent) && !receiver.HasCivicPrecedent(precedent))
-                {
-                    if (receiver.CivicExperience == null) receiver.CivicExperience = new Dictionary<string, double>();
-                    receiver.CivicExperience.TryGetValue(precedent, out double prior);
-                    receiver.CivicExperience[precedent] = prior + credit;
-                }
+                    AddExperience(receiver, precedent, credit);
             }
         }
 
@@ -601,7 +668,7 @@ namespace Anthropocene.Simulation
             using var profile = PhaseProfile.Scope("Civic.Close");
             var cfg = w.Config;
             var s = cfg.Civic;
-            double dt = horizonYears > 0 ? horizonYears : 0;
+            double dt = horizonYears > 0 && !double.IsInfinity(horizonYears) ? horizonYears : 0;
 
             // Step 1: Update Camp.RecentTradeVolume EMA once per active camp from delivered TurnRecord.Trades.
             if (dt > 0)
@@ -615,9 +682,13 @@ namespace Anthropocene.Simulation
                         if (t == null) continue;
                         double vol = TradeRecordVolumePersonYears(cfg, t);
                         if (vol <= 0) continue;
-                        turnVolumeByCamp[t.Requester] = (turnVolumeByCamp.TryGetValue(t.Requester, out double rq) ? rq : 0) + vol;
+                        double rqSum = (turnVolumeByCamp.TryGetValue(t.Requester, out double rq) ? rq : 0) + vol;
+                        turnVolumeByCamp[t.Requester] = double.IsInfinity(rqSum) ? double.MaxValue : rqSum;
                         if (t.Responder != t.Requester)
-                            turnVolumeByCamp[t.Responder] = (turnVolumeByCamp.TryGetValue(t.Responder, out double rp) ? rp : 0) + vol;
+                        {
+                            double rpSum = (turnVolumeByCamp.TryGetValue(t.Responder, out double rp) ? rp : 0) + vol;
+                            turnVolumeByCamp[t.Responder] = double.IsInfinity(rpSum) ? double.MaxValue : rpSum;
+                        }
                     }
                 }
                 double denomDt = Math.Max(1e-6, dt);
@@ -626,7 +697,9 @@ namespace Anthropocene.Simulation
                     if (c.Population <= 0) continue;
                     double turnVol = turnVolumeByCamp != null && turnVolumeByCamp.TryGetValue(c.Id, out double v) ? v : 0;
                     double annualFlow = turnVol / denomDt;
-                    c.RecentTradeVolume = Math.Max(0, Relax(Math.Max(0, c.RecentTradeVolume), annualFlow, s.TradeVolumeRelaxationRate, dt));
+                    if (double.IsInfinity(annualFlow)) annualFlow = double.MaxValue;
+                    double nextTrade = Relax(Math.Max(0, c.RecentTradeVolume), annualFlow, s.TradeVolumeRelaxationRate, dt);
+                    c.RecentTradeVolume = !(nextTrade > 0) ? 0 : (double.IsInfinity(nextTrade) ? double.MaxValue : nextTrade);
                 }
             }
 
@@ -642,7 +715,8 @@ namespace Anthropocene.Simulation
                     foreach (var p in record.Production)
                     {
                         if (p == null || p.Role != WorkforceRoles.Builder || p.WorkerIntervals <= 0) continue;
-                        builderWorkYears[p.Camp] = (builderWorkYears.TryGetValue(p.Camp, out double prior) ? prior : 0) + p.WorkerIntervals * intervalYears;
+                        double bwySum = (builderWorkYears.TryGetValue(p.Camp, out double prior) ? prior : 0) + p.WorkerIntervals * intervalYears;
+                        builderWorkYears[p.Camp] = double.IsInfinity(bwySum) ? double.MaxValue : bwySum;
                     }
                 }
 
@@ -803,8 +877,11 @@ namespace Anthropocene.Simulation
 
         private static void AddExperience(Society soc, string key, double delta)
         {
+            if (soc == null || !(delta > 0) || double.IsNaN(delta)) return;
+            if (soc.CivicExperience == null) soc.CivicExperience = new Dictionary<string, double>();
             soc.CivicExperience.TryGetValue(key, out double prior);
-            soc.CivicExperience[key] = prior + delta;
+            double next = prior + delta;
+            soc.CivicExperience[key] = double.IsInfinity(next) ? double.MaxValue : next;
         }
 
         // Validation helpers for SaveCodec.MigrateGenerationalDefaults & TurnResolver.Invariants
