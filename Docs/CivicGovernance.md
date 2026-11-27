@@ -1,6 +1,6 @@
 # Neolithic–Chalcolithic Civic & Governance System
 
-**Status:** Normative Specification & Phased Implementation Plan (Milestone M0 — Design Locked)  
+**Status:** Normative Specification; implemented through M4 (Phase 2 sanitation) on `features/civic-governance`. Opt-in: `SimulationConfig.Civic == null` by default, so existing saves and profiles are unchanged. See §6 for implementation status and measured gates.  
 **Target Base Branch:** `features/plough-elder-irrigation` (PR #49, commit `70aae775bfe0ecc1b77ece372bccb3a6031b4eb1`, stacked on PR #48 `features/smooth-calendar`)  
 **Feature Branch:** `features/civic-governance`  
 **Contract Compliance:** `AGENTS.md` (Anthropocene Engineering Doctrine), `Docs/DemographyQoLContract-v1.1.md`, `Docs/TurnResolutionPasses.md`, `Docs/CurrentSimulationContract.md`
@@ -710,3 +710,28 @@ Exact copy of `Assets/_Anthropocene/Resources/AgriculturalTechnologyOpeningConfi
 | **M3 (Phase 1B)** | `CivicGovernance.cs`, `NeolithicProduction.cs`, `MaterialEconomy.cs`, `ProductionDemand.cs`, `DemandControl.cs`, `GoodsStorage.cs`, `SpecialistProductivity.cs`, `Trade.cs`, `Immigration.cs`, `Fission.cs`, `SocialRelocation.cs`, `TurnPlanning.cs`, `TurnResolver.cs`, `OpeningGame.cs`, `OpeningDetails.cs`, `OpeningVillageInspector.cs`, `OpeningPlanning.cs`, `OpeningTopographySmoke.cs`, `HoverDetails.cs`, `Tools/Headless/CivicGovernanceChecks.cs` | **Phase-1 ~3,000 gate:** settlements climb organically to ~2,800–3,400 (hitting disease ceiling naturally with `SanitationEnabled = false`); natural geographic divergence (rain-fed plains $P < -0.25$ vs circumscribed irrigated valleys $P > +0.25$); welfare-only QoL isolation test; tool & storage conservation tests; `--bound-audit` **0 violations**; famine shock yields Egalitarian dispersal vs Stratified reserve holdout without starving `Protected`. |
 | **M4 (Phase 2)** | `CivicGovernance.cs`, `TurnHorizonResources.cs`, `IrrigationEconomy.cs`, `NeolithicProduction.cs`, `DemandControl.cs`, `TurnPlanning.cs`, `GenerationalEconomy.cs`, `SocialRelocation.cs`, `OpeningVillageInspector.cs`, `Tools/Headless/CivicGovernanceChecks.cs` | **Phase-2 5,000–10,000 gate:** conserved 3-tier freshwater priority (`Drinking/Herd > SanitationWater > Irrigation`) to `< 1e-7`; dry oasis $W_{\text{sanit}} = 0$ builds zero dry sewers; river/lake/temperate cities break ~3,400 wall to **5,000–10,000+** (Stratified peaking higher than Egalitarian; Egalitarian cheaper at 1k–4k); `--bound-audit` **0 violations**. |
 | **M5 (Final)** | `Tools/CivicGovernanceSweep/*`, `.gitignore`, `Docs/CivicGovernance.md`, `Docs/CurrentSimulationContract.md`, `Docs/TurnResolutionPasses.md`, `AGENTS.md` | 100% E2E Tiers 1–4 pass (`Tools/CivicGovernanceE2E/`); Tier-5 adversarial hardening reaches 0 gaps; 3-arm matched 5-world sweep (seeds `11, 23, 47, 101, 1729`) + 80-tribe long run + 1/16/80/320 benchmark recorded; `Check-CurrentContract.py` exit 0; clean git branch (zero `.agents/`, all `.meta` present), pushed & PR opened `--base features/plough-elder-irrigation`. |
+
+## 6. Implementation Status & Measured Gates (27 November 2026)
+
+| Milestone | Commit(s) | Status |
+| --- | --- | --- |
+| M0 spec | `e5d3b3f` | Locked (this document). |
+| M1 demography `(M_c, M_d)` plumbing | `da6646c` | Bit-exact `(1, 1)` parity with PR #49 fixed checks. |
+| M2 Phase 1A (state, Steward, attractors, precedents, orders, observations, persistence) | `acd9e32`…`31ae46a` | Done. |
+| M3 Phase 1B (civic capital, DemandControl Continuity/Development, cohesion, trade/immigration/fission seams, UI hooks) | `d3941a4`, `efbb3ea` | Done. |
+| M4 Phase 2 sanitation | this PR | Done: `CraftGood.SanitationConstruction` (15) / `SanitationMaintenance` (16) Builder recipes gated on Tier 3B; `ProductionOrder.Sanitation`; dt-invariant retention shared with civic capital; Tier-2 `SanitationWater` pass in `TurnHorizonResources` after biological/drinking claims and before `IrrigationEconomy.Allocate`, with forecast parity in irrigation planning; DemandControl sanitation maintenance (Continuity) and development (gated by residents ≥ `SanitationDevelopmentMinPopulation` and forecast water share > 0.05). |
+| M5 sweep tooling | — | Not done. The E2E suite (`Tools/CivicGovernanceE2E/`) is included; the 3-arm, 5-world sweep and the 1/16/80/320 benchmark remain open. |
+
+**Measured gates (headless Release, Linux VM):**
+- `--civic-only`: 1,002 assertions pass, including the M4 contracts: recipe gating, the 0.15 `M_d` floor, dt-invariant retention, conserved per-tile sanitation water with and without the agriculture block, drinking-first ranking, dry-oasis no-build, and zero sanitation state for fission daughters.
+- Analytical equilibrium (`M_c` at its floor): ~3,400 with no sanitation, and 5,000–10,000 with full coverage.
+- Organic Phase-2 gate (Phase-1 endpoint, radius-2 cultivated land, 5-year turns, 120 turns): the sanitation arm unlocks Tier 3B organically, reaches 98–100% watered coverage (`M_d` ≈ 0.30), peaks at 6,592 and settles at ~5,700 once food stores are spent. The matched `SanitationEnabled = false` arm holds at 3,082.
+- Phase-1 gate: organic climb from 600 to the 2,800–3,400 disease ceiling; the `Civic == null` control stays at ~1,000.
+- Full fixed headless suite: exit 0, and the benchmark line is unchanged from PR #49 (`seeds=20 survivors=80/80 starvationDeaths=24217 netGrowth=30353 illegalOrders=0`).
+- E2E (`dotnet run -c Release --project Tools/CivicGovernanceE2E -- --tier=all --jobs=3`): 156/156 pass.
+
+**Known limits:**
+- Unity `OnGUI` presentation (inspector, hover, legal-action UI) compiles in the shared simulation sources but has not been run interactively in the VM.
+- E2E is opaque-box: it cannot inspect the internal `ElderAction`, so its KernelSplit guard is weak. That regression is covered by the headless checks instead.
+- The organic Phase-2 gate seeds the Phase-1 civic endpoint rather than replaying the full 600→6,000 climb.
+- Egalitarian vs Stratified Phase-2 peak ordering is covered by the analytic `DiseaseMitigationFor` strat bonus, not by a matched organic sweep (M5).

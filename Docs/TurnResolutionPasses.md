@@ -212,3 +212,18 @@ attainment at Close. Legal successor ownership transfers preserve field soil.
 See [AgriculturalTechnology.md](AgriculturalTechnology.md) for the complete
 state, unit and compatibility contract. No new pass repeats the economy or
 iterates over individual people or elapsed years.
+
+## Opt-in civic governance
+
+When `Civic` is enabled, DemandControl places civic and sanitation upkeep in
+Continuity and expansion in Development, always after survival service.
+When `SanitationEnabled` is also set, the resource pass inserts one Tier-2
+`SanitationWater` allocation after drinking and herd claims are locked and
+before optional irrigation. It splits each sanitized village's need across
+its local freshwater tiles within each tile's envelope, minus biological
+reservations, and debits each source once. Built sanitation joins the stock at
+the next boundary; retained stock decays analytically (dt-invariant). Civic
+coordinates, practice and precedents commit in `CivicGovernance.Close`,
+after `AgriculturalTechnology.Close` and before immigration and fission. See
+[CivicGovernance.md](CivicGovernance.md). Cost scales with active villages
+times seven local tiles; no pass iterates over people or elapsed years.

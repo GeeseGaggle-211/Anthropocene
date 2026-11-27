@@ -10,6 +10,19 @@ Implementation evidence is not itself a new design approval. The index is a navi
 and conflict-resolution aid. The linked normative documents and accepted issue
 contracts remain the rule sources.
 
+## Opt-in civic governance (November 2026)
+
+[CivicGovernance.md](CivicGovernance.md) implements the opt-in civic and
+governance system for crowding beyond the ~1,000-resident Plough/irrigation
+ceiling. Each village has a continuous Complexity x Stratification state that
+relaxes toward an environmental attractor, steered by player policy. Civic
+capital and Stewards reduce crowding mortality (Phase 1, toward ~3,000), and
+watered sanitation from Tier 3B reduces disease mortality (Phase 2, 5,000-10,000).
+Sanitation water is a Tier-2 claim placed after drinking and herd water and
+before irrigation. Composite QoL never enters physical birth or death rates.
+`SimulationConfig.Civic` is null by default, so existing profiles, saves and
+RL layouts are unchanged. Its section 6 records measured gates and open M5 sweep work.
+
 ## Opt-in Plough and Elder irrigation (November 2026)
 
 [AgriculturalTechnology.md](AgriculturalTechnology.md) implements the approved
