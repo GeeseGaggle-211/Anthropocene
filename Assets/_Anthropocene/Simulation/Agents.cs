@@ -279,11 +279,11 @@ namespace Anthropocene.Simulation
     }
     public sealed class AgentObservation
     {
-        public const int SchemaVersion = 22;
+        public const int SchemaVersion = 23;
         public readonly int Player, CampId, CampTile, CampPopulation, GathererPopulation, LinkedPopulation, FoodCondition, DeficitTurns, Turn, PolicySeed;
         public readonly double HuntingFieldcraft, HuntingInclination, GatheringInclination, FishingInclination, Days;
         public readonly IReadOnlyList<SettlementObservation> Settlements;
-        public readonly bool Watercraft, FishingEnabled;
+        public readonly bool Watercraft, FishingEnabled, CivicGovernanceEnabled, SanitationEnabled;
         public readonly IReadOnlyDictionary<int, TileObservation> Tiles;
         // Remembered knowledge (explored static geography outside current vision, and known-settlement snapshots). Never live data.
         public readonly IReadOnlyDictionary<int, RememberedTileObservation> RememberedTiles;
@@ -324,6 +324,8 @@ namespace Anthropocene.Simulation
             DeficitTurns = camp.DeficitTurns; Turn = w.Turn; PolicySeed = camp.People.PolicySeed;
             Watercraft = camp.Technologies[(int)Technology.Watercraft]; Map = w.Map;
             FishingEnabled = w.Config.NeolithicFishingEnabled && Watercraft;
+            CivicGovernanceEnabled = CivicGovernance.Enabled(w.Config);
+            SanitationEnabled = CivicGovernance.SanitationEnabled(w.Config);
             WaterMovementCost = Math.Max(1, w.Config.HunterMovement / w.Config.WaterMovement); MinimumCamp = w.Config.MinimumCamp; MinimumCampSpacing = w.Config.MinimumCampSpacing; HunterMovement = w.Config.HunterMovement; CampMovement = w.Config.CampMovement; Inertia = w.Config.RelocationInertia;
             SupplyRange = w.Config.SupplyRange; SustainableHuntPopulation = w.Config.SustainableHuntPopulation;
             using (PhaseProfile.Scope("Tiles"))
@@ -782,6 +784,27 @@ namespace Anthropocene.Simulation
             // setting remains authoritative for player-issued movement.
             if (economicCamp != null) campChoice.RequestAutomaticEconomy = true;
             result.Orders.Add(campChoice);
+            if (o.CivicGovernanceEnabled)
+            {
+                foreach (var settlement in o.Settlements.OrderBy(s => s.Id))
+                {
+                    if (settlement.Population <= 0) continue;
+                    var desired = DesiredImmigrationPolicy(settlement);
+                    if (desired == settlement.ImmigrationPolicy) continue;
+                    var immOrder = new Order(OrderKind.ImmigrationPolicy, settlement.Id, target: (int)desired);
+                    if (OrderRules.Validate(o, immOrder) == null)
+                    {
+                        result.Orders.Add(immOrder);
+                        result.Trace.Candidates.Add(new CandidateTrace
+                        {
+                            Plan = immOrder.ToString(),
+                            Components = "CivicGovernance: adjust ImmigrationPolicy from local stratification, crowding mortality and nutrition",
+                            Score = 1,
+                            Selected = true
+                        });
+                    }
+                }
+            }
             var observedHunters = o.Hunters.Concat(o.ForeignHunters).ToArray();
             var wildHerds = o.Herds.Where(h => !h.Domestic).OrderByDescending(h => h.Size).ThenBy(h => o.Map.Distance(o.CampTile, h.Tile)).ThenBy(h => h.Id).ToArray();
             int preferredHerd = wildHerds.Select(h => h.Id).DefaultIfEmpty(-1).First();
@@ -851,6 +874,20 @@ namespace Anthropocene.Simulation
                 result.Orders.Add(Select(o, candidates, result.Trace));
             }
             return result;
+        }
+        private static ImmigrationPolicy DesiredImmigrationPolicy(SettlementObservation s)
+        {
+            if (s.CivicStratification <= -0.35 && s.CrowdingMortalityRate < 0.025 && s.Nutrition >= 0.90)
+                return ImmigrationPolicy.Open;
+            if (s.CivicStratification >= 0.45 && s.CrowdingMortalityRate >= 0.035)
+                return ImmigrationPolicy.Restricted;
+            if (s.ImmigrationPolicy == ImmigrationPolicy.Open &&
+                s.CivicStratification <= -0.20 && s.CrowdingMortalityRate < 0.030 && s.Nutrition >= 0.85)
+                return ImmigrationPolicy.Open;
+            if (s.ImmigrationPolicy == ImmigrationPolicy.Restricted &&
+                s.CivicStratification >= 0.30 && s.CrowdingMortalityRate >= 0.025)
+                return ImmigrationPolicy.Restricted;
+            return ImmigrationPolicy.Neutral;
         }
         private static Order Select(AgentObservation o, List<Candidate> candidates, DecisionTrace trace)
         {

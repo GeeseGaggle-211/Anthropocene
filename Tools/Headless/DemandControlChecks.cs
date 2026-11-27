@@ -50,7 +50,7 @@ internal static class DemandControlChecks
         => DemandController.Plan(w, c, EconomicIntent.From(c), out order, out allocation);
     private static EconomicConstraints Constraints(WorldState w, Camp c) => new EconomicConstraints
     {
-        Agriculture = CultivationEconomy.Enabled(c), Husbandry = CultivationEconomy.HusbandryEnabled(c), FishingEnabled = NeolithicCapabilities.FeatureFishingEnabled(w, c), Population = c.Population,
+        Agriculture = CultivationEconomy.Enabled(c), Husbandry = CultivationEconomy.HusbandryEnabled(c), FishingEnabled = NeolithicCapabilities.FeatureFishingEnabled(w, c), StewardEnabled = CivicGovernance.StewardAvailable(w, c), Population = c.Population,
         Technologies = c.People.NeolithicTechnologies.ToArray(), FocusTiles = CultivationEconomy.Footprint(w, c).ToArray()
     };
 

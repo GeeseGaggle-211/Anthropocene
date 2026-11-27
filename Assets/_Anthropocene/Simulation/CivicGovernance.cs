@@ -1,0 +1,1232 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+
+namespace Anthropocene.Simulation
+{
+    public enum ImmigrationPolicy { Neutral = 0, Open = 1, Restricted = 2 }
+    public enum CivicFocus { Auto = 0, Communal = 1, Centralized = 2 }
+
+    public static class CivicPrecedents
+    {
+        public const string CeremonialIntegration = "CeremonialIntegration";
+        public const string CivicOrganization = "CivicOrganization";
+        public const string TokensAndAccounting = "TokensAndAccounting";
+        public const string PlannedQuartersAndDrainage = "PlannedQuartersAndDrainage";
+        public static readonly string[] All =
+        {
+            CeremonialIntegration,
+            CivicOrganization,
+            TokensAndAccounting,
+            PlannedQuartersAndDrainage
+        };
+    }
+
+    // Null in legacy configurations. Enabled only by an explicit new-game profile
+    // (Assets/_Anthropocene/Resources/CivicGovernanceOpeningConfig.json).
+    // All 73 fields match Docs/CivicGovernance.md §5 Choice #11 A & B.
+    [Serializable]
+    public sealed class CivicGovernanceSettings
+    {
+        public bool Enabled = false;
+        public bool SanitationEnabled = false;
+        public double Tier1ComplexityCeiling = 0.30;
+        public double Tier2ComplexityCeiling = 0.75;
+        public double Tier3ComplexityCeiling = 1.00;
+        public double ComplexityRelaxationRate = 0.025;
+        public double StratificationRelaxationRate = 0.020;
+        public double TradeVolumeRelaxationRate = 0.025;
+        public double ComplexityCrowdingScale = 0.64;
+        public double FissionPolicySteeringShift = 0.15;
+        public double ImmigrationPolicySteeringShift = 0.15;
+        public double CivicFocusSteeringShift = 0.45;
+        public double DaughterComplexityRetention = 0.50;
+        public double DaughterStratificationRetention = 0.50;
+        public double DaughterFrontierEgalitarianShift = 0.15;
+        public double MinCrowdingMitigation = 0.05;
+        public double MinDiseaseMitigation = 0.15;
+        public double CrowdingMitigationBase = 0.925;
+        public double CrowdingMitigationStratBonus = 0.025;
+        public double CrowdingShapeRate = 5.8;
+        public double CrowdingShapeExponent = 1.65;
+        public double DiseaseMitigationBase = 0.735;
+        public double DiseaseMitigationStratBonus = 0.075;
+        public double DiseaseHalfScale = 0.60;
+        public double CohesionLinearGain = 1.95;
+        public double CohesionUrbanGain = 4.45;
+        public double CohesionUrbanExponent = 4.2;
+        public double CohesionStratFactor = 0.32;
+        public double EgalitarianStewardRate = 0.045;
+        public double StratifiedStewardRate = 0.105;
+        public double StewardScalingKnee = 3500;
+        public double EgalitarianStewardExponent = 2.60;
+        public double StratifiedStewardExponent = 1.15;
+        public double AccountingExponentRetention = 0.20;
+        public double AlignmentFrictionRate = 0.35;
+        public double EgalitarianCapitalPerPerson = 0.12;
+        public double StratifiedCapitalPerPerson = 0.24;
+        public double CivicCapitalDecayPerYear = 0.018;
+        public double CivicBuildBuilderYears = 4.0;
+        public double CivicBuildHousingMaterials = 2.0;
+        public double CivicMaintainBuilderYears = 2.0;
+        public double CivicMaintainHousingMaterials = 1.0;
+        public double SanitationCapitalPerPerson = 0.16;
+        public double SanitationCapitalDecayPerYear = 0.025;
+        public double SanitationBuildBuilderYears = 5.0;
+        public double SanitationBuildHousingMaterials = 2.5;
+        public double SanitationMaintainBuilderYears = 2.5;
+        public double SanitationMaintainHousingMaterials = 1.0;
+        public double SanitationWaterPerPersonYear = 0.02;
+        public double QoLEqualityLinear = 0.09;
+        public double QoLEqualityQuadratic = 0.01;
+        public double StratifiedPublicWorksBonus = 0.35;
+        public double StratifiedGranaryStorageBonus = 0.50;
+        public double FissionStratificationResistance = 0.045;
+        public double FissionExitMismatchReduction = 0.060;
+        public double OpenImmigrationCostReduction = 0.030;
+        public double OpenIncumbentToleranceBonus = 0.020;
+        public double RestrictedImmigrationCostPenalty = 0.150;
+        public double RestrictedIncumbentToleranceScale = 0.30;
+        public double StratificationImmigrationFriction = 0.025;
+        public double ExitMismatchImmigrationReduction = 0.030;
+        public double Tier1PracticeThreshold = 40.0;
+        public double Tier2PracticeThreshold = 80.0;
+        public double Tier3APracticeThreshold = 120.0;
+        public double Tier3BPracticeThreshold = 100.0;
+        public int TokensTradeRangeBonus = 2;
+        public int TokensTradeRequisitionBonus = 2;
+        public double TokensMarginReduction = 0.25;
+        public double PrecedentDiffusionPerTrade = 0.0;
+        public double CivicDeathFoodYears = 6.0;
+        public double SanitationDeathFoodYears = 15.0;
+        public int DevelopmentMinPopulation = 300;
+        public int SanitationDevelopmentMinPopulation = 1200;
+
+        public void Validate()
+        {
+            foreach (var f in GetType().GetFields().Where(f => f.FieldType == typeof(double)))
+            {
+                double v = (double)f.GetValue(this);
+                if (double.IsNaN(v) || double.IsInfinity(v))
+                    throw new ArgumentException("Invalid civic governance setting: " + f.Name);
+            }
+            if (!(Tier1ComplexityCeiling > 0 && Tier1ComplexityCeiling < Tier2ComplexityCeiling &&
+                  Tier2ComplexityCeiling < Tier3ComplexityCeiling && Tier3ComplexityCeiling <= 1))
+                throw new ArgumentException("Invalid civic complexity ceilings.");
+            if (ComplexityRelaxationRate <= 0 || StratificationRelaxationRate <= 0 ||
+                TradeVolumeRelaxationRate <= 0 || ComplexityCrowdingScale <= 0)
+                throw new ArgumentException("Invalid civic relaxation or crowding scale.");
+            if (FissionPolicySteeringShift < 0 || FissionPolicySteeringShift > 1 ||
+                ImmigrationPolicySteeringShift < 0 || ImmigrationPolicySteeringShift > 1 ||
+                CivicFocusSteeringShift < 0 || CivicFocusSteeringShift > 1 ||
+                DaughterComplexityRetention < 0 || DaughterComplexityRetention > 1 ||
+                DaughterStratificationRetention < 0 || DaughterStratificationRetention > 1 ||
+                DaughterFrontierEgalitarianShift < 0 || DaughterFrontierEgalitarianShift > 1)
+                throw new ArgumentException("Invalid civic steering or daughter inheritance setting.");
+            if (MinCrowdingMitigation <= 0 || MinCrowdingMitigation > 1 ||
+                MinDiseaseMitigation <= 0 || MinDiseaseMitigation > 1)
+                throw new ArgumentException("Invalid civic mitigation floor.");
+            if (CrowdingMitigationBase < 0 || CrowdingMitigationBase > 1 ||
+                CrowdingMitigationStratBonus < 0 || CrowdingMitigationStratBonus > 0.5 ||
+                CrowdingShapeRate <= 0 || CrowdingShapeExponent <= 0)
+                throw new ArgumentException("Invalid civic crowding mitigation calibration.");
+            if (DiseaseMitigationBase < 0 || DiseaseMitigationBase > 1 ||
+                DiseaseMitigationStratBonus < 0 || DiseaseMitigationStratBonus > 0.5 ||
+                DiseaseHalfScale <= 0)
+                throw new ArgumentException("Invalid civic disease mitigation calibration.");
+            if (CohesionLinearGain < 0 || CohesionUrbanGain < 0 || CohesionUrbanExponent < 1 ||
+                CohesionStratFactor < 0 || CohesionStratFactor > 0.9)
+                throw new ArgumentException("Invalid civic social cohesion calibration.");
+            if (EgalitarianStewardRate <= 0 || StratifiedStewardRate < EgalitarianStewardRate ||
+                StewardScalingKnee <= 0 || EgalitarianStewardExponent < 1 || StratifiedStewardExponent < 1 ||
+                AccountingExponentRetention <= 0 || AccountingExponentRetention > 1 ||
+                AlignmentFrictionRate < 0)
+                throw new ArgumentException("Invalid civic steward scaling calibration.");
+            if (EgalitarianCapitalPerPerson <= 0 || StratifiedCapitalPerPerson < EgalitarianCapitalPerPerson ||
+                CivicCapitalDecayPerYear <= 0 || CivicBuildBuilderYears <= 0 || CivicBuildHousingMaterials < 0 ||
+                CivicMaintainBuilderYears <= 0 || CivicMaintainHousingMaterials < 0)
+                throw new ArgumentException("Invalid civic capital calibration.");
+            if (SanitationCapitalPerPerson <= 0 || SanitationCapitalDecayPerYear <= 0 ||
+                SanitationBuildBuilderYears <= 0 || SanitationBuildHousingMaterials < 0 ||
+                SanitationMaintainBuilderYears <= 0 || SanitationMaintainHousingMaterials < 0 ||
+                SanitationWaterPerPersonYear <= 0)
+                throw new ArgumentException("Invalid sanitation capital calibration.");
+            if (QoLEqualityLinear < 0 || QoLEqualityLinear > 0.5 ||
+                QoLEqualityQuadratic < 0 || QoLEqualityQuadratic > 0.25 ||
+                !((QoLEqualityLinear == 0 && QoLEqualityQuadratic == 0) || QoLEqualityLinear > 2 * QoLEqualityQuadratic))
+                throw new ArgumentException("Invalid civic QoL equality calibration.");
+            if (StratifiedPublicWorksBonus < 0 || StratifiedGranaryStorageBonus < 0)
+                throw new ArgumentException("Invalid stratified bonus calibration.");
+            if (FissionStratificationResistance < 0 || FissionStratificationResistance > 0.25 ||
+                FissionExitMismatchReduction < 0 || FissionExitMismatchReduction > 0.25)
+                throw new ArgumentException("Invalid civic fission threshold calibration.");
+            if (OpenImmigrationCostReduction < 0 || OpenImmigrationCostReduction > 0.5 ||
+                OpenIncumbentToleranceBonus < 0 || OpenIncumbentToleranceBonus > 0.5 ||
+                RestrictedImmigrationCostPenalty < 0 || RestrictedImmigrationCostPenalty > 1.0 ||
+                RestrictedIncumbentToleranceScale < 0 || RestrictedIncumbentToleranceScale > 1 ||
+                StratificationImmigrationFriction < 0 || StratificationImmigrationFriction > 0.25 ||
+                ExitMismatchImmigrationReduction < 0 || ExitMismatchImmigrationReduction > 0.25)
+                throw new ArgumentException("Invalid civic immigration calibration.");
+            if (Tier1PracticeThreshold <= 0 || Tier2PracticeThreshold <= 0 ||
+                Tier3APracticeThreshold <= 0 || Tier3BPracticeThreshold <= 0)
+                throw new ArgumentException("Invalid civic precedent threshold.");
+            if (TokensTradeRangeBonus < 0 || TokensTradeRangeBonus > 10 ||
+                TokensTradeRequisitionBonus < 0 || TokensTradeRequisitionBonus > 10 ||
+                TokensMarginReduction < 0 || TokensMarginReduction > 0.9 ||
+                PrecedentDiffusionPerTrade < 0)
+                throw new ArgumentException("Invalid civic trade calibration.");
+            if (CivicDeathFoodYears <= 0 || SanitationDeathFoodYears <= 0 ||
+                DevelopmentMinPopulation < 1 || SanitationDevelopmentMinPopulation < 1)
+                throw new ArgumentException("Invalid civic DemandControl calibration.");
+        }
+    }
+
+    [Serializable]
+    public sealed class SanitationWaterReceipt
+    {
+        public int Source, Camp;
+        public double Withdrawal, Need, Ratio;
+    }
+
+    [Serializable]
+    public sealed class CivicTurnReport
+    {
+        public int Camp, Society;
+        public double ComplexityBefore, ComplexityAfter;
+        public double StratificationBefore, StratificationAfter;
+        public double EnvironmentalComplexity, EnvironmentalStratification, Circumscription;
+        public double CivicCoverage, SanitationCoverage;
+    }
+
+    public readonly struct CivicEnvironmentDrivers
+    {
+        public readonly double D1, D2, D3, D4;
+        public readonly double RawComplexity, EnvironmentalComplexity, EnvironmentalStratification;
+
+        public CivicEnvironmentDrivers(double d1, double d2, double d3, double d4,
+            double rawComplexity, double environmentalComplexity, double environmentalStratification)
+        {
+            D1 = d1; D2 = d2; D3 = d3; D4 = d4;
+            RawComplexity = rawComplexity;
+            EnvironmentalComplexity = environmentalComplexity;
+            EnvironmentalStratification = environmentalStratification;
+        }
+    }
+
+    public static class CivicGovernance
+    {
+        private const double Epsilon = 1e-12;
+
+        // Capability predicates
+        public static bool Enabled(SimulationConfig cfg) => cfg?.Civic != null && cfg.Civic.Enabled;
+        public static bool SanitationEnabled(SimulationConfig cfg) => Enabled(cfg) && cfg.Civic.SanitationEnabled;
+
+        public static double MaxComplexity(SimulationConfig cfg, Society s)
+        {
+            if (!Enabled(cfg) || s == null) return 0;
+            if (s.HasCivicPrecedent(CivicPrecedents.TokensAndAccounting)) return cfg.Civic.Tier3ComplexityCeiling;
+            if (s.HasCivicPrecedent(CivicPrecedents.CivicOrganization)) return cfg.Civic.Tier2ComplexityCeiling;
+            if (s.HasCivicPrecedent(CivicPrecedents.CeremonialIntegration)) return cfg.Civic.Tier1ComplexityCeiling;
+            return 0;
+        }
+        public static double MaxComplexity(WorldState w, Camp c) => MaxComplexity(w?.Config, c?.People);
+
+        public static bool StewardAvailable(WorldState w, Camp c)
+            => Enabled(w?.Config) && c?.People != null && c.People.HasCivicPrecedent(CivicPrecedents.CeremonialIntegration);
+
+        // Recipe availability checks feature + precedent only, never c.IsVillage (Docs/CivicGovernance.md §3.2).
+        public static bool CivicRecipesAvailable(WorldState w, Camp c) => StewardAvailable(w, c);
+
+        public static bool SanitationRecipesAvailable(WorldState w, Camp c)
+            => SanitationEnabled(w?.Config) && c?.People != null && c.People.HasCivicPrecedent(CivicPrecedents.PlannedQuartersAndDrainage);
+
+        // Pure alignment, staffing, capital & coverage laws (Docs/CivicGovernance.md §5 Choice #3)
+        public static double AlignmentFriction(SimulationConfig cfg, double stratification, double envStratification)
+        {
+            if (!Enabled(cfg)) return 1;
+            double p = Numbers.Clamp(stratification, -1, 1);
+            double pEnv = Numbers.Clamp(envStratification, -1, 1);
+            return 1 + cfg.Civic.AlignmentFrictionRate * Math.Abs(p - pEnv);
+        }
+        public static double AlignmentFriction(WorldState w, Camp c)
+            => c == null ? 1 : AlignmentFriction(w?.Config, c.CivicStratification, c.LastEnvironmentalStratification);
+
+        public static double RequiredStewards(SimulationConfig cfg, double population, double complexity,
+            double stratification, bool hasAccounting, double envStratification)
+        {
+            if (!Enabled(cfg) || population <= 0 || complexity <= Epsilon) return 0;
+            var s = cfg.Civic;
+            double c = Numbers.Clamp(complexity, 0, 1);
+            double p = Numbers.Clamp(stratification, -1, 1);
+            double u = 0.5 * (p + 1);
+            double betaRaw = s.EgalitarianStewardExponent + (s.StratifiedStewardExponent - s.EgalitarianStewardExponent) * u;
+            double beta = hasAccounting ? 1 + s.AccountingExponentRetention * (betaRaw - 1) : betaRaw;
+            double rate = s.EgalitarianStewardRate + (s.StratifiedStewardRate - s.EgalitarianStewardRate) * u;
+            double kneeRatio = population / s.StewardScalingKnee;
+            double knee = Math.Pow(1 + kneeRatio * kneeRatio, 0.5 * (beta - 1));
+            return c * population * rate * knee * AlignmentFriction(cfg, p, envStratification);
+        }
+        public static double RequiredStewards(WorldState w, Camp c, double? population = null)
+        {
+            if (w == null || c == null || !Enabled(w.Config)) return 0;
+            double n = population ?? c.Population;
+            bool has3A = c.People != null && c.People.HasCivicPrecedent(CivicPrecedents.TokensAndAccounting);
+            return RequiredStewards(w.Config, n, c.CivicComplexity, c.CivicStratification, has3A, c.LastEnvironmentalStratification);
+        }
+
+        public static double RequiredCivicCapital(SimulationConfig cfg, double population, double complexity, double stratification)
+        {
+            if (!Enabled(cfg) || population <= 0 || complexity <= Epsilon) return 0;
+            var s = cfg.Civic;
+            double c = Numbers.Clamp(complexity, 0, 1);
+            double u = 0.5 * (Numbers.Clamp(stratification, -1, 1) + 1);
+            double rate = s.EgalitarianCapitalPerPerson + (s.StratifiedCapitalPerPerson - s.EgalitarianCapitalPerPerson) * u;
+            return c * population * rate;
+        }
+        public static double RequiredCivicCapital(WorldState w, Camp c, double? population = null)
+            => w == null || c == null ? 0 : RequiredCivicCapital(w.Config, population ?? c.Population, c.CivicComplexity, c.CivicStratification);
+
+        public static double RequiredSanitationCapital(SimulationConfig cfg, double population)
+            => !SanitationEnabled(cfg) || population <= 0 ? 0 : cfg.Civic.SanitationCapitalPerPerson * population;
+
+        public static double ActiveSanitationCapital(Camp c)
+            => c == null ? 0 : Math.Max(0, c.UseActiveSanitationCapital ? c.ActiveSanitationCapital : c.SanitationCapital);
+
+        public static double CivicCoverage(WorldState w, Camp c)
+        {
+            if (w == null || c == null || !Enabled(w.Config) || c.Population <= 0 || c.CivicComplexity <= Epsilon) return 0;
+            double reqCap = RequiredCivicCapital(w, c);
+            double reqStewards = RequiredStewards(w, c);
+            if (reqCap <= Epsilon || reqStewards <= Epsilon) return 0;
+            int stewards = CultivationEconomy.Workers(c, WorkforceRoles.Steward);
+            double capRatio = Math.Max(0, c.CivicCapital) / reqCap;
+            double stewardRatio = Math.Max(0, stewards) / reqStewards;
+            return Numbers.Clamp(Math.Min(capRatio, stewardRatio), 0, 1);
+        }
+
+        public static double SanitationCoverage(WorldState w, Camp c)
+        {
+            if (w == null || c == null || !SanitationRecipesAvailable(w, c) || c.Population <= 0) return 0;
+            double req = RequiredSanitationCapital(w.Config, c.Population);
+            if (req <= Epsilon) return 0;
+            double capRatio = Math.Min(1, ActiveSanitationCapital(c) / req);
+            double water = Numbers.Clamp(c.SanitationWaterRatio, 0, 1);
+            return Numbers.Clamp(capRatio * water, 0, 1);
+        }
+
+        // Mitigation, cohesion, QoL & continuous P trade-offs (Docs/CivicGovernance.md §5 Choices #4 & #5)
+        public static double CrowdingMitigationFor(SimulationConfig cfg, double complexity, double stratification, double coverage)
+        {
+            if (!Enabled(cfg) || complexity <= Epsilon || coverage <= 0) return 1;
+            var s = cfg.Civic;
+            double c = Numbers.Clamp(complexity, 0, 1);
+            double p = Numbers.Clamp(stratification, -1, 1);
+            double cov = Numbers.Clamp(coverage, 0, 1);
+            double denom = -PhysicalDemography.Expm1(-s.CrowdingShapeRate);
+            double fc = denom > Epsilon
+                ? (-PhysicalDemography.Expm1(-s.CrowdingShapeRate * Math.Pow(c, s.CrowdingShapeExponent))) / denom
+                : 0;
+            double alpha = Numbers.Clamp((s.CrowdingMitigationBase + s.CrowdingMitigationStratBonus * p * c) * fc, 0, 1 - s.MinCrowdingMitigation);
+            return Numbers.Clamp(1 - alpha * cov, s.MinCrowdingMitigation, 1);
+        }
+        public static double CrowdingMitigation(WorldState w, Camp c)
+            => w == null || c == null || !Enabled(w.Config) ? 1 : CrowdingMitigationFor(w.Config, c.CivicComplexity, c.CivicStratification, CivicCoverage(w, c));
+
+        public static double DiseaseMitigationFor(SimulationConfig cfg, double complexity, double stratification, double coverage)
+        {
+            if (!SanitationEnabled(cfg) || complexity <= Epsilon || coverage <= 0) return 1;
+            var s = cfg.Civic;
+            double c = Numbers.Clamp(complexity, 0, 1);
+            double p = Numbers.Clamp(stratification, -1, 1);
+            double cov = Numbers.Clamp(coverage, 0, 1);
+            double h = s.DiseaseHalfScale;
+            double fd = (1 + h) * c / (c + h);
+            double alpha = Numbers.Clamp((s.DiseaseMitigationBase + s.DiseaseMitigationStratBonus * p) * fd, 0, 1 - s.MinDiseaseMitigation);
+            return Numbers.Clamp(1 - alpha * cov, s.MinDiseaseMitigation, 1);
+        }
+        public static double DiseaseMitigation(WorldState w, Camp c)
+            => w == null || c == null || !SanitationEnabled(w.Config) ? 1 : DiseaseMitigationFor(w.Config, c.CivicComplexity, c.CivicStratification, SanitationCoverage(w, c));
+
+        public static double CohesionMultiplierFor(SimulationConfig cfg, double complexity, double stratification, double coverage)
+        {
+            if (!Enabled(cfg) || complexity <= Epsilon || coverage <= 0) return 1;
+            var s = cfg.Civic;
+            double c = Numbers.Clamp(complexity, 0, 1);
+            double p = Numbers.Clamp(stratification, -1, 1);
+            double cov = Numbers.Clamp(coverage, 0, 1);
+            double g = (s.CohesionLinearGain * c + s.CohesionUrbanGain * Math.Pow(c, s.CohesionUrbanExponent))
+                * (1 + s.CohesionStratFactor * p * Math.Pow(c, 1.5));
+            return 1 + Math.Max(0, g) * cov;
+        }
+        public static double CohesionMultiplier(WorldState w, Camp c)
+            => w == null || c == null || !Enabled(w.Config) ? 1 : CohesionMultiplierFor(w.Config, c.CivicComplexity, c.CivicStratification, CivicCoverage(w, c));
+
+        public static double QoLEqualityMultiplierFor(SimulationConfig cfg, double complexity, double stratification, double coverage)
+        {
+            if (!Enabled(cfg) || complexity <= Epsilon || coverage <= 0) return 1;
+            var s = cfg.Civic;
+            double c = Numbers.Clamp(complexity, 0, 1);
+            double p = Numbers.Clamp(stratification, -1, 1);
+            double cov = Numbers.Clamp(coverage, 0, 1);
+            return Math.Max(0, 1 + (-s.QoLEqualityLinear * p + s.QoLEqualityQuadratic * p * p) * c * cov);
+        }
+        public static double QoLEqualityMultiplier(WorldState w, Camp c)
+            => w == null || c == null || !Enabled(w.Config) ? 1 : QoLEqualityMultiplierFor(w.Config, c.CivicComplexity, c.CivicStratification, CivicCoverage(w, c));
+
+        public static double PublicWorksMobilizationMultiplier(WorldState w, Camp c)
+        {
+            if (w == null || c == null || !Enabled(w.Config) || c.CivicComplexity <= Epsilon) return 1;
+            double cov = CivicCoverage(w, c);
+            if (cov <= 0) return 1;
+            double u = 0.5 * (Numbers.Clamp(c.CivicStratification, -1, 1) + 1);
+            return 1 + w.Config.Civic.StratifiedPublicWorksBonus * u * u * Numbers.Clamp(c.CivicComplexity, 0, 1) * cov;
+        }
+
+        public static double GranaryStorageMultiplier(WorldState w, Camp c, double? capitalOverride = null)
+        {
+            if (w == null || c == null || !Enabled(w.Config) || c.CivicComplexity <= Epsilon || c.Population <= 0) return 1;
+            double cov;
+            if (!capitalOverride.HasValue) cov = CivicCoverage(w, c);
+            else
+            {
+                double reqCap = RequiredCivicCapital(w, c);
+                double reqStewards = RequiredStewards(w, c);
+                if (reqCap <= Epsilon || reqStewards <= Epsilon) return 1;
+                int stewards = CultivationEconomy.Workers(c, WorkforceRoles.Steward);
+                cov = Numbers.Clamp(Math.Min(Math.Max(0, capitalOverride.Value) / reqCap, Math.Max(0, stewards) / reqStewards), 0, 1);
+            }
+            if (cov <= 0) return 1;
+            double u = 0.5 * (Numbers.Clamp(c.CivicStratification, -1, 1) + 1);
+            return 1 + w.Config.Civic.StratifiedGranaryStorageBonus * u * u * Numbers.Clamp(c.CivicComplexity, 0, 1) * cov;
+        }
+
+        public static double ExitMismatch(Camp c)
+        {
+            if (c == null || c.CivicComplexity <= Epsilon) return 0;
+            double cVal = Numbers.Clamp(c.CivicComplexity, 0, 1);
+            double pDiff = Math.Max(0, Numbers.Clamp(c.CivicStratification, -1, 1) - Numbers.Clamp(c.LastEnvironmentalStratification, -1, 1));
+            double openness = 1 - Numbers.Clamp(c.LastCircumscription, 0, 1);
+            return cVal * pDiff * openness;
+        }
+
+        // Steering, dt-invariant relaxation & display classification (Docs/CivicGovernance.md §5 Choices #2 & #7)
+        public static double SteeringOffset(SimulationConfig cfg, FissionPolicy fission, ImmigrationPolicy immigration, CivicFocus focus)
+        {
+            if (!Enabled(cfg)) return 0;
+            var s = cfg.Civic;
+            double df = fission == FissionPolicy.Encourage ? -s.FissionPolicySteeringShift
+                : fission == FissionPolicy.Discourage ? s.FissionPolicySteeringShift : 0;
+            double di = immigration == ImmigrationPolicy.Open ? -s.ImmigrationPolicySteeringShift
+                : immigration == ImmigrationPolicy.Restricted ? s.ImmigrationPolicySteeringShift : 0;
+            // CivicFocus.Auto contributes exact 0.0 (zero cliffs, zero self-alignment penalty).
+            double dc = focus == CivicFocus.Communal ? -s.CivicFocusSteeringShift
+                : focus == CivicFocus.Centralized ? s.CivicFocusSteeringShift : 0;
+            return df + di + dc;
+        }
+
+        public static double TargetStratification(SimulationConfig cfg, double envStratification,
+            FissionPolicy fission, ImmigrationPolicy immigration, CivicFocus focus)
+            => Numbers.Clamp(envStratification + SteeringOffset(cfg, fission, immigration, focus), -1, 1);
+
+        public static double Relax(double current, double target, double rate, double years)
+            => years <= 0 || rate <= 0 ? current : current + (target - current) * (-PhysicalDemography.Expm1(-rate * years));
+
+        public static double NextComplexity(WorldState w, Camp c, double years)
+        {
+            if (w == null || c == null || !Enabled(w.Config)) return 0;
+            double cMax = MaxComplexity(w, c);
+            double cTarget = Numbers.Clamp(c.LastEnvironmentalComplexity, 0, cMax);
+            return Numbers.Clamp(Relax(c.CivicComplexity, cTarget, w.Config.Civic.ComplexityRelaxationRate, years), 0, cMax);
+        }
+
+        // UI / Hover display classification only; never feeds P*.
+        public static string EffectiveFocusLabel(Camp c)
+        {
+            if (c == null) return "Hybrid";
+            if (c.CivicFocus == CivicFocus.Communal) return "Communal";
+            if (c.CivicFocus == CivicFocus.Centralized) return "Centralized";
+            if (c.LastEnvironmentalStratification <= -0.15) return "Communal";
+            if (c.LastEnvironmentalStratification >= 0.15) return "Centralized";
+            return "Hybrid";
+        }
+
+        // Fission daughter dampening, abandonment & copy helpers (Docs/CivicGovernance.md §3.2 & §5 Choice #2)
+        public static (double Complexity, double Stratification) DaughterCoordinates(WorldState w, Camp parent)
+        {
+            if (w == null || parent == null || !Enabled(w.Config)) return (0, 0);
+            var s = w.Config.Civic;
+            double cMax = MaxComplexity(w, parent);
+            double c = Numbers.Clamp(s.DaughterComplexityRetention * parent.CivicComplexity, 0, cMax);
+            double p = Numbers.Clamp(s.DaughterStratificationRetention * parent.CivicStratification - s.DaughterFrontierEgalitarianShift, -1, 1);
+            return (c, p);
+        }
+
+        public static void InitializeDaughterView(WorldState w, Camp parent, Camp view)
+        {
+            if (view == null) return;
+            view.CivicCapital = 0;
+            view.SanitationCapital = 0;
+            view.RecentTradeVolume = 0;
+            view.SanitationWaterRatio = 0;
+            view.SanitationWaterDelivered = 0;
+            view.ActiveSanitationCapital = 0;
+            view.UseActiveSanitationCapital = false;
+            view.ImmigrationPolicy = ImmigrationPolicy.Neutral;
+            view.CivicFocus = CivicFocus.Auto;
+            view.LastCircumscription = 0;
+            if (!Enabled(w?.Config) || parent == null)
+            {
+                view.CivicComplexity = 0;
+                view.CivicStratification = 0;
+                view.LastEnvironmentalComplexity = 0;
+                view.LastEnvironmentalStratification = 0;
+                return;
+            }
+            var s = w.Config.Civic;
+            double cMax = MaxComplexity(w.Config, view.People ?? parent.People);
+            double c = Numbers.Clamp(s.DaughterComplexityRetention * parent.CivicComplexity, 0, cMax);
+            double p = Numbers.Clamp(s.DaughterStratificationRetention * parent.CivicStratification - s.DaughterFrontierEgalitarianShift, -1, 1);
+            view.CivicComplexity = c;
+            view.CivicStratification = p;
+            view.LastEnvironmentalComplexity = c;
+            view.LastEnvironmentalStratification = p;
+        }
+
+        public static void ReleaseAbandoned(Camp camp)
+        {
+            if (camp == null) return;
+            camp.CivicCapital = 0;
+            camp.SanitationCapital = 0;
+            camp.SanitationWaterRatio = 0;
+            camp.SanitationWaterDelivered = 0;
+            camp.ActiveSanitationCapital = 0;
+            camp.UseActiveSanitationCapital = false;
+        }
+
+        internal static void CopyCampCivicState(Camp source, Camp destination)
+        {
+            if (source == null || destination == null) return;
+            destination.CivicComplexity = source.CivicComplexity;
+            destination.CivicStratification = source.CivicStratification;
+            destination.CivicCapital = source.CivicCapital;
+            destination.SanitationCapital = source.SanitationCapital;
+            destination.ImmigrationPolicy = source.ImmigrationPolicy;
+            destination.CivicFocus = source.CivicFocus;
+            destination.RecentTradeVolume = source.RecentTradeVolume;
+            destination.SanitationWaterRatio = source.SanitationWaterRatio;
+            destination.LastEnvironmentalComplexity = source.LastEnvironmentalComplexity;
+            destination.LastEnvironmentalStratification = source.LastEnvironmentalStratification;
+            destination.LastCircumscription = source.LastCircumscription;
+        }
+
+        // Trade volume conversion (Docs/CivicGovernance.md §5 Choice #6)
+        // Note: TradeRecord.WantQuantity and GiveQuantity are already the delivered quantities (Trade.cs:1157).
+        public static double TradeRecordVolumePersonYears(SimulationConfig cfg, TradeRecord t)
+        {
+            if (cfg == null || t == null) return 0;
+            double foodPerPersonYear = Math.Max(Epsilon, PhysicalDemography.FoodPerPersonYear(cfg));
+            double pyWant = TradeLegPersonYears(t.Want, Math.Max(0, t.WantQuantity), foodPerPersonYear);
+            double pyGive = TradeLegPersonYears(t.Give, Math.Max(0, t.GiveQuantity), foodPerPersonYear);
+            return 0.5 * (pyWant + pyGive);
+        }
+
+        private static double TradeLegPersonYears(TradeGood good, double qty, double foodPerPersonYear)
+        {
+            if (qty <= 0) return 0;
+            switch (good)
+            {
+                case TradeGood.Food: return qty / foodPerPersonYear;
+                case TradeGood.Cloth:
+                case TradeGood.AnimalFabric: return qty * 20.0;
+                case TradeGood.HousingMaterial:
+                case TradeGood.LightHousing: return qty * 4.0;
+                case TradeGood.Pots: return qty * 5.0;
+                default: return qty;
+            }
+        }
+
+        // Local clay availability for Tier 3A dry-clay / pottery prerequisite (Docs/CivicGovernance.md §5 Choice #6)
+        public static bool HasLocalClay(WorldState w, Camp c)
+        {
+            if (w == null || c == null || w.Resources == null) return false;
+            var resources = w.Resources;
+            var matIndex = MaterialAccessIndex.For(w);
+            foreach (int t in w.Map.Radius(c.Tile, 1))
+            {
+                if (!w.Tiles[t].TraversableLand) continue;
+                if (resources.Clay != null && t >= 0 && t < resources.Clay.Length &&
+                    resources.SurfaceAccessible(t, MaterialId.Clay) > 1e-9)
+                    return true;
+                foreach (var sr in matIndex.Sites(t))
+                    if (sr.Body != null && sr.Body.Components != null &&
+                        resources.AccessibleAt(sr.Body, sr.Site, MaterialId.Clay) > 1e-9)
+                        return true;
+            }
+            return false;
+        }
+
+        // Inert trade diffusion hook (Docs/CivicGovernance.md §5 Choice #6; strictly no-op when PrecedentDiffusionPerTrade == 0)
+        internal static void RecordTradeDiffusion(WorldState w, Society receiver, Society partner, double volume)
+        {
+            if (w == null || receiver == null || partner == null || volume <= 0 || !Enabled(w.Config)) return;
+            double rate = w.Config.Civic.PrecedentDiffusionPerTrade;
+            if (rate <= 0 || partner.CivicPrecedents == null || partner.CivicPrecedents.Count == 0) return;
+            if (receiver.CivicExperience == null) receiver.CivicExperience = new Dictionary<string, double>();
+            double credit = volume * rate;
+            foreach (string precedent in CivicPrecedents.All)
+            {
+                if (partner.HasCivicPrecedent(precedent) && !receiver.HasCivicPrecedent(precedent))
+                {
+                    receiver.CivicExperience.TryGetValue(precedent, out double prior);
+                    receiver.CivicExperience[precedent] = prior + credit;
+                }
+            }
+        }
+
+        // Pure single-camp driver query (reuses CivicLocalIndex)
+        public static CivicEnvironmentDrivers EvaluateEnvironment(WorldState w, Camp c)
+        {
+            if (w == null || c == null) return default;
+            return new CivicLocalIndex(w).Evaluate(c);
+        }
+
+        // Close-phase update (Docs/CivicGovernance.md §5 Choice #6 & §11 C)
+        // Strict internal order: 1. Trade EMA, 2. Practice & Precedent Unlocks, 3. Local Attractors & dt-Relaxation.
+        public static void Close(WorldState w, TurnRecord record, double horizonYears)
+        {
+            if (w == null || !Enabled(w.Config)) return;
+            using var profile = PhaseProfile.Scope("Civic.Close");
+            var cfg = w.Config;
+            var s = cfg.Civic;
+            double dt = horizonYears > 0 ? horizonYears : 0;
+
+            // Step 1: Update Camp.RecentTradeVolume EMA once per active camp from delivered TurnRecord.Trades.
+            if (dt > 0)
+            {
+                Dictionary<int, double> turnVolumeByCamp = null;
+                if (record?.Trades != null && record.Trades.Count > 0)
+                {
+                    turnVolumeByCamp = new Dictionary<int, double>();
+                    foreach (var t in record.Trades)
+                    {
+                        if (t == null) continue;
+                        double vol = TradeRecordVolumePersonYears(cfg, t);
+                        if (vol <= 0) continue;
+                        turnVolumeByCamp[t.Requester] = (turnVolumeByCamp.TryGetValue(t.Requester, out double rq) ? rq : 0) + vol;
+                        if (t.Responder != t.Requester)
+                            turnVolumeByCamp[t.Responder] = (turnVolumeByCamp.TryGetValue(t.Responder, out double rp) ? rp : 0) + vol;
+                    }
+                }
+                double denomDt = Math.Max(1e-6, dt);
+                foreach (var c in w.Camps.OrderBy(c => c.Id))
+                {
+                    if (c.Population <= 0) continue;
+                    double turnVol = turnVolumeByCamp != null && turnVolumeByCamp.TryGetValue(c.Id, out double v) ? v : 0;
+                    double annualFlow = turnVol / denomDt;
+                    c.RecentTradeVolume = Math.Max(0, Relax(Math.Max(0, c.RecentTradeVolume), annualFlow, s.TradeVolumeRelaxationRate, dt));
+                }
+            }
+
+            // Step 2: Accrue Civic Practice in canonical camp-ID order, then commit precedent unlocks
+            // in canonical society-ID x tier order (lifting C_max BEFORE Step 3 relaxes (C, P)).
+            if (dt > 0)
+            {
+                Dictionary<int, double> builderWorkYears = null;
+                if (record?.Production != null && record.Production.Count > 0)
+                {
+                    double intervalYears = cfg.BaseDays / cfg.DaysPerYear;
+                    builderWorkYears = new Dictionary<int, double>();
+                    foreach (var p in record.Production)
+                    {
+                        if (p == null || p.Role != WorkforceRoles.Builder || p.WorkerIntervals <= 0) continue;
+                        builderWorkYears[p.Camp] = (builderWorkYears.TryGetValue(p.Camp, out double prior) ? prior : 0) + p.WorkerIntervals * intervalYears;
+                    }
+                }
+
+                double foodPerPersonYear = Math.Max(Epsilon, PhysicalDemography.FoodPerPersonYear(cfg));
+                bool sanitationOn = SanitationEnabled(cfg);
+                double denomDt = Math.Max(1e-6, dt);
+
+                foreach (var c in w.Camps.OrderBy(c => c.Id))
+                {
+                    if (c.Population <= 0) continue;
+                    var soc = c.People;
+                    if (soc == null) continue;
+                    if (soc.CivicExperience == null) soc.CivicExperience = new Dictionary<string, double>();
+                    if (soc.CivicPrecedents == null) soc.CivicPrecedents = new List<string>();
+
+                    // Anti-oscillation invariant: unboosted base housing cohesion scale N_{s,0}.
+                    var shelter = NeolithicProduction.HousingCapacity(w, c, w.Days);
+                    double hCamp = NeolithicProduction.HousingShare(cfg.Neolithic, shelter, c.Population);
+                    double ns0 = NeolithicProduction.CohesionScale(cfg.Neolithic, hCamp);
+                    double rhoCrowd = c.Population / Math.Max(1.0, ns0);
+                    int stewards = CultivationEconomy.Workers(c, WorkforceRoles.Steward);
+                    double bwy = builderWorkYears != null && builderWorkYears.TryGetValue(c.Id, out double bw) ? bw : 0;
+
+                    bool hasT1 = soc.HasCivicPrecedent(CivicPrecedents.CeremonialIntegration);
+                    bool hasT2 = soc.HasCivicPrecedent(CivicPrecedents.CivicOrganization);
+                    bool hasT3A = soc.HasCivicPrecedent(CivicPrecedents.TokensAndAccounting);
+                    bool hasT3B = soc.HasCivicPrecedent(CivicPrecedents.PlannedQuartersAndDrainage);
+
+                    // Tier 1: CeremonialIntegration (strictly gated on Neolithic AND c.StationaryTurns > 0,
+                    // using exact analytical permanence ramp integral over [s0, s1]).
+                    if (!hasT1 && soc.Progression.Era == Era.Neolithic && c.StationaryTurns > 0)
+                    {
+                        double s1 = Math.Max(0, c.StationaryYears);
+                        double s0 = Math.Max(0, s1 - dt);
+                        double a1 = Math.Min(s1, 40.0), a0 = Math.Min(s0, 40.0);
+                        double dtEff = (a1 * a1 - a0 * a0) / 80.0 + Math.Max(0.0, s1 - Math.Max(s0, 40.0));
+                        double dx = dtEff * Numbers.Clamp((rhoCrowd - 0.25) / 0.50, 0, 1);
+                        if (dx > 0) AddExperience(soc, CivicPrecedents.CeremonialIntegration, dx);
+                    }
+
+                    // Tier 2: CivicOrganization
+                    if (hasT1 && !hasT2)
+                    {
+                        double dx = dt * Math.Min(1.0, stewards / 15.0)
+                            * (0.55 * Numbers.Clamp((rhoCrowd - 0.50) / 0.60, 0, 1)
+                             + 0.45 * Math.Min(1.0, bwy / (denomDt * 10.0)));
+                        if (dx > 0) AddExperience(soc, CivicPrecedents.CivicOrganization, dx);
+                    }
+
+                    // Tier 3A: TokensAndAccounting (Pottery OR Pots OR local Clay OR Resources == null)
+                    if (hasT2 && !hasT3A)
+                    {
+                        bool hasPottery = soc.HasTech(NeolithicTech.Pottery);
+                        bool eligible3A = hasPottery || (c.Inventory != null && c.Inventory.Pots > 1e-6) || HasLocalClay(w, c) || w.Resources == null;
+                        if (eligible3A)
+                        {
+                            double fYr = Math.Max(1, c.Population) * foodPerPersonYear;
+                            double mPot = hasPottery ? 1.25 : 1.00;
+                            double uStore = Numbers.Clamp((Math.Max(0, c.Food) / (fYr * 20.0)) * Numbers.Clamp(c.Population / 1200.0, 0, 1), 0, 1);
+                            double tradeVol = Math.Max(0, c.RecentTradeVolume);
+                            double uTrade = tradeVol / (tradeVol + 0.15 * Math.Max(100, c.Population));
+                            double dx = dt * Math.Min(1.0, stewards / 35.0) * mPot * (0.65 * uStore + 0.55 * uTrade);
+                            if (dx > 0) AddExperience(soc, CivicPrecedents.TokensAndAccounting, dx);
+                        }
+                    }
+
+                    // Tier 3B: PlannedQuartersAndDrainage (Phase 2)
+                    if (sanitationOn && hasT2 && !hasT3B && soc.HasTech(NeolithicTech.Construction))
+                    {
+                        double dx = dt * Numbers.Clamp((c.Population - 1200.0) / 1800.0, 0, 1)
+                            * (0.55 * Math.Min(1.0, stewards / 35.0)
+                             + 0.45 * Math.Min(1.0, bwy / (denomDt * 20.0)));
+                        if (dx > 0) AddExperience(soc, CivicPrecedents.PlannedQuartersAndDrainage, dx);
+                    }
+                }
+
+                // Canonical society-ID x tier order (1, 2, 3A, 3B) precedent unlock commit.
+                foreach (var soc in w.Societies.OrderBy(soc => soc.Id))
+                {
+                    if (soc.CivicExperience == null || soc.CivicExperience.Count == 0) continue;
+                    if (soc.CivicPrecedents == null) soc.CivicPrecedents = new List<string>();
+
+                    if (!soc.HasCivicPrecedent(CivicPrecedents.CeremonialIntegration) &&
+                        soc.CivicExperience.TryGetValue(CivicPrecedents.CeremonialIntegration, out double x1) &&
+                        x1 >= s.Tier1PracticeThreshold)
+                    {
+                        soc.CivicPrecedents.Add(CivicPrecedents.CeremonialIntegration);
+                        record?.Log("Society " + soc.Id + " established civic precedent " + CivicPrecedents.CeremonialIntegration + ".");
+                    }
+                    if (soc.HasCivicPrecedent(CivicPrecedents.CeremonialIntegration) &&
+                        !soc.HasCivicPrecedent(CivicPrecedents.CivicOrganization) &&
+                        soc.CivicExperience.TryGetValue(CivicPrecedents.CivicOrganization, out double x2) &&
+                        x2 >= s.Tier2PracticeThreshold)
+                    {
+                        soc.CivicPrecedents.Add(CivicPrecedents.CivicOrganization);
+                        record?.Log("Society " + soc.Id + " established civic precedent " + CivicPrecedents.CivicOrganization + ".");
+                    }
+                    if (soc.HasCivicPrecedent(CivicPrecedents.CivicOrganization) &&
+                        !soc.HasCivicPrecedent(CivicPrecedents.TokensAndAccounting) &&
+                        soc.CivicExperience.TryGetValue(CivicPrecedents.TokensAndAccounting, out double x3A) &&
+                        x3A >= s.Tier3APracticeThreshold)
+                    {
+                        soc.CivicPrecedents.Add(CivicPrecedents.TokensAndAccounting);
+                        record?.Log("Society " + soc.Id + " established civic precedent " + CivicPrecedents.TokensAndAccounting + ".");
+                    }
+                    if (sanitationOn &&
+                        soc.HasCivicPrecedent(CivicPrecedents.CivicOrganization) &&
+                        soc.HasTech(NeolithicTech.Construction) &&
+                        !soc.HasCivicPrecedent(CivicPrecedents.PlannedQuartersAndDrainage) &&
+                        soc.CivicExperience.TryGetValue(CivicPrecedents.PlannedQuartersAndDrainage, out double x3B) &&
+                        x3B >= s.Tier3BPracticeThreshold)
+                    {
+                        soc.CivicPrecedents.Add(CivicPrecedents.PlannedQuartersAndDrainage);
+                        record?.Log("Society " + soc.Id + " established civic precedent " + CivicPrecedents.PlannedQuartersAndDrainage + ".");
+                    }
+                }
+            }
+
+            // Step 3: Build single-pass transient CivicLocalIndex, evaluate 4 drivers, commit & relax (C, P).
+            var localIndex = new CivicLocalIndex(w);
+            List<CivicTurnReport> reports = record != null ? new List<CivicTurnReport>() : null;
+            foreach (var c in w.Camps.OrderBy(c => c.Id))
+            {
+                if (c.Population <= 0) continue;
+                var env = localIndex.Evaluate(c);
+                double cBefore = c.CivicComplexity;
+                double pBefore = c.CivicStratification;
+                c.LastEnvironmentalComplexity = env.EnvironmentalComplexity;
+                c.LastEnvironmentalStratification = env.EnvironmentalStratification;
+                c.LastCircumscription = env.D2;
+                double cMax = MaxComplexity(w, c);
+                double cTarget = Numbers.Clamp(env.EnvironmentalComplexity, 0, cMax);
+                double pTarget = TargetStratification(cfg, env.EnvironmentalStratification, c.FissionPolicy, c.ImmigrationPolicy, c.CivicFocus);
+                c.CivicComplexity = Numbers.Clamp(Relax(cBefore, cTarget, s.ComplexityRelaxationRate, dt), 0, cMax);
+                c.CivicStratification = Numbers.Clamp(Relax(pBefore, pTarget, s.StratificationRelaxationRate, dt), -1, 1);
+                if (reports != null)
+                {
+                    reports.Add(new CivicTurnReport
+                    {
+                        Camp = c.Id,
+                        Society = c.SocietyId,
+                        ComplexityBefore = cBefore,
+                        ComplexityAfter = c.CivicComplexity,
+                        StratificationBefore = pBefore,
+                        StratificationAfter = c.CivicStratification,
+                        EnvironmentalComplexity = env.EnvironmentalComplexity,
+                        EnvironmentalStratification = env.EnvironmentalStratification,
+                        Circumscription = env.D2,
+                        CivicCoverage = CivicCoverage(w, c),
+                        SanitationCoverage = SanitationCoverage(w, c)
+                    });
+                }
+            }
+            if (record != null) record.CivicReports = reports;
+        }
+
+        private static void AddExperience(Society soc, string key, double delta)
+        {
+            soc.CivicExperience.TryGetValue(key, out double prior);
+            soc.CivicExperience[key] = prior + delta;
+        }
+
+        // Validation helpers for SaveCodec.MigrateGenerationalDefaults & TurnResolver.Invariants
+        internal static void ValidateLoadedCamp(Camp c)
+        {
+            if (!IsValidCampCivic(c, out string message)) throw new InvalidDataException(message);
+        }
+
+        internal static void ValidateLoadedSociety(Society s)
+        {
+            if (!IsValidSocietyCivic(s, out string message)) throw new InvalidDataException(message);
+        }
+
+        internal static void ValidateInvariants(WorldState w)
+        {
+            if (w == null) return;
+            foreach (var c in w.Camps)
+                if (!IsValidCampCivic(c, out string message)) throw new InvalidOperationException(message);
+            foreach (var s in w.Societies)
+                if (!IsValidSocietyCivic(s, out string message)) throw new InvalidOperationException(message);
+        }
+
+        private static bool FiniteInRange(double v, double lo, double hi) => !double.IsNaN(v) && !double.IsInfinity(v) && v >= lo && v <= hi;
+        private static bool FiniteNonNegative(double v) => !double.IsNaN(v) && !double.IsInfinity(v) && v >= 0;
+
+        private static bool IsValidCampCivic(Camp c, out string message)
+        {
+            if (c == null) { message = "Missing camp."; return false; }
+            if (!FiniteInRange(c.CivicComplexity, 0, 1) ||
+                !FiniteInRange(c.CivicStratification, -1, 1) ||
+                !FiniteNonNegative(c.CivicCapital) ||
+                !FiniteNonNegative(c.SanitationCapital) ||
+                !FiniteNonNegative(c.RecentTradeVolume) ||
+                !FiniteInRange(c.SanitationWaterRatio, 0, 1) ||
+                !FiniteInRange(c.LastEnvironmentalComplexity, 0, 1) ||
+                !FiniteInRange(c.LastEnvironmentalStratification, -1, 1) ||
+                !FiniteInRange(c.LastCircumscription, 0, 1) ||
+                !Enum.IsDefined(typeof(ImmigrationPolicy), c.ImmigrationPolicy) ||
+                !Enum.IsDefined(typeof(CivicFocus), c.CivicFocus))
+            {
+                message = "Invalid camp civic governance state.";
+                return false;
+            }
+            message = null;
+            return true;
+        }
+
+        private static bool IsValidSocietyCivic(Society s, out string message)
+        {
+            if (s == null) { message = "Missing society."; return false; }
+            if (s.CivicExperience != null)
+            {
+                foreach (var pair in s.CivicExperience)
+                    if (string.IsNullOrWhiteSpace(pair.Key) || !FiniteNonNegative(pair.Value))
+                    {
+                        message = "Invalid society civic experience.";
+                        return false;
+                    }
+            }
+            if (s.CivicPrecedents != null)
+            {
+                var seen = new HashSet<string>(StringComparer.Ordinal);
+                foreach (string p in s.CivicPrecedents)
+                    if (string.IsNullOrWhiteSpace(p) || !seen.Add(p))
+                    {
+                        message = "Invalid society civic precedents.";
+                        return false;
+                    }
+            }
+            message = null;
+            return true;
+        }
+
+        // Single-pass transient local index for O(active camps) environmental drivers (Docs/CivicGovernance.md §5 Choice #1).
+        // Reads ONLY committed static/local state; zero LazyEcology calls, zero hidden terrain tags, player-ID invariant.
+        private sealed class CivicLocalIndex
+        {
+            private readonly WorldState world;
+            private readonly SimulationConfig cfg;
+            private readonly Dictionary<int, double> canalSegmentsByOp = new Dictionary<int, double>();
+            private readonly Dictionary<int, List<IrrigatedField>> irrigatedByOp = new Dictionary<int, List<IrrigatedField>>();
+            private readonly Dictionary<int, int> animalsByCamp = new Dictionary<int, int>();
+            private readonly Dictionary<int, Camp> campsByTile = new Dictionary<int, Camp>();
+            private readonly Dictionary<int, double> tileProductivity = new Dictionary<int, double>();
+            private readonly Dictionary<int, double> ringProductivity = new Dictionary<int, double>();
+            private readonly Dictionary<int, bool> tileWaterViable = new Dictionary<int, bool>();
+            private readonly MaterialAccessIndex matIndex;
+
+            internal CivicLocalIndex(WorldState world)
+            {
+                this.world = world;
+                cfg = world.Config;
+                if (world.Canals != null)
+                {
+                    foreach (var seg in world.Canals)
+                    {
+                        if (seg == null || seg.Operator < 0) continue;
+                        double built = Numbers.Clamp(seg.Construction, 0, 1);
+                        if (built <= 0) continue;
+                        canalSegmentsByOp[seg.Operator] = (canalSegmentsByOp.TryGetValue(seg.Operator, out double prior) ? prior : 0) + built;
+                    }
+                }
+                if (world.IrrigatedFields != null)
+                {
+                    foreach (var field in world.IrrigatedFields)
+                    {
+                        if (field == null || field.Operator < 0) continue;
+                        if (!irrigatedByOp.TryGetValue(field.Operator, out var list))
+                            irrigatedByOp[field.Operator] = list = new List<IrrigatedField>();
+                        list.Add(field);
+                    }
+                }
+                if (world.Herds != null)
+                {
+                    foreach (var herd in world.Herds)
+                    {
+                        if (herd == null || herd.DomesticCamp < 0 || herd.Animals <= 0) continue;
+                        animalsByCamp[herd.DomesticCamp] = (animalsByCamp.TryGetValue(herd.DomesticCamp, out int prior) ? prior : 0) + herd.Animals;
+                    }
+                }
+                foreach (var camp in world.Camps)
+                    if (camp != null && camp.Population > 0) campsByTile[camp.Tile] = camp;
+                matIndex = world.Resources != null ? MaterialAccessIndex.For(world) : null;
+            }
+
+            internal CivicEnvironmentDrivers Evaluate(Camp c)
+            {
+                int[] f1 = world.Map.Radius(c.Tile, 1).ToArray();
+                int l1Count = 0, nOwn = 0;
+                double sumQ = 0, sumE = 0;
+                foreach (int t in f1)
+                {
+                    var tile = world.Tiles[t];
+                    if (!CultivationEconomy.Cultivable(tile)) continue;
+                    l1Count++;
+                    if (tile.CultivationOperator == c.Id)
+                    {
+                        if (tile.CultivationCapital > 1e-9) nOwn++;
+                        sumQ += CultivationEconomy.Intensity(cfg, tile.CultivationCapital);
+                        sumE += Math.Max(0, tile.CultivationCapital);
+                    }
+                }
+
+                irrigatedByOp.TryGetValue(c.Id, out var campIrrigated);
+                canalSegmentsByOp.TryGetValue(c.Id, out double canalSegments);
+                animalsByCamp.TryGetValue(c.Id, out int animals);
+
+                // Driver 1: Land-Limited vs. Labor-Limited Capital Intensity
+                double irrWeightSum = 0;
+                if (campIrrigated != null)
+                {
+                    foreach (var f in campIrrigated)
+                    {
+                        if (!ContainsTile(f1, f.Tile)) continue;
+                        irrWeightSum += 0.5 + 0.5 * Numbers.Clamp(f.WaterService, 0, 1);
+                    }
+                }
+                double sIrr = Numbers.Clamp(irrWeightSum / Math.Max(1, Math.Max(nOwn, 3)), 0, 1);
+                double qBar = sumQ / Math.Max(1, l1Count);
+                double sQ = Numbers.Clamp((qBar - 0.25) / 0.40, 0, 1);
+                double sPlough = AgriculturalTechnology.Plough(world, c) && nOwn > 0
+                    ? (c.Inventory != null && c.Inventory.FarmTools > 1e-6 ? 1.0 : 0.5)
+                    : 0.0;
+                double plant = Math.Max(0, c.PlantFood), animal = Math.Max(0, c.AnimalFood), aquatic = Math.Max(0, c.AquaticFood);
+                double fTot = plant + animal + aquatic;
+                double fCrop;
+                if (nOwn == 0) fCrop = 0;
+                else
+                {
+                    int farmers = CultivationEconomy.Workers(c, WorkforceRoles.Farmer);
+                    int herders = CultivationEconomy.Workers(c, WorkforceRoles.Herder);
+                    int fishers = CultivationEconomy.Workers(c, WorkforceRoles.Fisher);
+                    int gatherers = c.GathererPopulation;
+                    double wFood = farmers + herders + fishers + gatherers;
+                    double fWorker = farmers / Math.Max(1.0, wFood);
+                    double fStock = fTot > 1e-9 ? plant / fTot : fWorker;
+                    fCrop = 0.60 * fWorker + 0.40 * fStock;
+                }
+                double d1 = Numbers.Clamp(fCrop * (0.55 * sIrr + 0.27 * sQ + 0.18 * sPlough), 0, 1);
+
+                // Driver 2: Circumscription & Exit Cost
+                int rExit = Math.Max(1, cfg.FissionRadius);
+                int dMin = rExit >= cfg.MinimumCampSpacing ? cfg.MinimumCampSpacing : 1;
+                int blockSearchRadius = rExit + Math.Max(0, cfg.MinimumCampSpacing - 1);
+                var nearbyOtherTiles = new List<int>();
+                foreach (int t in world.Map.Radius(c.Tile, blockSearchRadius))
+                    if (campsByTile.TryGetValue(t, out var other) && other.Id != c.Id)
+                        nearbyOtherTiles.Add(t);
+
+                double piHome = 0;
+                foreach (int n in f1)
+                {
+                    double pn = StaticTileProductivity(n);
+                    if (cfg.Agriculture != null && campIrrigated != null)
+                    {
+                        IrrigatedField field = null;
+                        for (int i = 0; i < campIrrigated.Count; i++)
+                            if (campIrrigated[i].Tile == n) { field = campIrrigated[i]; break; }
+                        if (field != null)
+                        {
+                            var seasons = world.Tiles[n].Seasons;
+                            double mBar = 0.25 * ((double)seasons[0].Moisture + seasons[1].Moisture + seasons[2].Moisture + seasons[3].Moisture);
+                            double boost = Math.Max(1.0, cfg.Agriculture.TargetMoisture / Math.Max(0.05, mBar))
+                                * (1 + cfg.Agriculture.SoilCapacityGain * Math.Max(0, field.Soil)) - 1;
+                            pn *= 1 + Numbers.Clamp(field.WaterService, 0, 1) * boost;
+                        }
+                    }
+                    piHome += pn;
+                }
+
+                int ringCount = 0;
+                double vSum = 0;
+                double piHomeDenom = Math.Max(1e-9, piHome);
+                foreach (int t in world.Map.Radius(c.Tile, rExit))
+                {
+                    if (world.Map.Distance(c.Tile, t) < dMin) continue;
+                    ringCount++;
+                    if (!world.Tiles[t].TraversableLand) continue;
+                    bool blocked = false;
+                    for (int i = 0; i < nearbyOtherTiles.Count; i++)
+                        if (world.Map.Distance(t, nearbyOtherTiles[i]) < cfg.MinimumCampSpacing) { blocked = true; break; }
+                    if (blocked || !StaticFreshwaterViable(t)) continue;
+                    double piT = RingProductivity(t);
+                    vSum += Numbers.Clamp(piT / piHomeDenom, 0, 1);
+                }
+                double vEff = vSum / Math.Max(1, ringCount);
+                double cRing = Math.Exp(-vEff / 0.18);
+
+                double fixedPeople = NeolithicProduction.FixedHousingAt(world, c, world.Days) * cfg.Neolithic.HousingPeoplePerUnit;
+                double lightPeople = Math.Max(0, c.Inventory?.LightHousingUnits ?? 0) * cfg.Neolithic.LightHousingPeoplePerUnit;
+                double hFixed = fixedPeople / Math.Max(1e-9, fixedPeople + lightPeople + 2.0 * animals + 0.50 * Math.Max(1, c.Population));
+                double cInfra = Numbers.Clamp((canalSegments + 0.20 * sumE) / 4.0, 0, 1);
+                double cSunk = 0.45 * hFixed + 0.55 * cInfra;
+                double d2 = Numbers.Clamp(0.72 * cRing + 0.28 * cSunk, 0, 1);
+
+                // Driver 3: Surplus Appropriability & Chokepoints
+                double fYr = Math.Max(1, c.Population) * Math.Max(Epsilon, PhysicalDemography.FoodPerPersonYear(cfg));
+                double sPlant = fTot > 1e-9 ? plant / fTot : 0;
+                double grainYears = plant / fYr;
+                double potYears = Math.Max(0, c.Inventory?.Pots ?? 0) * cfg.Neolithic.PotStorageFoodPerUnit / fYr;
+                bool hasPottery = c.People != null && c.People.HasTech(NeolithicTech.Pottery);
+                double aGrain = Numbers.Clamp(
+                    0.75 * Numbers.Clamp((grainYears - 10.0) / 35.0, 0, 1) * (0.35 + 0.65 * sPlant)
+                    + 0.25 * Numbers.Clamp(potYears / 15.0 + (hasPottery ? 0.25 : 0.0), 0, 1) * sPlant,
+                    0, 1);
+
+                int partners = 0, nNbr = 0;
+                int maxNbrDist = Math.Max(cfg.TradeRange, cfg.FissionRadius + 2);
+                var contacts = c.People?.Memory?.Contacts;
+                if (contacts != null)
+                {
+                    foreach (var k in contacts)
+                    {
+                        if (k == null || k.Moved || k.Tile < 0 || k.Tile >= world.Tiles.Length || k.Camp == c.Id || k.Owner == c.Player)
+                            continue;
+                        int dist = world.Map.Distance(c.Tile, k.Tile);
+                        if (dist <= cfg.TradeRange) partners++;
+                        if (dist <= maxNbrDist) nNbr++;
+                    }
+                }
+                double tradeVol = Math.Max(0, c.RecentTradeVolume);
+                double aTrade = Numbers.Clamp(
+                    0.70 * (tradeVol / (tradeVol + 0.15 * Math.Max(50, c.Population)))
+                    + 0.30 * Math.Min(1.0, partners / 4.0),
+                    0, 1);
+
+                double aRes = 0;
+                if (world.Resources != null)
+                {
+                    var res = world.Resources;
+                    double scale = Math.Max(1.0, (double)res.MaximumQuantity);
+                    double depositScore = 0, sumClay = 0, sumStone = 0;
+                    int landCount = 0;
+                    foreach (int t in f1)
+                    {
+                        if (matIndex != null)
+                        {
+                            foreach (var sr in matIndex.Sites(t))
+                            {
+                                if (sr.Body == null || sr.Body.Concentration != MineralConcentration.Deposit || sr.Body.Components == null)
+                                    continue;
+                                bool highValue = false, building = false;
+                                for (int i = 0; i < sr.Body.Components.Length; i++)
+                                {
+                                    var m = sr.Body.Components[i].Material;
+                                    if (IsHighValueMaterial(m)) { highValue = true; break; }
+                                    if (IsBuildingMaterial(m)) building = true;
+                                }
+                                if (highValue) depositScore += 0.50 * (sr.Body.Quality / 100.0);
+                                else if (building) depositScore += 0.25 * (sr.Body.Quality / 100.0);
+                            }
+                        }
+                        if (world.Tiles[t].Land)
+                        {
+                            landCount++;
+                            if (res.Clay != null && t >= 0 && t < res.Clay.Length)
+                                sumClay += res.SurfaceAccessible(t, MaterialId.Clay) / scale;
+                            if (res.Stone != null && t >= 0 && t < res.Stone.Length)
+                                sumStone += res.SurfaceAccessible(t, MaterialId.Stone) / scale;
+                        }
+                    }
+                    double fClayBar = landCount > 0 ? sumClay / landCount : 0.0;
+                    double fStoneBar = landCount > 0 ? sumStone / landCount : 0.0;
+                    aRes = Numbers.Clamp(
+                        0.60 * Math.Min(1.0, depositScore)
+                        + 0.25 * Numbers.Clamp(fClayBar / 0.25, 0, 1)
+                        + 0.15 * Numbers.Clamp(fStoneBar / 0.25, 0, 1),
+                        0, 1);
+                }
+                double d3 = Numbers.Clamp(0.55 * aGrain + 0.25 * aTrade + 0.20 * aRes, 0, 1);
+
+                // Driver 4: Collective Coordination & Volatility
+                double sumMAmp = 0, sumFAmp = 0;
+                int traversableCount = 0;
+                foreach (int t in f1)
+                {
+                    var tile = world.Tiles[t];
+                    if (!tile.TraversableLand) continue;
+                    traversableCount++;
+                    var seasons = tile.Seasons;
+                    double minM = seasons[0].Moisture, maxM = seasons[0].Moisture;
+                    double minF = seasons[0].MaxPotentialFood, maxF = seasons[0].MaxPotentialFood, sumF = seasons[0].MaxPotentialFood;
+                    for (int s = 1; s < 4; s++)
+                    {
+                        double m = seasons[s].Moisture;
+                        if (m < minM) minM = m;
+                        if (m > maxM) maxM = m;
+                        double f = seasons[s].MaxPotentialFood;
+                        if (f < minF) minF = f;
+                        if (f > maxF) maxF = f;
+                        sumF += f;
+                    }
+                    sumMAmp += maxM - minM;
+                    double meanF = 0.25 * sumF;
+                    sumFAmp += (maxF - minF) / Math.Max(1e-6, meanF);
+                }
+                double mAmpBar = traversableCount > 0 ? sumMAmp / traversableCount : 0.0;
+                double fAmpBar = traversableCount > 0 ? sumFAmp / traversableCount : 0.0;
+                double vSeason = Numbers.Clamp(0.55 * (mAmpBar / 0.40) + 0.45 * (fAmpBar / 1.20), 0, 1);
+                double vCanal = Numbers.Clamp(canalSegments / 4.0, 0, 1);
+                double vNbr = Numbers.Clamp(nNbr / 5.0, 0, 1);
+                double d4 = Numbers.Clamp(0.35 * vSeason + 0.40 * vCanal + 0.25 * vNbr, 0, 1);
+
+                // Combined Attractors (C_env, P_env)
+                double sP = 0.36 * d1 + 0.36 * d2 + 0.18 * d3 + 0.10 * d4;
+                double pEnv = Numbers.Clamp((sP - 0.42) / 0.42, -1, 1);
+
+                var shelter = NeolithicProduction.HousingCapacity(world, c, world.Days);
+                double hCamp = NeolithicProduction.HousingShare(cfg.Neolithic, shelter, c.Population);
+                double ns0 = NeolithicProduction.CohesionScale(cfg.Neolithic, hCamp);
+                double rhoCrowd = c.Population / Math.Max(1.0, ns0);
+                double gN = Numbers.Clamp((c.Population - 150.0) / 350.0, 0, 1);
+                double crowdScale = cfg.Civic != null && cfg.Civic.ComplexityCrowdingScale > 0
+                    ? cfg.Civic.ComplexityCrowdingScale : 0.64;
+                double cRaw = Numbers.Clamp(gN * ((-PhysicalDemography.Expm1(-rhoCrowd / crowdScale)) + 0.20 * d4), 0, 1);
+                double cEnv = Math.Min(MaxComplexity(world, c), cRaw);
+                return new CivicEnvironmentDrivers(d1, d2, d3, d4, cRaw, cEnv, pEnv);
+            }
+
+            private double StaticTileProductivity(int n)
+            {
+                if (tileProductivity.TryGetValue(n, out double cached)) return cached;
+                var tile = world.Tiles[n];
+                double sum = 0;
+                if (tile.TraversableLand)
+                {
+                    for (int s = 0; s < 4; s++)
+                        sum += tile.Seasons[s].MaxFood + 0.10 * tile.Seasons[s].MaxPotentialFood;
+                    sum *= 0.25;
+                }
+                else if (tile.Aquatic && tile.ElevationLevel < 10)
+                {
+                    for (int s = 0; s < 4; s++)
+                        sum += 2.0 * tile.Seasons[s].MaxFood;
+                    sum *= 0.25;
+                }
+                tileProductivity[n] = sum;
+                return sum;
+            }
+
+            private double RingProductivity(int t)
+            {
+                if (ringProductivity.TryGetValue(t, out double cached)) return cached;
+                double sum = 0;
+                foreach (int n in world.Map.Radius(t, 1)) sum += StaticTileProductivity(n);
+                ringProductivity[t] = sum;
+                return sum;
+            }
+
+            private bool StaticFreshwaterViable(int t)
+            {
+                if (tileWaterViable.TryGetValue(t, out bool cached)) return cached;
+                double annualWater = 0;
+                double w0 = 0, w1 = 0, w2 = 0, w3 = 0;
+                foreach (int n in world.Map.Radius(t, 1))
+                {
+                    var tile = world.Tiles[n];
+                    if (tile.Environment == EnvironmentKind.Ocean || tile.ElevationLevel >= 10 ||
+                        tile.WaterBody == WaterKind.Saltwater || tile.FreshwaterSource == FreshwaterSource.None)
+                        continue;
+                    w0 += tile.Seasons[0].MaxFreshwater;
+                    w1 += tile.Seasons[1].MaxFreshwater;
+                    w2 += tile.Seasons[2].MaxFreshwater;
+                    w3 += tile.Seasons[3].MaxFreshwater;
+                    for (int s = 0; s < 4; s++)
+                        annualWater += (double)tile.Seasons[s].MaxFreshwater * tile.Seasons[s].WaterRecoveryPerDay * cfg.BaseDays;
+                }
+                double minWater = cfg.StartFreshwaterMinimum;
+                bool viable = annualWater / 4.0 >= minWater && w0 >= minWater && w1 >= minWater && w2 >= minWater && w3 >= minWater;
+                tileWaterViable[t] = viable;
+                return viable;
+            }
+
+            private static bool ContainsTile(int[] tiles, int tile)
+            {
+                for (int i = 0; i < tiles.Length; i++) if (tiles[i] == tile) return true;
+                return false;
+            }
+
+            private static bool IsHighValueMaterial(MaterialId m)
+                => m == MaterialId.Copper || m == MaterialId.Tin || m == MaterialId.Gold || m == MaterialId.Lead ||
+                   m == MaterialId.Silver || m == MaterialId.Salt || m == MaterialId.Gemstones;
+
+            private static bool IsBuildingMaterial(MaterialId m)
+                => m == MaterialId.Limestone || m == MaterialId.Silica || m == MaterialId.Gypsum ||
+                   m == MaterialId.Stone || m == MaterialId.Clay;
+        }
+    }
+}

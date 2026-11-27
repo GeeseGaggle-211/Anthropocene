@@ -413,7 +413,7 @@ namespace Anthropocene.Simulation
             for (int i = 0; i < roles.Length; i++)
             {
                 int moved = share[i + 1]; roles[i].Population -= moved;
-                string role = daughterFarmersBecomeGatherers && roles[i].Role == WorkforceRoles.Farmer
+                string role = daughterFarmersBecomeGatherers && (roles[i].Role == WorkforceRoles.Farmer || roles[i].Role == WorkforceRoles.Steward)
                     ? WorkforceRoles.Gatherer : roles[i].Role;
                 if (moved <= 0) continue;
                 composition[role] = (composition.TryGetValue(role, out int prior) ? prior : 0) + moved;
@@ -598,6 +598,7 @@ namespace Anthropocene.Simulation
             view.AquaticFood = Math.Max(0, aquatic); view.Inventory = inventory.Copy();
             view.Inventory.HousingUnits = 0; view.Workforce = WorkforceTransfer.Copy(workforce);
             view.Workforce.Normalize(view.Population); view.EconomicLabor = null; view.IsVillage = false;
+            CivicGovernance.InitializeDaughterView(world, parent, view);
             return new SocialSettlementState
             {
                 Origin = parent, View = view, DeficitYears = Math.Max(0, parent.FoodDeficitYears),

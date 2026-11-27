@@ -32,12 +32,16 @@ namespace Anthropocene.Simulation
 [Serializable]
 public sealed class ObservedSettlementDto
 {
-    public int Id, Tile, Population, Gatherers, LinkedPopulation, FisherPopulation, FishingVillageMaturity, FishingVillageMealSupport;
+    public int Id, Tile, Population, Gatherers, LinkedPopulation, FisherPopulation, FishingVillageMaturity, FishingVillageMealSupport, StewardPopulation;
     public double AnimalFabric, LightHousing, HerdingTools, FishingTools, FixedHousing, HousingMaterial;
     public double QoL, Nutrition, ClothingCoverage, HousingCoverage, FoodDeficitYears, EffectiveFertilityRate, EffectiveMortalityRate, ExposureMortalityRate, CrowdingMortalityRate, DiseaseMortalityRate, StarvationMortalityRate;
-    public bool Agriculture, Husbandry, FishingEnabled, IsVillage, RecentlyMoved;
+    public bool Agriculture, Husbandry, FishingEnabled, StewardEnabled, IsVillage, RecentlyMoved;
     public FissionPolicy FissionPolicy;
     public int FissionDestination;
+    public double CivicComplexity, CivicStratification, LastEnvironmentalComplexity, LastEnvironmentalStratification, CivicCapital, CivicCoverage, SanitationCapital, SanitationCoverage, SanitationWaterRatio;
+    public ImmigrationPolicy ImmigrationPolicy;
+    public CivicFocus CivicFocus;
+    public string[] CivicPrecedents;
     public EconomicIntent Economy;
     public MaterialSourceObservation[] MaterialSources;
 }
@@ -102,7 +106,7 @@ public sealed class ObservedFishingGroundDto
         public int Schema = AgentObservation.SchemaVersion, Player, Turn, PolicySeed, CampId, CampTile, CampPopulation, GathererPopulation, LinkedPopulation, FoodCondition, DeficitTurns;
         public int Width, Height, MinimumCamp, MinimumCampSpacing, HunterMovement, CampMovement, WaterMovementCost, SupplyRange, SustainableHuntPopulation;
         public double Days, Inertia, HuntingFieldcraft, HuntingInclination, GatheringInclination, FishingInclination;
-        public bool Watercraft, FishingEnabled;
+        public bool Watercraft, FishingEnabled, CivicGovernanceEnabled, SanitationEnabled;
         public double[] Experience;
         public ObservedTechnologyStatusDto[] TechnologyStatuses;
         public Mandate Mandate;
@@ -124,10 +128,10 @@ public sealed class ObservedFishingGroundDto
         public static ObservationDto From(AgentObservation o, Mandate mandate) => new ObservationDto
         {
             Player = o.Player, Turn = o.Turn, PolicySeed = o.PolicySeed, CampId = o.CampId, CampTile = o.CampTile, CampPopulation = o.CampPopulation, GathererPopulation = o.GathererPopulation, LinkedPopulation = o.LinkedPopulation, FoodCondition = o.FoodCondition, DeficitTurns = o.DeficitTurns, Width = o.Map.Width, Height = o.Map.Height, MinimumCamp = o.MinimumCamp, MinimumCampSpacing = o.MinimumCampSpacing, HunterMovement = o.HunterMovement, CampMovement = o.CampMovement, WaterMovementCost = o.WaterMovementCost, SupplyRange = o.SupplyRange, SustainableHuntPopulation = o.SustainableHuntPopulation,
-            Days = o.Days, Inertia = o.Inertia, HuntingFieldcraft = o.HuntingFieldcraft, HuntingInclination = o.HuntingInclination, GatheringInclination = o.GatheringInclination, FishingInclination = o.FishingInclination, Watercraft = o.Watercraft, FishingEnabled = o.FishingEnabled, Experience = o.Experience.ToArray(),
+            Days = o.Days, Inertia = o.Inertia, HuntingFieldcraft = o.HuntingFieldcraft, HuntingInclination = o.HuntingInclination, GatheringInclination = o.GatheringInclination, FishingInclination = o.FishingInclination, Watercraft = o.Watercraft, FishingEnabled = o.FishingEnabled, CivicGovernanceEnabled = o.CivicGovernanceEnabled, SanitationEnabled = o.SanitationEnabled, Experience = o.Experience.ToArray(),
             TechnologyStatuses = o.TechnologyStatuses.Select(s => new ObservedTechnologyStatusDto { Domain = s.Domain, Technology = s.Technology, Experience = s.Experience, Progress = s.Progress, Threshold = s.Threshold, Acquired = s.Acquired, Eligible = s.Eligible, BlockedReason = s.BlockedReason }).ToArray(),
             Mandate = new Mandate { Risk = mandate.Risk, Mobility = mandate.Mobility, Exploration = mandate.Exploration, Reserve = mandate.Reserve, Hunting = mandate.Hunting, Gathering = mandate.Gathering, Fishing = mandate.Fishing, Persistence = mandate.Persistence },
-            Settlements = o.Settlements.Select(c => new ObservedSettlementDto { Id = c.Id, Tile = c.Tile, Population = c.Population, Gatherers = c.Gatherers, LinkedPopulation = c.LinkedPopulation, FisherPopulation = c.FisherPopulation, FishingVillageMaturity = c.FishingVillageMaturity, FishingVillageMealSupport = c.FishingVillageMealSupport, AnimalFabric = c.AnimalFabric, LightHousing = c.LightHousing, HerdingTools = c.HerdingTools, FishingTools = c.FishingTools, FixedHousing = c.FixedHousing, HousingMaterial = c.HousingMaterial, QoL = c.QoL, Nutrition = c.Nutrition, ClothingCoverage = c.ClothingCoverage, HousingCoverage = c.HousingCoverage, FoodDeficitYears = c.FoodDeficitYears, EffectiveFertilityRate = c.EffectiveFertilityRate, EffectiveMortalityRate = c.EffectiveMortalityRate, ExposureMortalityRate = c.ExposureMortalityRate, CrowdingMortalityRate = c.CrowdingMortalityRate, DiseaseMortalityRate = c.DiseaseMortalityRate, StarvationMortalityRate = c.StarvationMortalityRate, Agriculture = c.Agriculture, Husbandry = c.Husbandry, FishingEnabled = c.FishingEnabled, IsVillage = c.IsVillage, RecentlyMoved = c.RecentlyMoved, FissionPolicy = c.FissionPolicy, FissionDestination = c.FissionDestination, Economy = c.Economy.Copy(), MaterialSources = c.MaterialSources }).ToArray(),
+            Settlements = o.Settlements.Select(c => new ObservedSettlementDto { Id = c.Id, Tile = c.Tile, Population = c.Population, Gatherers = c.Gatherers, LinkedPopulation = c.LinkedPopulation, FisherPopulation = c.FisherPopulation, FishingVillageMaturity = c.FishingVillageMaturity, FishingVillageMealSupport = c.FishingVillageMealSupport, StewardPopulation = c.StewardPopulation, AnimalFabric = c.AnimalFabric, LightHousing = c.LightHousing, HerdingTools = c.HerdingTools, FishingTools = c.FishingTools, FixedHousing = c.FixedHousing, HousingMaterial = c.HousingMaterial, QoL = c.QoL, Nutrition = c.Nutrition, ClothingCoverage = c.ClothingCoverage, HousingCoverage = c.HousingCoverage, FoodDeficitYears = c.FoodDeficitYears, EffectiveFertilityRate = c.EffectiveFertilityRate, EffectiveMortalityRate = c.EffectiveMortalityRate, ExposureMortalityRate = c.ExposureMortalityRate, CrowdingMortalityRate = c.CrowdingMortalityRate, DiseaseMortalityRate = c.DiseaseMortalityRate, StarvationMortalityRate = c.StarvationMortalityRate, Agriculture = c.Agriculture, Husbandry = c.Husbandry, FishingEnabled = c.FishingEnabled, StewardEnabled = c.StewardEnabled, IsVillage = c.IsVillage, RecentlyMoved = c.RecentlyMoved, FissionPolicy = c.FissionPolicy, FissionDestination = c.FissionDestination, CivicComplexity = c.CivicComplexity, CivicStratification = c.CivicStratification, LastEnvironmentalComplexity = c.LastEnvironmentalComplexity, LastEnvironmentalStratification = c.LastEnvironmentalStratification, CivicCapital = c.CivicCapital, CivicCoverage = c.CivicCoverage, SanitationCapital = c.SanitationCapital, SanitationCoverage = c.SanitationCoverage, SanitationWaterRatio = c.SanitationWaterRatio, ImmigrationPolicy = c.ImmigrationPolicy, CivicFocus = c.CivicFocus, CivicPrecedents = (c.CivicPrecedents ?? Array.Empty<string>()).ToArray(), Economy = c.Economy.Copy(), MaterialSources = c.MaterialSources }).ToArray(),
             Tiles = o.Tiles.OrderBy(p => p.Key).Select(p => ObservedTileDto.From(p.Value)).ToArray(), Hunters = o.Hunters.Select(ObservedUnitDto.From).ToArray(), Rivals = o.Rivals.Select(ObservedUnitDto.From).ToArray(), ForeignHunters = o.ForeignHunters.Select(ObservedUnitDto.From).ToArray(),
             RememberedTiles = o.RememberedTiles.OrderBy(p => p.Key).Select(p => ObservedRememberedTileDto.From(p.Value)).ToArray(),
             KnownSettlements = o.KnownSettlements.Select(c => new ObservedContactDto { Camp = c.Camp, Owner = c.Owner, Tile = c.Tile, Turn = c.Turn, Source = c.Source, Moved = c.Moved }).ToArray(),

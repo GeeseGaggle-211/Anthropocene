@@ -967,6 +967,8 @@ namespace Anthropocene.Simulation
                 TransitionSeeds = ps.TransitionSeeds.Select(t => new TransitionSeed { Technology = t.Technology, Settlement = t.Settlement, Tile = t.Tile, Species = t.Species, Days = t.Days }).ToList(),
                 OpeningTransitionProcessed = ps.OpeningTransitionProcessed, OpeningTransitionProcessedInitialized = ps.OpeningTransitionProcessedInitialized,
                 CraftExperience = new Dictionary<string, double>(ps.CraftExperience), UnlockedSpecialists = new List<string>(ps.UnlockedSpecialists), NeolithicTechnologies = new List<string>(ps.NeolithicTechnologies),
+                CivicExperience = ps.CivicExperience == null ? new Dictionary<string, double>() : new Dictionary<string, double>(ps.CivicExperience),
+                CivicPrecedents = ps.CivicPrecedents == null ? new List<string>() : new List<string>(ps.CivicPrecedents),
                 FishingGroundKnowledge = (ps.FishingGroundKnowledge ?? new List<FishingGroundSnapshot>()).OrderBy(s => s.TileId).Select(s => s.Copy()).ToList(),
                 ParentSociety = ps.Id, KinAffinity = Kinship.PolicyAffinity(parent.FissionPolicy)
             };
@@ -1021,6 +1023,7 @@ namespace Anthropocene.Simulation
             camp.ManagedBreedingIntensity = parent.ManagedBreedingIntensity; camp.ManagedBreedingPolicyInitialized = true;
             camp.CultivationFocusTile = -1; camp.EconomyAutomationTurns = -1;
             camp.FissionPolicy = FissionPolicy.Neutral; camp.FissionDestination = null; parent.FissionDestination = null;
+            CivicGovernance.InitializeDaughterView(w, parent, camp);
             // Domestic herds move in the same fraction (whole animals, rounded down; the parent keeps the remainder).
             int animals = 0;
             // Animal textile need: a herding parent's daughter leaves with at least one animal of a herd that keeps
@@ -1123,7 +1126,7 @@ namespace Anthropocene.Simulation
             for (int i = 0; i < roles.Length; i++)
             {
                 roles[i].Population -= share[i + 1];
-                if (share[i + 1] > 0 && roles[i].Role != WorkforceRoles.Farmer)
+                if (share[i + 1] > 0 && roles[i].Role != WorkforceRoles.Farmer && roles[i].Role != WorkforceRoles.Steward)
                     daughter.Workforce.Assignments.Add(new PopulationAssignment
                         { Role = roles[i].Role, Population = share[i + 1] });
             }

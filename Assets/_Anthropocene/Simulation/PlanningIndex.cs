@@ -92,7 +92,7 @@ namespace Anthropocene.Simulation
     }
     public sealed class SettlementObservation
     {
-        public readonly int Id, Tile, Population, Gatherers, LinkedPopulation, FisherPopulation, FishingVillageMaturity, FishingVillageMealSupport;
+        public readonly int Id, Tile, Population, Gatherers, LinkedPopulation, FisherPopulation, FishingVillageMaturity, FishingVillageMealSupport, StewardPopulation;
         public readonly double FishingTools;
         public readonly double AnimalFabric, LightHousing, HerdingTools, FixedHousing, HousingMaterial;
         // Owner-only physical demography and welfare diagnostics from the last committed turn.
@@ -100,19 +100,26 @@ namespace Anthropocene.Simulation
         public readonly double EffectiveFertilityRate, EffectiveMortalityRate, ExposureMortalityRate, CrowdingMortalityRate, DiseaseMortalityRate, StarvationMortalityRate;
         public readonly bool RecentlyMoved;
         public readonly bool IsVillage;
-        public readonly bool Agriculture, Husbandry, FishingEnabled;
+        public readonly bool Agriculture, Husbandry, FishingEnabled, StewardEnabled;
         public readonly string[] Technologies;
         public readonly EconomicIntent Economy;
         public readonly EconomicIntent RecommendedEconomy;
         // Owner-only fission state (WP10a): the camp's policy and its cached destination tile (-1 when none).
         public readonly FissionPolicy FissionPolicy;
         public readonly int FissionDestination;
+        // Owner-only civic governance state (Docs/CivicGovernance.md §5 Choice #9.3).
+        public readonly double CivicComplexity, CivicStratification, LastEnvironmentalComplexity, LastEnvironmentalStratification;
+        public readonly double CivicCapital, CivicCoverage, SanitationCapital, SanitationCoverage, SanitationWaterRatio;
+        public readonly ImmigrationPolicy ImmigrationPolicy;
+        public readonly CivicFocus CivicFocus;
+        public readonly string[] CivicPrecedents;
         public readonly MaterialSourceObservation[] MaterialSources;
         // forValidation (order validation only): MaterialSources is empty and FixedHousing 0; OrderRules.Validate reads neither.
         public SettlementObservation(Camp c, PlanningIndex index, bool recommendEconomy = false, bool forValidation = false)
         {
             Id = c.Id; Tile = c.Tile; Population = c.Population; Gatherers = c.GathererPopulation; LinkedPopulation = index.Population(c);
             FisherPopulation = c.Workforce.Assignments.Where(a => a.Role == WorkforceRoles.Fisher).Sum(a => a.Population);
+            StewardPopulation = c.Workforce.Assignments.Where(a => a.Role == WorkforceRoles.Steward).Sum(a => a.Population);
             FishingTools = c.Inventory.FishingTools;
             AnimalFabric = c.Inventory.AnimalFabric; LightHousing = c.Inventory.LightHousingUnits; HerdingTools = c.Inventory.HerdingTools; HousingMaterial = c.Inventory.HousingMaterial;
             FixedHousing = forValidation ? 0 : NeolithicProduction.FixedHousingAt(index.World, c, index.World.Days);
@@ -126,6 +133,19 @@ namespace Anthropocene.Simulation
             // to the prepared Fishing plan, so action masks cannot reveal
             // hidden water quality or route/source availability.
             FishingEnabled = index.World.Config.NeolithicFishingEnabled && c.Technologies[(int)Technology.Watercraft];
+            StewardEnabled = CivicGovernance.StewardAvailable(index.World, c);
+            CivicComplexity = c.CivicComplexity;
+            CivicStratification = c.CivicStratification;
+            LastEnvironmentalComplexity = c.LastEnvironmentalComplexity;
+            LastEnvironmentalStratification = c.LastEnvironmentalStratification;
+            CivicCapital = c.CivicCapital;
+            CivicCoverage = CivicGovernance.Enabled(index.World.Config) ? CivicGovernance.CivicCoverage(index.World, c) : 0;
+            SanitationCapital = c.SanitationCapital;
+            SanitationCoverage = CivicGovernance.SanitationEnabled(index.World.Config) ? CivicGovernance.SanitationCoverage(index.World, c) : 0;
+            SanitationWaterRatio = c.SanitationWaterRatio;
+            ImmigrationPolicy = c.ImmigrationPolicy;
+            CivicFocus = c.CivicFocus;
+            CivicPrecedents = (c.People.CivicPrecedents ?? new List<string>()).ToArray();
             var lastReport = forValidation ? null : index.World.History.LastOrDefault()?.Demographics?.FirstOrDefault(d => d.Camp == c.Id);
             FishingVillageMaturity = Knowledge.Band(lastReport?.FishingVillageMaturity ?? 0, 1, index.World.Config);
             FishingVillageMealSupport = Knowledge.Band(lastReport?.FishingVillageMealSupport ?? 0, 1, index.World.Config);

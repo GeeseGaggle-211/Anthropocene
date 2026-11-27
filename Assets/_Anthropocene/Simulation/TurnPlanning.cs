@@ -152,10 +152,28 @@ namespace Anthropocene.Simulation
         }
     }
 
+    internal readonly struct CampPolicies : IEquatable<CampPolicies>
+    {
+        public readonly FissionPolicy Fission;
+        public readonly ImmigrationPolicy Immigration;
+        public readonly CivicFocus CivicFocus;
+        public CampPolicies(FissionPolicy fission, ImmigrationPolicy immigration, CivicFocus civicFocus)
+        { Fission = fission; Immigration = immigration; CivicFocus = civicFocus; }
+        public static CampPolicies From(Camp c) => new CampPolicies(c.FissionPolicy, c.ImmigrationPolicy, c.CivicFocus);
+        public bool Equals(CampPolicies other) => Fission == other.Fission && Immigration == other.Immigration && CivicFocus == other.CivicFocus;
+        public override bool Equals(object obj) => obj is CampPolicies other && Equals(other);
+        public override int GetHashCode() => ((int)Fission * 16) ^ ((int)Immigration * 4) ^ (int)CivicFocus;
+        public static bool operator ==(CampPolicies a, CampPolicies b) => a.Equals(b);
+        public static bool operator !=(CampPolicies a, CampPolicies b) => !a.Equals(b);
+    }
+
     internal sealed class DraftIntent
     {
         public int Camp, Tile;
         public bool Abandoning;
+        public FissionPolicy FissionPolicy;
+        public ImmigrationPolicy ImmigrationPolicy;
+        public CivicFocus CivicFocus;
         public Order Order;
         public ProductionOrder Production;
         public FishingAccessPlan FishingAccess;
@@ -194,6 +212,27 @@ namespace Anthropocene.Simulation
 
     public static class TurnPlanner
     {
+        internal static bool IsPolicyOrder(OrderKind kind)
+            => kind == OrderKind.FissionPolicy || kind == OrderKind.ImmigrationPolicy || kind == OrderKind.CivicFocus;
+
+        private static Dictionary<int, CampPolicies> EffectivePolicies(WorldState world, IEnumerable<Order> orders)
+        {
+            var result = new Dictionary<int, CampPolicies>(world.Camps.Count);
+            foreach (var camp in world.Camps) result[camp.Id] = CampPolicies.From(camp);
+            bool civicEnabled = CivicGovernance.Enabled(world.Config);
+            foreach (var order in orders.Where(o => o != null && IsPolicyOrder(o.Kind)).OrderBy(o => o.Entity).ThenBy(o => (int)o.Kind))
+            {
+                if (!result.TryGetValue(order.Entity, out var current)) continue;
+                if (order.Kind == OrderKind.FissionPolicy && order.Target >= 0 && order.Target <= (int)FissionPolicy.Encourage)
+                    result[order.Entity] = new CampPolicies((FissionPolicy)order.Target, current.Immigration, current.CivicFocus);
+                else if (civicEnabled && order.Kind == OrderKind.ImmigrationPolicy && order.Target >= 0 && order.Target <= (int)ImmigrationPolicy.Restricted)
+                    result[order.Entity] = new CampPolicies(current.Fission, (ImmigrationPolicy)order.Target, current.CivicFocus);
+                else if (civicEnabled && order.Kind == OrderKind.CivicFocus && order.Target >= 0 && order.Target <= (int)CivicFocus.Centralized)
+                    result[order.Entity] = new CampPolicies(current.Fission, current.Immigration, (CivicFocus)order.Target);
+            }
+            return result;
+        }
+
         public static PreparedTurn Prepare(WorldState world, IReadOnlyDictionary<int, List<Order>> submitted,
             IEnumerable<DecisionTrace> traces = null, PhaseExecution execution = null)
             => Prepare(world, submitted, traces, execution, null);
@@ -222,9 +261,10 @@ namespace Anthropocene.Simulation
                 var observation = new AgentObservationBuilder().BuildForValidation(world, camp.Player, index);
                 foreach (var group in orders.Where(o => o != null).GroupBy(o => o.Entity).OrderBy(g => g.Key))
                 {
-                    // A camp may carry one ordinary order and, besides it, one fission-policy setting.
-                    var ordinary = group.Where(o => o.Kind != OrderKind.FissionPolicy).ToArray(); var policies = group.Where(o => o.Kind == OrderKind.FissionPolicy).ToArray();
-                    if (ordinary.Length > 1 || policies.Length > 1) { prepared.Rejections.Add("Rejected conflicting orders for " + group.Key); continue; }
+                    // A camp may carry one ordinary order and, besides it, at most one policy order per distinct policy kind.
+                    var ordinary = group.Where(o => !IsPolicyOrder(o.Kind)).ToArray();
+                    var policies = group.Where(o => IsPolicyOrder(o.Kind)).OrderBy(o => (int)o.Kind).ToArray();
+                    if (ordinary.Length > 1 || policies.GroupBy(o => o.Kind).Any(g => g.Count() > 1)) { prepared.Rejections.Add("Rejected conflicting orders for " + group.Key); continue; }
                     foreach (var order in ordinary.Concat(policies))
                     {
                         string error = OrderRules.Validate(observation, order);
@@ -240,8 +280,9 @@ namespace Anthropocene.Simulation
                 if (prepared.Placement.Destinations[camp.Id] != camp.Tile)
                     prepared.AbandoningVillages.Add(camp.Id);
             var aiEconomicRequests = new HashSet<int>(prepared.Orders.Where(o => o.RequestAutomaticEconomy).Select(o => o.Entity));
-            var acceptedActions = prepared.Orders.Where(o => o.Kind != OrderKind.Economy && o.Kind != OrderKind.FissionPolicy).ToDictionary(o => o.Entity);
+            var acceptedActions = prepared.Orders.Where(o => o.Kind != OrderKind.Economy && !IsPolicyOrder(o.Kind)).ToDictionary(o => o.Entity);
             var acceptedEconomy = prepared.Orders.Where(o => o.Kind == OrderKind.Economy).ToDictionary(o => o.Entity);
+            var effectivePolicies = EffectivePolicies(world, prepared.Orders);
             var submittedAutomated = acceptedEconomy.Where(p => p.Value.Economy != null && p.Value.Economy.AutomationTurns != 0)
                 .ToDictionary(p => p.Key, p => p.Value);
             var automated = world.Camps.Where(c => c.Population > 0 &&
@@ -267,9 +308,13 @@ namespace Anthropocene.Simulation
             {
                 int effectiveTile = prepared.Placement.Destinations[camp.Id];
                 bool abandoning = prepared.AbandoningVillages.Contains(camp.Id);
+                var policies = effectivePolicies[camp.Id];
                 bool hasSubmitted = submittedAutomated.TryGetValue(camp.Id, out var submittedOrder);
                 if (!hasSubmitted && useDraft && draft.Intents.TryGetValue(camp.Id, out var cached) &&
-                    cached.Tile == effectiveTile && cached.Abandoning == abandoning)
+                    cached.Tile == effectiveTile && cached.Abandoning == abandoning &&
+                    cached.FissionPolicy == policies.Fission &&
+                    cached.ImmigrationPolicy == policies.Immigration &&
+                    cached.CivicFocus == policies.CivicFocus)
                 {
                     Interlocked.Increment(ref diagnostics.DraftIntentsReused);
                     // Reconciliation belongs to this prepared turn, never to
@@ -281,7 +326,7 @@ namespace Anthropocene.Simulation
                 }
                 if (useDraft) Interlocked.Increment(ref diagnostics.DraftIntentsRecomputed);
                 fishingAccess.TryGetValue(camp.Id, out var access);
-                return AutomaticIntent(world, camp, effectiveTile, abandoning, index, trade, access, hasSubmitted ? submittedOrder.Economy : null);
+                return AutomaticIntent(world, camp, effectiveTile, abandoning, index, trade, access, policies, hasSubmitted ? submittedOrder.Economy : null);
             });
             intentsScope.Dispose();
             for (int i = 0; i < automated.Length; i++)
@@ -308,7 +353,7 @@ namespace Anthropocene.Simulation
             TurnNeeds[] needsResults;
             using (PhaseProfile.Scope("Needs"))
                 needsResults = (execution ?? new PhaseExecution()).Map(camps, c =>
-                    ComputeNeeds(world, c, prepared, acceptedActions, acceptedEconomy, huntersByCamp));
+                    ComputeNeeds(world, c, prepared, acceptedActions, acceptedEconomy, huntersByCamp, effectivePolicies));
             for (int i = 0; i < camps.Length; i++)
             {
                 prepared.Needs[camps[i].Id] = needsResults[i];
@@ -324,7 +369,7 @@ namespace Anthropocene.Simulation
                     .Sum(a => a.Population) ?? 0);
                 int residents = prepared.Needs.TryGetValue(camp.Id, out var need) ? need.Residents : camp.Population;
                 fishers = Math.Min(Math.Max(0, residents), fishers);
-                var planningCamp = PlanningCampAt(camp, prepared.Placement.Destinations[camp.Id], trade);
+                var planningCamp = PlanningCampAt(camp, prepared.Placement.Destinations[camp.Id], trade, effectivePolicies[camp.Id]);
                 double fishingTools = Math.Max(0, planningCamp.Inventory.FishingTools);
                 bool departing = prepared.Placement.Destinations[camp.Id] != camp.Tile;
                 prepared.FishingPlans[camp.Id] = FishingEconomy.PreparePlan(world, camp, access,
@@ -338,10 +383,10 @@ namespace Anthropocene.Simulation
         // Dispatch does not suppress automation. Shared by Prepare and Draft
         // so both run literally the same code. Pure over the committed world.
         private static AutomaticPlan AutomaticIntent(WorldState world, Camp camp, int effectiveTile, bool abandoning,
-            PlanningIndex index, TradePlan trade, FishingAccessPlan fishingAccess, EconomicIntent overrideSettings = null)
+            PlanningIndex index, TradePlan trade, FishingAccessPlan fishingAccess, CampPolicies policies, EconomicIntent overrideSettings = null)
         {
             using var profile = PhaseProfile.Scope("Intent");
-            var planningCamp = PlanningCampAt(camp, effectiveTile, trade);
+            var planningCamp = PlanningCampAt(camp, effectiveTile, trade, policies);
             var settings = overrideSettings != null ? overrideSettings.Copy() : EconomicIntent.From(camp);
             if (overrideSettings == null && CultivationEconomy.HusbandryEnabled(camp) &&
                 HerdingTooling.DomesticAnimals(world, camp) > 0)
@@ -364,6 +409,7 @@ namespace Anthropocene.Simulation
             {
                 Agriculture = CultivationEconomy.Enabled(camp), Husbandry = CultivationEconomy.HusbandryEnabled(camp),
                 FishingEnabled = FishingEconomy.FeatureEnabled(world, camp),
+                StewardEnabled = CivicGovernance.StewardAvailable(world, camp),
                 Population = camp.Population, Technologies = camp.People.NeolithicTechnologies.ToArray(),
                 FocusTiles = CultivationEconomy.Footprint(world, planningCamp).ToArray()
             };
@@ -426,6 +472,7 @@ namespace Anthropocene.Simulation
             Prewarm(world);
             var ai = AiPlanning.Decide(world, execution, excludedPlayer);
             var orders = ai.Orders.OrderBy(p => p.Key).SelectMany(p => p.Value).Where(o => o != null).ToArray();
+            var effectivePolicies = EffectivePolicies(world, orders);
             var placement = CampPlacement.Resolve(world, orders);
             var abandoning = new HashSet<int>();
             foreach (var camp in world.Camps.Where(c => c.IsVillage))
@@ -443,9 +490,11 @@ namespace Anthropocene.Simulation
             var results = (execution ?? new PhaseExecution()).Map(automated, camp =>
             {
                 int tile = placement.Destinations[camp.Id]; bool abandon = abandoning.Contains(camp.Id);
+                var policies = effectivePolicies[camp.Id];
                 fishingAccess.TryGetValue(camp.Id, out var access);
-                var plan = AutomaticIntent(world, camp, tile, abandon, index, trade, access);
+                var plan = AutomaticIntent(world, camp, tile, abandon, index, trade, access, policies);
                 return new DraftIntent { Camp = camp.Id, Tile = tile, Abandoning = abandon,
+                    FissionPolicy = policies.Fission, ImmigrationPolicy = policies.Immigration, CivicFocus = policies.CivicFocus,
                     Order = plan.Order, Production = plan.Production, FishingAccess = plan.FishingAccess, DemandAllocation = plan.DemandAllocation };
             });
             intentsScope.Dispose();
@@ -476,10 +525,10 @@ namespace Anthropocene.Simulation
 
         private static TurnNeeds ComputeNeeds(WorldState world, Camp camp, PreparedTurn prepared,
             IReadOnlyDictionary<int, Order> acceptedActions, IReadOnlyDictionary<int, Order> acceptedEconomy,
-            IReadOnlyDictionary<int, Hunter[]> huntersByCamp)
+            IReadOnlyDictionary<int, Hunter[]> huntersByCamp, IReadOnlyDictionary<int, CampPolicies> effectivePolicies)
         {
             using var profile = PhaseProfile.Scope("Camp");
-            var planningCamp = PlanningCampAt(camp, prepared.Placement.Destinations[camp.Id], prepared.Trade);
+            var planningCamp = PlanningCampAt(camp, prepared.Placement.Destinations[camp.Id], prepared.Trade, effectivePolicies[camp.Id]);
             // Dispatch changes who remains a camp resident, but creates no
             // new person. Goods and QoL follow those staying at the camp;
             // the departing cohort follows the hunter provision rules.
@@ -559,11 +608,23 @@ namespace Anthropocene.Simulation
             return needs;
         }
 
-        // The camp the planner sees: at its effective tile and holding the stock its
-        // confirmed trades leave it, and the goods it agreed to make for export as claims (Docs/Trade.md).
-        private static Camp PlanningCampAt(Camp camp, int tile, TradePlan trade)
+        // The camp the planner sees: at its effective tile, with any accepted same-turn
+        // policy orders overlaid without mutating the authoritative camp, and holding the
+        // stock its confirmed trades leave it plus export claims (Docs/Trade.md).
+        private static Camp PlanningCampAt(Camp camp, int tile, TradePlan trade, CampPolicies? policies = null)
         {
             var view = PlanningCampAt(camp, tile);
+            if (policies.HasValue)
+            {
+                var p = policies.Value;
+                if (view.FissionPolicy != p.Fission || view.ImmigrationPolicy != p.Immigration || view.CivicFocus != p.CivicFocus)
+                {
+                    if (ReferenceEquals(view, camp)) view = camp.WithPrivateInventory();
+                    view.FissionPolicy = p.Fission;
+                    view.ImmigrationPolicy = p.Immigration;
+                    view.CivicFocus = p.CivicFocus;
+                }
+            }
             if (trade == null || !trade.Changes(camp.Id)) return view;
             if (ReferenceEquals(view, camp)) view = camp.WithPrivateInventory();
             Trade.ApplyToPlanningCamp(view, trade);
@@ -584,6 +645,7 @@ namespace Anthropocene.Simulation
             copy.StationaryTurns = camp.StationaryTurns; copy.StationaryYears = camp.StationaryYears;
             copy.IsVillage = camp.IsVillage;
             if (tile != camp.Tile && camp.IsVillage) copy.IsVillage = false;
+            CivicGovernance.ReleaseAbandoned(copy);
             return copy;
         }
     }

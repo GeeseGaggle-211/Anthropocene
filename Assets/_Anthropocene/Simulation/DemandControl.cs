@@ -1845,7 +1845,7 @@ namespace Anthropocene.Simulation
             intent.Assignments = intent.Assignments.Where(a => a.Population > 0).OrderBy(a => a.Role, StringComparer.Ordinal).ToList();
             int nonGatherers = intent.Assignments.Sum(a => a.Population);
             intent.Labor.MaterialGatherers = Math.Min(Math.Max(0, residents - nonGatherers), alloc.MaterialGatherers);
-            intent.Labor.EquipmentTarget = Math.Min(residents, alloc.Staff.Where(p => !WorkforceRoles.Extractors.Contains(p.Key) && p.Key != WorkforceRoles.Herder && p.Key != WorkforceRoles.Farmer).Sum(p => p.Value));
+            intent.Labor.EquipmentTarget = Math.Min(residents, alloc.Staff.Where(p => !WorkforceRoles.Extractors.Contains(p.Key) && p.Key != WorkforceRoles.Herder && p.Key != WorkforceRoles.Farmer && p.Key != WorkforceRoles.Steward).Sum(p => p.Value));
             // Build farmers are the field-expansion staff, on top of the operating farmers.
             // Plough reserve/growth harvest Farmers remain operating Farmers, not expansion.
             int staffedFarmers = alloc.Staff.TryGetValue(WorkforceRoles.Farmer, out int builders) ? builders : 0;
