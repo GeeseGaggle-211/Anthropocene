@@ -40,6 +40,12 @@ internal static class CivicGovernanceChecks
         ObservationsAndPolicy();
         PersistenceAndLegacyCompatibility();
         NumericalAndNonFiniteSafety();
+        Phase1OrganicGrowthTo3000Gate();
+        NaturalGeographicDivergenceGate();
+        WelfareOnlyQoLIsolationGate();
+        ToolAndStorageConservationGates();
+        FamineShockCollapseDivergenceGate();
+        Phase1BFeatureContractsAndZeroRegression();
         Console.WriteLine("PASS: " + checks + " civic governance assertions");
         return checks;
     }
@@ -2324,6 +2330,1409 @@ internal static class CivicGovernanceChecks
             "E2 TargetStratification(+Infinity) pre-clamps to +1 before applying -0.75 steering offset", 1e-12);
         NearRelative(CivicGovernance.TargetStratification(cfg, double.NegativeInfinity, FissionPolicy.Discourage, ImmigrationPolicy.Restricted, CivicFocus.Centralized), -0.25,
             "E2 TargetStratification(-Infinity) pre-clamps to -1 before applying +0.75 steering offset", 1e-12);
+    }
+
+    // =========================================================================
+    // Phase 1B (Milestone M3) Fixture & Exit Gates (Docs/CivicGovernance.md §11 E)
+    // =========================================================================
+
+    private static WorldState Phase1VillageFixture(bool enableCivic = true, bool sanitation = false,
+        int population = 600, bool aridValley = false, int players = 1)
+    {
+        var cfg = SimulationConfig.Small(players);
+        cfg.Width = 24;
+        cfg.Height = 16;
+        cfg.DemographicModel = DemographicModel.PhysicalMortalityV1;
+        cfg.EconomicAllocation = EconomicAllocationStrategy.DemandControl;
+        cfg.SurplusFundedBirths = true;
+        cfg.ElderKernelSplit = true;
+        cfg.ElderSplitObjective = 2;
+        cfg.ElderMixedRoutes = true;
+        cfg.CropHarvestingOnly = true;
+        cfg.CropMoistureReference = 0.5;
+        cfg.SharedCropHerdAllocationEnabled = true;
+        cfg.HerdLabourEnabled = true;
+        cfg.FissionEnabled = false;
+        cfg.ImmigrationEnabled = false;
+        cfg.TradeEnabled = false;
+        cfg.LandUseDamagePerYear = 0;
+        cfg.ConditionRecoveryPerYear = 0.05;
+        cfg.Agriculture = new AgriculturalTechnologySettings { PloughEnabled = true, IrrigationEnabled = true };
+        cfg.Civic = enableCivic ? new CivicGovernanceSettings { Enabled = true, SanitationEnabled = sanitation } : null;
+
+        int count = cfg.Width * cfg.Height;
+        var w = new WorldState
+        {
+            Seed = 1729,
+            Config = cfg,
+            Generation = new GenerationReport(),
+            Tiles = new Tile[count]
+        };
+
+        int homeTile = 8 * cfg.Width + 12; // tile 204, centered in 24x16
+        double landFraction = cfg.LandFoodRegenerationInitialized ? cfg.LandFoodRegeneration : cfg.FoodRegeneration;
+        float lushTemp = 22f, lushMoist = 0.88f;
+        double lushWarmth = Numbers.Clamp((lushTemp + 8) / 30.0, 0.015, 1.0);
+        float lushRecovery = (float)EcologyMath.DailyRate(landFraction * (0.2 + lushMoist) * lushWarmth, cfg.BaseDays);
+        float waterRecovery = (float)EcologyMath.DailyRate(cfg.WaterRecovery, cfg.BaseDays);
+        for (int i = 0; i < count; i++)
+        {
+            var t = new Tile
+            {
+                Id = i,
+                ElevationLevel = 1,
+                Elevation = 0.10f,
+                Terrain = Terrain.Grassland,
+                FreshwaterSource = FreshwaterSource.RainPool,
+                Freshwater = 25
+            };
+            for (int s = 0; s < 4; s++)
+            {
+                t.Seasons[s] = new SeasonData
+                {
+                    Temperature = lushTemp,
+                    Moisture = lushMoist,
+                    RegionalMoisture = lushMoist,
+                    Rain = 0.7f,
+                    MaxFreshwater = 25f,
+                    AccessibleFreshwater = 25f,
+                    FoodRecoveryPerDay = lushRecovery,
+                    BiomassRecoveryPerDay = lushRecovery,
+                    WaterRecoveryPerDay = waterRecovery,
+                    Habitat = (float)(lushMoist * lushWarmth)
+                };
+            }
+            FoodEcology.ConfigurePotential(t, cfg, true);
+            t.Food = t.Seasons[0].MaxFood * 0.9;
+            t.Freshwater = t.Seasons[0].MaxFreshwater * 0.9;
+            w.Tiles[i] = t;
+        }
+
+        // Rich local resources on footprint & nearby tiles so raw materials don't artificially stall 3k growth.
+        var res = new WorldResourceState
+        {
+            MaximumQuantity = 100000,
+            CatalogHash = ResourceCatalog.Hash,
+            ProfileHash = ResourceCatalog.Hash,
+            ConfigurationHash = ResourceCatalog.Hash,
+            Provinces = Array.Empty<GeologicalProvince>(),
+            Province = new ushort[count],
+            History = new ushort[count],
+            Host = new byte[count],
+            Marine = new byte[count],
+            Stone = new ushort[count],
+            Clay = new ushort[count],
+            Wood = new ushort[count],
+            WoodRecoveryPerYear = 0.25
+        };
+        for (int i = 0; i < count; i++)
+        {
+            res.Stone[i] = 5000;
+            res.Clay[i] = 5000;
+            res.Wood[i] = 5000;
+        }
+        w.Resources = res;
+
+        var c = new Camp
+        {
+            Id = w.NextId++,
+            Player = 0,
+            Tile = homeTile,
+            Population = population,
+            PlantFood = population * 40.0,
+            IsVillage = true,
+            StationaryTurns = 3,
+            StationaryYears = 60.0,
+            EconomyAutomationTurns = -1,
+            EconomicLabor = new EconomicLaborPlan()
+        };
+        w.Camps.Add(c);
+        Ownership.Bind(w);
+        c.Technology = Technology.Cultivation;
+        c.Technologies[(int)Technology.Cultivation] = true;
+        c.People.Progression.Era = Era.Neolithic;
+        c.People.NeolithicTechnologies.AddRange(new[]
+        {
+            NeolithicTech.Construction,
+            NeolithicTech.Toolmaking,
+            NeolithicTech.Weaving,
+            NeolithicTech.Pottery,
+            NeolithicTech.Carpentry,
+            NeolithicTech.Plough
+        });
+        c.Inventory.Tools = Math.Max(200, population * 0.4);
+        c.Inventory.FarmTools = Math.Max(100, population * 0.25);
+        c.Inventory.Cloth = Math.Max(800, population * 1.5);
+        NeolithicProduction.AddFixedHousing(w, c, population / cfg.Neolithic.HousingPeoplePerUnit, w.Days);
+
+        var footprint = w.Map.Radius(homeTile, 1).OrderBy(id => id).ToArray();
+        var neighbors = w.Map.Neighbors(homeTile).OrderBy(id => id).ToArray();
+        int riverTile = neighbors[0];
+        w.Tiles[riverTile].FreshwaterSource = FreshwaterSource.River;
+        w.Tiles[riverTile].Flow = 500f;
+        for (int s = 0; s < 4; s++)
+        {
+            w.Tiles[riverTile].Seasons[s].MaxFreshwater = 220f;
+            w.Tiles[riverTile].Seasons[s].AccessibleFreshwater = 220f;
+            w.Tiles[riverTile].Seasons[s].WaterRecoveryPerDay = waterRecovery;
+        }
+        w.Tiles[riverTile].Freshwater = 220 * 0.9;
+
+        if (aridValley)
+        {
+            c.People.NeolithicTechnologies.Add(NeolithicTech.Irrigation);
+            int riverTile2 = neighbors[3];
+            w.Tiles[riverTile2].FreshwaterSource = FreshwaterSource.River;
+            w.Tiles[riverTile2].Flow = 500f;
+            foreach (int rTile in new[] { riverTile, riverTile2 })
+            {
+                w.Tiles[rTile].Elevation = 0.20f;
+                for (int s = 0; s < 4; s++)
+                {
+                    w.Tiles[rTile].Seasons[s].MaxFreshwater = 700f;
+                    w.Tiles[rTile].Seasons[s].AccessibleFreshwater = 700f;
+                    w.Tiles[rTile].Seasons[s].WaterRecoveryPerDay = waterRecovery;
+                }
+                w.Tiles[rTile].Freshwater = 700 * 0.9;
+            }
+            var footprintSet = new HashSet<int>(footprint);
+            float dryRecovery = (float)EcologyMath.DailyRate(landFraction * (0.2 + 0.12) * lushWarmth, cfg.BaseDays);
+            foreach (int id in footprint)
+            {
+                if (id != riverTile && id != riverTile2) w.Tiles[id].Elevation = 0.10f;
+                for (int s = 0; s < 4; s++)
+                {
+                    w.Tiles[id].Seasons[s].Moisture = 0.12f;
+                    w.Tiles[id].Seasons[s].RegionalMoisture = 0.12f;
+                    if (id != riverTile && id != riverTile2)
+                    {
+                        w.Tiles[id].Seasons[s].MaxFreshwater = 10f;
+                        w.Tiles[id].Seasons[s].AccessibleFreshwater = 10f;
+                    }
+                    w.Tiles[id].Seasons[s].FoodRecoveryPerDay = dryRecovery;
+                    w.Tiles[id].Seasons[s].BiomassRecoveryPerDay = dryRecovery;
+                }
+                FoodEcology.ConfigurePotential(w.Tiles[id], cfg, true);
+                w.Tiles[id].Food = w.Tiles[id].Seasons[0].MaxFood * 0.9;
+                if (id != riverTile && id != riverTile2) w.Tiles[id].Freshwater = 9;
+            }
+            for (int i = 0; i < count; i++)
+            {
+                if (footprintSet.Contains(i)) continue;
+                var t = w.Tiles[i];
+                t.ElevationLevel = 10;
+                t.Elevation = 0.90f;
+                t.FreshwaterSource = FreshwaterSource.None;
+                t.Freshwater = 0;
+                t.Food = 0;
+                t.PotentialFood = 0;
+                for (int s = 0; s < 4; s++)
+                {
+                    t.Seasons[s].MaxFreshwater = 0f;
+                    t.Seasons[s].MaxFood = 0f;
+                    t.Seasons[s].MaxPotentialFood = 0f;
+                    t.Seasons[s].Moisture = 0.05f;
+                }
+            }
+        }
+
+        foreach (int id in footprint)
+        {
+            var t = w.Tiles[id];
+            t.CultivationCapital = 1.0;
+            t.Cultivation = (float)CultivationEconomy.Intensity(cfg, 1.0);
+            t.Cultivated = true;
+            t.CultivationOperator = c.Id;
+            t.CultivationOperatingFraction = 0;
+        }
+
+        c.Workforce.Assign(WorkforceRoles.Farmer, Math.Max(20, population / 3), c.Population);
+        return w;
+    }
+
+    private static void Phase1OrganicGrowthTo3000Gate()
+    {
+        var civicWorld = Phase1VillageFixture(enableCivic: true, sanitation: false, population: 600);
+        var controlWorld = Phase1VillageFixture(enableCivic: false, sanitation: false, population: 600);
+        // Neolithic SmoothCalendar cadence (5-year turns) on unmodified WorldGenerator land ecology
+        // gives 7 cultivated tiles ~3,600 carrying capacity so the Phase-1 disease ceiling (~2,800-3,400)
+        // is genuinely tested rather than a 20-year single-harvest standing-stock cap.
+        civicWorld.Config.TurnDays = 5.0 * civicWorld.Config.DaysPerYear;
+        controlWorld.Config.TurnDays = 5.0 * controlWorld.Config.DaysPerYear;
+        var civicCamp = civicWorld.Camps[0];
+        var controlCamp = controlWorld.Camps[0];
+
+        // Verify zero pre-seeded civic state on entry (100% genuine organic climb).
+        Check(civicCamp.People.CivicPrecedents.Count == 0 && civicCamp.People.CivicExperience.Count == 0,
+            "Phase-1 gate starts with zero pre-seeded civic precedents or experience");
+        Check(civicCamp.CivicComplexity == 0 && civicCamp.CivicCapital == 0 && CultivationEconomy.Workers(civicCamp, WorkforceRoles.Steward) == 0,
+            "Phase-1 gate starts with zero complexity, zero capital, and zero Stewards");
+
+        var resolver = new TurnResolver();
+        int peakCivic = civicCamp.Population, peakControl = controlCamp.Population;
+        var trace = new System.Text.StringBuilder();
+        for (int turn = 0; turn < 100; turn++)
+        {
+            var recC = resolver.Resolve(civicWorld, new Dictionary<int, List<Order>>());
+            resolver.Resolve(controlWorld, new Dictionary<int, List<Order>>());
+            if (civicCamp.Population > peakCivic) peakCivic = civicCamp.Population;
+            if (controlCamp.Population > peakControl) peakControl = controlCamp.Population;
+            if (turn == 0 || (turn + 1) % 20 == 0)
+            {
+                var dem = recC.Demographics[0];
+                int farm = CultivationEconomy.Workers(civicCamp, WorkforceRoles.Farmer);
+                int stew = CultivationEconomy.Workers(civicCamp, WorkforceRoles.Steward);
+                int bld = CultivationEconomy.Workers(civicCamp, WorkforceRoles.Builder);
+                double avgQ = civicWorld.Map.Radius(civicCamp.Tile, 1).Average(id => (double)civicWorld.Tiles[id].Cultivation);
+                double expF = civicCamp.EconomicLabor?.ExpansionFarmers ?? 0;
+                double tFood = civicWorld.Tiles[civicCamp.Tile].Food;
+                double tPot = civicWorld.Tiles[civicCamp.Tile].PotentialFood;
+                trace.Append($"[t={turn + 1}:N={civicCamp.Population},ctrl={controlCamp.Population},C={civicCamp.CivicComplexity:F2}/{CivicGovernance.MaxComplexity(civicWorld, civicCamp):F2},K={civicCamp.CivicCapital:F1},S={stew},Fm={farm}(exp={expF:F0}),Bl={bld},Ga={civicCamp.GathererPopulation},q={avgQ:F2},tF={tFood:F0}/{tPot:F0},prod={dem.FoodProduced:F0},req={dem.FoodRequired:F0},cons={dem.FoodConsumed:F0},b={civicCamp.EffectiveFertilityRate:F4},d={civicCamp.EffectiveMortalityRate:F4},food={civicCamp.Food:F0}] ");
+            }
+        }
+
+        TurnResolver.Invariants(civicWorld);
+        TurnResolver.Invariants(controlWorld);
+        CivicGovernance.ValidateInvariants(civicWorld);
+
+        // Control stalls near the ~1,000 baseline.
+        Check(peakControl >= 850 && peakControl <= 1250,
+            "Civic==null control stalls near ~1,000 baseline (peak=" + peakControl + ", end=" + controlCamp.Population + ")");
+        Check(PhysicalDemography.CrowdingMitigation(controlWorld, controlCamp) == 1.0,
+            "Civic==null control retains exact CrowdingMitigation == 1.0");
+        Check(PhysicalDemography.DiseaseMitigation(controlWorld, controlCamp) == 1.0,
+            "Civic==null control retains exact DiseaseMitigation == 1.0");
+
+        // Phase-1 Civic unlocks Tier 1 + Tier 2 organically and builds real capital & Stewards.
+        Check(civicCamp.People.HasCivicPrecedent(CivicPrecedents.CeremonialIntegration),
+            "Phase-1 village organically unlocks Tier 1 (CeremonialIntegration) " + trace);
+        Check(civicCamp.People.HasCivicPrecedent(CivicPrecedents.CivicOrganization),
+            "Phase-1 village organically unlocks Tier 2 (CivicOrganization) " + trace);
+        Check(civicCamp.CivicCapital > 100.0 && CultivationEconomy.Workers(civicCamp, WorkforceRoles.Steward) > 20,
+            $"Phase-1 village builds real CivicCapital ({civicCamp.CivicCapital:F1}) and staffs real Stewards ({CultivationEconomy.Workers(civicCamp, WorkforceRoles.Steward)}) " + trace);
+        double coverage = CivicGovernance.CivicCoverage(civicWorld, civicCamp);
+        double mc = PhysicalDemography.CrowdingMitigation(civicWorld, civicCamp);
+        double md = PhysicalDemography.DiseaseMitigation(civicWorld, civicCamp);
+        Check(coverage >= 0.85, $"Phase-1 village achieves high CivicCoverage >= 0.85 ({coverage:F3})");
+        Check(mc < 0.25 && mc >= civicWorld.Config.Civic.MinCrowdingMitigation,
+            $"Phase-1 village lowers CrowdingMitigation below 0.25 ({mc:F4})");
+        Check(md == 1.0, $"Phase-1 (SanitationEnabled=false) keeps DiseaseMitigation == 1.0 ({md})");
+
+        // Phase-1 Civic climbs past ~1,000 & Tier 1 (~1,600) to the natural Phase-1 disease ceiling (~2,800-3,400).
+        Check(civicCamp.Population >= 2600 && civicCamp.Population <= 3550,
+            $"Phase-1 village organically reaches natural ~2,800-3,400 disease ceiling (end={civicCamp.Population}, peak={peakCivic}) " + trace);
+        Check(peakCivic >= 2750 && peakCivic <= 3550,
+            $"Phase-1 village peak stays in [2750, 3550] disease ceiling band (peak={peakCivic}) " + trace);
+
+        // Deterministic save/reload replay over 3 more turns.
+        byte[] saved = SaveCodec.Save(civicWorld);
+        var reloaded = SaveCodec.Load(saved);
+        for (int t = 0; t < 3; t++)
+        {
+            resolver.Resolve(civicWorld, new Dictionary<int, List<Order>>());
+            resolver.Resolve(reloaded, new Dictionary<int, List<Order>>());
+        }
+        Check(SaveCodec.Fingerprint(civicWorld) == SaveCodec.Fingerprint(reloaded),
+            "Phase-1 civic city save/reload deterministic replay matches bit-for-bit");
+    }
+
+    private static void NaturalGeographicDivergenceGate()
+    {
+        var plains = Phase1VillageFixture(enableCivic: true, sanitation: false, population: 900, aridValley: false);
+        var valley = Phase1VillageFixture(enableCivic: true, sanitation: false, population: 900, aridValley: true);
+        plains.Config.TurnDays = 5.0 * plains.Config.DaysPerYear;
+        valley.Config.TurnDays = 5.0 * valley.Config.DaysPerYear;
+        var plainsCamp = plains.Camps[0];
+        var valleyCamp = valley.Camps[0];
+        valleyCamp.PlantFood = 900 * 60.0;
+        valleyCamp.Inventory.HousingMaterial = 200.0;
+        valleyCamp.Inventory.Pots = 300.0;
+
+        Check(plainsCamp.CivicFocus == CivicFocus.Auto && valleyCamp.CivicFocus == CivicFocus.Auto,
+            "Geographic divergence starts both settlements on CivicFocus.Auto");
+        Check(plainsCamp.CivicStratification == 0 && valleyCamp.CivicStratification == 0,
+            "Geographic divergence starts both settlements at P == 0");
+        Check((valley.Canals?.Count ?? 0) == 0, "Arid river valley starts with 0 pre-seeded canals (purely organic build)");
+
+        var resolver = new TurnResolver();
+        for (int turn = 0; turn < 35; turn++)
+        {
+            resolver.Resolve(plains, new Dictionary<int, List<Order>>());
+            resolver.Resolve(valley, new Dictionary<int, List<Order>>());
+        }
+
+        var vDrivers = CivicGovernance.EvaluateEnvironment(valley, valleyCamp);
+        var pDrivers = CivicGovernance.EvaluateEnvironment(plains, plainsCamp);
+        Check(plainsCamp.CivicFocus == CivicFocus.Auto && valleyCamp.CivicFocus == CivicFocus.Auto,
+            "CivicFocus remains Auto throughout geographic divergence (zero manual steering)");
+        Check(valley.Canals.Count > 0 && valley.IrrigatedFields.Count > 0,
+            $"Arid river valley organically builds active canals ({valley.Canals.Count}) and irrigated fields ({valley.IrrigatedFields.Count})");
+        Check(plainsCamp.LastEnvironmentalStratification < -0.30 && plainsCamp.CivicStratification < -0.25,
+            $"Open rain-fed plains naturally diverges to Egalitarian (P_env={plainsCamp.LastEnvironmentalStratification:F3}, P={plainsCamp.CivicStratification:F3}, D=({pDrivers.D1:F2},{pDrivers.D2:F2},{pDrivers.D3:F2},{pDrivers.D4:F2}))");
+        Check(valleyCamp.LastEnvironmentalStratification > 0.30 && valleyCamp.CivicStratification > 0.25,
+            $"Circumscribed irrigated valley naturally diverges to Stratified (P_env={valleyCamp.LastEnvironmentalStratification:F3}, P={valleyCamp.CivicStratification:F3}, canals={valley.Canals.Count}, irr={valley.IrrigatedFields.Count}, D=({vDrivers.D1:F2},{vDrivers.D2:F2},{vDrivers.D3:F2},{vDrivers.D4:F2}))");
+        Check(CivicGovernance.EffectiveFocusLabel(plainsCamp) == "Communal",
+            "Plains EffectiveFocusLabel classifies Auto as Communal (" + CivicGovernance.EffectiveFocusLabel(plainsCamp) + ")");
+        Check(CivicGovernance.EffectiveFocusLabel(valleyCamp) == "Centralized",
+            "Valley EffectiveFocusLabel classifies Auto as Centralized (" + CivicGovernance.EffectiveFocusLabel(valleyCamp) + ")");
+        if (plainsCamp.CivicStratification <= -0.30)
+            Check(WorkforceRoles.Label(WorkforceRoles.Steward, plainsCamp) == "Council Arbiter",
+                "Egalitarian plains Steward UI label is Council Arbiter");
+        if (valleyCamp.CivicStratification >= 0.30)
+            Check(WorkforceRoles.Label(WorkforceRoles.Steward, valleyCamp) == "Temple Scribe",
+                "Stratified valley Steward UI label is Temple Scribe");
+    }
+
+    private static void WelfareOnlyQoLIsolationGate()
+    {
+        var resolver = new TurnResolver();
+        foreach (double pCoord in new[] { -0.80, 0.80 })
+        {
+            var wWith = Phase1VillageFixture(enableCivic: true, sanitation: false, population: 1800);
+            var wZero = Phase1VillageFixture(enableCivic: true, sanitation: false, population: 1800);
+            wZero.Config.Civic.QoLEqualityLinear = 0.0;
+            wZero.Config.Civic.QoLEqualityQuadratic = 0.0;
+            wZero.Config.Validate();
+
+            foreach (var w in new[] { wWith, wZero })
+            {
+                var c = w.Camps[0];
+                c.People.CivicPrecedents.Add(CivicPrecedents.CeremonialIntegration);
+                c.People.CivicPrecedents.Add(CivicPrecedents.CivicOrganization);
+                c.CivicComplexity = 0.75;
+                c.CivicStratification = pCoord;
+                c.LastEnvironmentalComplexity = 0.75;
+                c.LastEnvironmentalStratification = pCoord;
+                c.CivicCapital = CivicGovernance.RequiredCivicCapital(w, c) * 1.5;
+                int reqStew = (int)Math.Ceiling(CivicGovernance.RequiredStewards(w, c));
+                c.EconomyAutomationTurns = 0;
+                c.Workforce = new PopulationLedger();
+                c.Workforce.Assign(WorkforceRoles.Farmer, 500, c.Population);
+                c.Workforce.Assign(WorkforceRoles.Builder, 60, c.Population);
+                c.Workforce.Assign(WorkforceRoles.Weaver, 40, c.Population);
+                c.Workforce.Assign(WorkforceRoles.Steward, reqStew, c.Population);
+            }
+
+            var ordWith = new Dictionary<int, List<Order>> { [0] = new List<Order> { new Order(OrderKind.Economy, wWith.Camps[0].Id) { Economy = EconomicIntent.From(wWith.Camps[0]) } } };
+            var ordZero = new Dictionary<int, List<Order>> { [0] = new List<Order> { new Order(OrderKind.Economy, wZero.Camps[0].Id) { Economy = EconomicIntent.From(wZero.Camps[0]) } } };
+
+            var recWith = resolver.Resolve(wWith, ordWith);
+            var recZero = resolver.Resolve(wZero, ordZero);
+            var cWith = wWith.Camps[0];
+            var cZero = wZero.Camps[0];
+            var dWith = recWith.Demographics[0];
+            var dZero = recZero.Demographics[0];
+
+            // Exact 0 physical demographic delta.
+            Check(cWith.Population == cZero.Population, $"QoL isolation P={pCoord}: identical Population ({cWith.Population} vs {cZero.Population})");
+            Check(dWith.Additions == dZero.Additions, $"QoL isolation P={pCoord}: identical Additions ({dWith.Additions} vs {dZero.Additions})");
+            Check(dWith.Deaths == dZero.Deaths, $"QoL isolation P={pCoord}: identical Deaths ({dWith.Deaths} vs {dZero.Deaths})");
+            Check(cWith.EffectiveFertilityRate == cZero.EffectiveFertilityRate, $"QoL isolation P={pCoord}: bit-exact EffectiveFertilityRate");
+            Check(cWith.EffectiveMortalityRate == cZero.EffectiveMortalityRate, $"QoL isolation P={pCoord}: bit-exact EffectiveMortalityRate");
+            Check(cWith.CrowdingMortalityRate == cZero.CrowdingMortalityRate, $"QoL isolation P={pCoord}: bit-exact CrowdingMortalityRate");
+            Check(cWith.DiseaseMortalityRate == cZero.DiseaseMortalityRate, $"QoL isolation P={pCoord}: bit-exact DiseaseMortalityRate");
+            Check(cWith.ExposureMortalityRate == cZero.ExposureMortalityRate, $"QoL isolation P={pCoord}: bit-exact ExposureMortalityRate");
+            Check(cWith.StarvationMortalityRate == cZero.StarvationMortalityRate, $"QoL isolation P={pCoord}: bit-exact StarvationMortalityRate");
+
+            // Welfare QoL reflects Q_civic cleanly without clamping distortion (evaluated at the pre-Close
+            // (C, P, I_civic=1) active during CommitExperiencedWelfare before Close relaxes P).
+            Check(cZero.QoL > 0.2 && cZero.QoL < 0.85, $"QoL isolation P={pCoord}: non-clamped baseQoL ({cZero.QoL:F4})");
+            double qMultAtCommit = CivicGovernance.QoLEqualityMultiplierFor(wWith.Config, 0.75, pCoord, 1.0);
+            if (pCoord < 0)
+            {
+                Check(cWith.QoL > cZero.QoL, $"Egalitarian P={pCoord} raises welfare QoL ({cWith.QoL:F4} > {cZero.QoL:F4})");
+                NearRelative(cWith.QoL, Numbers.Clamp(cZero.QoL * qMultAtCommit, 0, 1), $"Egalitarian QoL equals baseQoL * Q_civic", 1e-12);
+            }
+            else
+            {
+                Check(cWith.QoL < cZero.QoL, $"Stratified P={pCoord} lowers welfare QoL ({cWith.QoL:F4} < {cZero.QoL:F4})");
+                NearRelative(cWith.QoL, cZero.QoL * qMultAtCommit, $"Stratified QoL equals baseQoL * Q_civic", 1e-12);
+            }
+
+            // Direct PhysicalDemography solvers ignore QoLEqualityLinear bit-for-bit.
+            double mc = CivicGovernance.CrowdingMitigation(wWith, cWith);
+            var r1 = PhysicalDemography.AdvanceBudget(wWith.Config, 1800, 20, 144000, 1800, 1800, 0, true, 0, mc, 1, 1, 0);
+            var r2 = PhysicalDemography.AdvanceBudget(wZero.Config, 1800, 20, 144000, 1800, 1800, 0, true, 0, mc, 1, 1, 0);
+            Check(r1.FinalPopulation == r2.FinalPopulation && r1.Deaths == r2.Deaths && r1.Births == r2.Births,
+                $"AdvanceBudget bit-identical regardless of QoLEqualityLinear (P={pCoord})");
+        }
+    }
+
+    private static void ToolAndStorageConservationGates()
+    {
+        // 4A — Public-Works Mobilization (M_build <= 1.35x) & Tool Wear Conservation (4 M3 public-works recipes).
+        WorldState MakeTier3Camp(double pCoord)
+        {
+            var w = Phase1VillageFixture(enableCivic: true, sanitation: false, population: 1200);
+            var c = w.Camps[0];
+            c.People.NeolithicTechnologies.Add(NeolithicTech.Irrigation);
+            c.People.CivicPrecedents.AddRange(new[] { CivicPrecedents.CeremonialIntegration, CivicPrecedents.CivicOrganization, CivicPrecedents.TokensAndAccounting });
+            c.CivicComplexity = 1.0;
+            c.CivicStratification = pCoord;
+            c.LastEnvironmentalComplexity = 1.0;
+            c.LastEnvironmentalStratification = pCoord;
+            c.CivicCapital = CivicGovernance.RequiredCivicCapital(w, c) * 2.0;
+            c.Workforce = new PopulationLedger();
+            c.Workforce.Assign(WorkforceRoles.Steward, (int)Math.Ceiling(CivicGovernance.RequiredStewards(w, c)) + 5, c.Population);
+            c.Workforce.Assign(WorkforceRoles.Builder, 50, c.Population);
+            c.Workforce.Assign(WorkforceRoles.Craftsperson, 50, c.Population);
+            return w;
+        }
+
+        var wStrat = MakeTier3Camp(1.0);
+        var wEgal = MakeTier3Camp(-1.0);
+        var cStrat = wStrat.Camps[0];
+        var cEgal = wEgal.Camps[0];
+
+        NearRelative(CivicGovernance.PublicWorksMobilizationMultiplier(wStrat, cStrat), 1.35, "Stratified P=+1 M_build == 1.35", 1e-12);
+        NearRelative(CivicGovernance.PublicWorksMobilizationMultiplier(wEgal, cEgal), 1.00, "Egalitarian P=-1 M_build == 1.00", 1e-12);
+
+        var recipes = NeolithicProduction.Recipes(wStrat.Config).ToDictionary(r => r.Good);
+        foreach (var good in new[] { CraftGood.CanalConstruction, CraftGood.CanalMaintenance, CraftGood.CivicConstruction, CraftGood.CivicMaintenance })
+        {
+            double rStrat = SpecialistProductivity.CraftRate(wStrat, cStrat, recipes[good], WorkforceRoles.Builder);
+            double rEgal = SpecialistProductivity.CraftRate(wEgal, cEgal, recipes[good], WorkforceRoles.Builder);
+            NearRelative(rStrat, 1.35 * rEgal, $"M_build boosts specialist Builder by exact 1.35x on {good}", 1e-12);
+        }
+        foreach (var good in new[] { CraftGood.Housing, CraftGood.LightHousing, CraftGood.HousingMaterial })
+        {
+            double rStrat = SpecialistProductivity.CraftRate(wStrat, cStrat, recipes[good], WorkforceRoles.Builder);
+            double rEgal = SpecialistProductivity.CraftRate(wEgal, cEgal, recipes[good], WorkforceRoles.Builder);
+            NearRelative(rStrat, rEgal, $"M_build does NOT boost private {good}", 1e-12);
+        }
+        foreach (var good in new[] { CraftGood.CivicConstruction, CraftGood.CivicMaintenance })
+        {
+            double rStrat = SpecialistProductivity.CraftRate(wStrat, cStrat, recipes[good], WorkforceRoles.Craftsperson);
+            double rEgal = SpecialistProductivity.CraftRate(wEgal, cEgal, recipes[good], WorkforceRoles.Craftsperson);
+            NearRelative(rStrat, rEgal, $"M_build does NOT boost generalist Craftsperson on {good}", 1e-12);
+        }
+
+        // Exact tool-wear and HousingMaterial conservation on CivicConstruction AND CanalConstruction.
+        foreach (var good in new[] { CraftGood.CivicConstruction, CraftGood.CanalConstruction })
+        {
+            var ws = MakeTier3Camp(1.0);
+            var we = MakeTier3Camp(-1.0);
+            var cs = ws.Camps[0];
+            var ce = we.Camps[0];
+            var recipe = NeolithicProduction.Recipes(ws.Config).Single(r => r.Good == good);
+
+            double units = 4.0;
+            ProductionOrder MakeOrder(WorldState w, Camp c)
+            {
+                var ord = new ProductionOrder(new[] { good }, new Dictionary<CraftGood, double> { [good] = units });
+                if (good == CraftGood.CivicConstruction)
+                    ord.Civic = new CivicOrder { Construction = units };
+                else
+                {
+                    int src = w.Map.Neighbors(c.Tile).First();
+                    w.Tiles[src].FreshwaterSource = FreshwaterSource.River;
+                    w.Tiles[src].Elevation = 0.2f;
+                    for (int s = 0; s < 4; s++) w.Tiles[c.Tile].Seasons[s].Moisture = 0.1f;
+                    var opp = IrrigationEconomy.Opportunity(w, c);
+                    ord.Irrigation = new IrrigationOrder { Project = opp, Construction = units };
+                }
+                return ord;
+            }
+
+            cs.Inventory.HandTools = 0; cs.Inventory.Tools = 10.0; cs.Inventory.HousingMaterial = 100.0;
+            ce.Inventory.HandTools = 0; ce.Inventory.Tools = 10.0; ce.Inventory.HousingMaterial = 100.0;
+            double eqS = 1000, eqE = 1000;
+            var recS = new TurnRecord { StartDays = 0, Duration = ws.Config.TurnDays };
+            var recE = new TurnRecord { StartDays = 0, Duration = we.Config.TurnDays };
+            double intervals = ws.Config.GenerationIntervals;
+            double usedS = NeolithicProduction.Produce(ws, cs, recipe, WorkforceRoles.Builder, 5000, intervals, units, ref eqS, recS, new ToolCoverageBudget(ws, cs, intervals), order: MakeOrder(ws, cs));
+            double usedE = NeolithicProduction.Produce(we, ce, recipe, WorkforceRoles.Builder, 5000, intervals, units, ref eqE, recE, new ToolCoverageBudget(we, ce, intervals), order: MakeOrder(we, ce));
+
+            NearRelative(usedS, usedE / 1.35, $"{good}: Stratified Builder time reduced by exact 1/1.35", 1e-12);
+            double expectedTools = units / ToolCoverageBudget.OutputsPerTool;
+            NearRelative(10.0 - cs.Inventory.Tools, expectedTools, $"{good}: Stratified physical tool wear conserved == units/OutputsPerTool", 1e-12);
+            NearRelative(10.0 - ce.Inventory.Tools, expectedTools, $"{good}: Egalitarian physical tool wear conserved == units/OutputsPerTool", 1e-12);
+            double expectedHm = units * recipe.HousingMaterial;
+            NearRelative(100.0 - cs.Inventory.HousingMaterial, expectedHm, $"{good}: Stratified HousingMaterial conserved", 1e-12);
+            NearRelative(100.0 - ce.Inventory.HousingMaterial, expectedHm, $"{good}: Egalitarian HousingMaterial conserved", 1e-12);
+        }
+
+        // 4B — Granary Storage (M_storage <= 1.50x) & StorageCapacityAfterPotDepreciation <= ApplyStorage.
+        NearRelative(CivicGovernance.GranaryStorageMultiplier(wStrat, cStrat), 1.50, "Stratified P=+1 M_storage == 1.50", 1e-12);
+        NearRelative(CivicGovernance.GranaryStorageMultiplier(wEgal, cEgal), 1.00, "Egalitarian P=-1 M_storage == 1.00", 1e-12);
+        NearRelative(NeolithicProduction.NaturalStorageCapacity(wStrat, cStrat, 0),
+            1.50 * NeolithicProduction.NaturalStorageCapacity(wEgal, cEgal, 0),
+            "NaturalStorageCapacity scales by exact 1.50x at P=+1 vs P=-1", 1e-12);
+
+        foreach (double dt in new[] { 20.0, 5.0, 1.0 })
+        {
+            foreach (int regime in new[] { 0, 1, 2 }) // 0=zero upkeep, 1=partial upkeep, 2=full upkeep + build
+            {
+                var w = MakeTier3Camp(0.8);
+                var c = w.Camps[0];
+                c.CivicCapital = CivicGovernance.RequiredCivicCapital(w, c) * 0.75; // strictly below saturation so decay changes M_storage!
+                c.Inventory.Pots = 100.0;
+                c.Inventory.HousingMaterial = 500.0;
+                c.Inventory.Tools = 500.0;
+                double intervals = dt * w.Config.DaysPerYear / w.Config.BaseDays;
+                double projected = NeolithicProduction.StorageCapacityAfterPotDepreciation(w, c, intervals, dt);
+                double fullUpkeep = CivicGovernance.CivicMaintenanceTarget(w, c, dt);
+                double maintOrder = regime == 0 ? 0 : regime == 1 ? 0.5 * fullUpkeep : fullUpkeep;
+                double buildOrder = regime == 2 ? 20.0 : 0;
+                var prod = new Dictionary<CraftGood, double>();
+                foreach (var r in NeolithicProduction.Recipes(w.Config)) prod[r.Good] = 0;
+                prod[CraftGood.CivicMaintenance] = maintOrder;
+                prod[CraftGood.CivicConstruction] = buildOrder;
+                var order = new ProductionOrder(new[] { CraftGood.CivicMaintenance, CraftGood.CivicConstruction }, prod)
+                {
+                    Civic = new CivicOrder { Upkeep = maintOrder, Construction = buildOrder }
+                };
+                var needs = new TurnNeeds { Residents = c.Population, Order = order, Production = prod };
+                NeolithicProduction.ResolveCampNeolithic(w, c, intervals, dt, new TurnRecord { StartDays = w.Days, Duration = dt * w.Config.DaysPerYear }, 0, needs, resolveNeeds: false);
+                double actual = NeolithicProduction.StorageCapacity(w, c, intervals);
+                Check(projected <= actual + 1e-9,
+                    $"StorageCapacityAfterPotDepreciation ({projected:F4}) <= ApplyStorage ({actual:F4}) at dt={dt}, regime={regime}");
+            }
+        }
+
+        // GoodsStorage integration with boosted natural storage and civic infrastructure HousingMaterial exemption.
+        var wGs = MakeTier3Camp(1.0);
+        wGs.Config.GoodsStorageEnabled = true;
+        var cGs = wGs.Camps[0];
+        var recipesGs = NeolithicProduction.Recipes(wGs.Config);
+        GoodsStorage.PlannedUse(recipesGs, g => g == CraftGood.CivicConstruction ? 10.0 : g == CraftGood.CivicMaintenance ? 5.0 : 0,
+            out double eqOut, out double housingAssm, out double infraMat);
+        NearRelative(eqOut, 15.0, "GoodsStorage.PlannedUse counts CivicConstruction+CivicMaintenance equipment outputs", 1e-12);
+        Check(housingAssm == 0, "GoodsStorage.PlannedUse does not count Civic works as housing assembly");
+        NearRelative(infraMat, 10.0 * wGs.Config.Civic.CivicBuildHousingMaterials + 5.0 * wGs.Config.Civic.CivicMaintainHousingMaterials,
+            "GoodsStorage.PlannedUse exempts Civic infrastructure HousingMaterial", 1e-12);
+        var gsStrat = GoodsStorage.Begin(wGs, cGs, 20.0, cGs.Population, eqOut, housingAssm, endOfTurn: false, infrastructureMaterials: infraMat);
+        cGs.Inventory.Pots = 500;
+        double foodCapStrat = gsStrat.FoodCapacity(cGs.Inventory.Pots, 0);
+        var wGsEgal = MakeTier3Camp(-1.0);
+        wGsEgal.Config.GoodsStorageEnabled = true;
+        wGsEgal.Camps[0].Inventory.Pots = 500;
+        var gsEgal = GoodsStorage.Begin(wGsEgal, wGsEgal.Camps[0], 20.0, wGsEgal.Camps[0].Population, eqOut, housingAssm, endOfTurn: false, infrastructureMaterials: infraMat);
+        double foodCapEgal = gsEgal.FoodCapacity(wGsEgal.Camps[0].Inventory.Pots, 0);
+        Check(foodCapStrat > foodCapEgal, $"GoodsStorage FoodCapacity reflects Stratified granary bonus ({foodCapStrat:F1} > {foodCapEgal:F1})");
+    }
+
+    private static void FamineShockCollapseDivergenceGate()
+    {
+        // 5A — Survival-First DemandControl (Protected never starved by Civic Continuity/Development).
+        WorldState MakeFamineCamp(bool withCivic)
+        {
+            var w = Phase1VillageFixture(enableCivic: true, sanitation: false, population: 800);
+            var c = w.Camps[0];
+            c.PlantFood = 0; c.AnimalFood = 0; c.AquaticFood = 0;
+            c.Inventory.Cloth = 0; c.Inventory.AnimalFabric = 0;
+            // Remove fields so gathering is at base GatherPerPerson and add a large connected hunter cohort
+            // drawing camp food so survival food gathering genuinely exhausts all 800 residents (budget == 0).
+            foreach (int id in w.Map.Radius(c.Tile, 1))
+            {
+                w.Tiles[id].CultivationCapital = 0;
+                w.Tiles[id].Cultivation = 0;
+                w.Tiles[id].Cultivated = false;
+                w.Tiles[id].CultivationOperator = -1;
+                w.Tiles[id].Food = 25000;
+                w.Tiles[id].PotentialFood = 250000;
+                for (int s = 0; s < 4; s++)
+                {
+                    w.Tiles[id].Seasons[s].MaxFood = 25000f;
+                    w.Tiles[id].Seasons[s].MaxPotentialFood = 250000f;
+                }
+            }
+            w.Hunters.Add(new Hunter { Id = w.NextId++, Player = c.Player, SourceCamp = c.Id, Tile = c.Tile, Population = 700 });
+            if (withCivic)
+            {
+                c.People.CivicPrecedents.AddRange(new[] { CivicPrecedents.CeremonialIntegration, CivicPrecedents.CivicOrganization });
+                c.CivicComplexity = 0.75;
+                c.CivicStratification = 0.50;
+                c.LastEnvironmentalComplexity = 0.75;
+                c.LastEnvironmentalStratification = 0.50;
+                c.CivicCapital = 100.0;
+            }
+            return w;
+        }
+
+        var wfCivic = MakeFamineCamp(true);
+        var wfNone = MakeFamineCamp(false);
+        DemandController.Plan(wfCivic, wfCivic.Camps[0], EconomicIntent.From(wfCivic.Camps[0]), out _, out var allocCivic);
+        DemandController.Plan(wfNone, wfNone.Camps[0], EconomicIntent.From(wfNone.Camps[0]), out _, out var allocNone);
+        Check(allocCivic.ElderAction != null && allocNone.ElderAction != null, "Famine shock runs kernel-scored ElderAction");
+        Check(allocCivic.ElderAction.ClothingLevel >= allocNone.ElderAction.ClothingLevel,
+            $"Famine shock: civic presence never reduces Protected ClothingLevel ({allocCivic.ElderAction.ClothingLevel} >= {allocNone.ElderAction.ClothingLevel})");
+        Check(allocCivic.ElderAction.ShelterLevel >= allocNone.ElderAction.ShelterLevel,
+            $"Famine shock: civic presence never reduces Protected ShelterLevel ({allocCivic.ElderAction.ShelterLevel} >= {allocNone.ElderAction.ShelterLevel})");
+        var civicDevReq = allocCivic.Requests.FirstOrDefault(r => r.Service == "civic development");
+        Check(civicDevReq == null || civicDevReq.Granted <= 1e-6,
+            $"Famine shock: civic development gets 0 grant ({civicDevReq?.Granted ?? 0}, budget={allocCivic.ResidentGoodsBudget:F1})");
+
+        // 5B — Egalitarian dispersal vs. Stratified granary holdout under live famine shock + AuditBounds = true.
+        WorldState MakeShockWorld(double pCoord)
+        {
+            var w = Phase1VillageFixture(enableCivic: true, sanitation: false, population: 500);
+            w.Config.TurnDays = 5.0 * w.Config.DaysPerYear;
+            w.Config.FissionEnabled = true;
+            w.Config.FissionGainThreshold = 0.113;
+            var c = w.Camps[0];
+            c.People.CivicPrecedents.AddRange(new[] { CivicPrecedents.CeremonialIntegration, CivicPrecedents.CivicOrganization });
+            c.StationaryYears = 30.0;
+            c.CivicComplexity = 0.75;
+            c.CivicStratification = pCoord;
+            c.LastEnvironmentalComplexity = 0.75;
+            c.LastEnvironmentalStratification = pCoord;
+            c.CivicCapital = CivicGovernance.RequiredCivicCapital(w, c);
+            c.Inventory.HousingMaterial = 120.0;
+            c.Inventory.Tools = 200.0;
+            c.Workforce = new PopulationLedger();
+            c.Workforce.Assign(WorkforceRoles.Farmer, 150, c.Population);
+            c.Workforce.Assign(WorkforceRoles.Builder, 40, c.Population);
+            c.Workforce.Assign(WorkforceRoles.Steward, (int)Math.Ceiling(CivicGovernance.RequiredStewards(w, c)), c.Population);
+            // Populate explored exit ring across full FissionRadius and provide genuine river freshwater
+            // on the exit ring so a founding daughter camp is not dehydration-blocked on tiny RainPools.
+            var mem = ContactKnowledge.MemoryOf(w, c.People);
+            int minDist = Math.Max(3, w.Config.MinimumCampSpacing);
+            int maxDist = Math.Max(minDist + 2, w.Config.FissionRadius);
+            foreach (int id in w.Map.Radius(c.Tile, maxDist))
+            {
+                mem.Explored.Add(id);
+                if (w.Map.Distance(c.Tile, id) >= minDist)
+                {
+                    w.Tiles[id].FreshwaterSource = FreshwaterSource.River;
+                    w.Tiles[id].Freshwater = 220 * 0.9;
+                    for (int s = 0; s < 4; s++)
+                    {
+                        w.Tiles[id].Seasons[s].MaxFreshwater = 220f;
+                        w.Tiles[id].Seasons[s].AccessibleFreshwater = 220f;
+                    }
+                }
+            }
+            // Start acute famine shock at matched 32% of each settlement's NaturalStorageCapacity
+            // (Stratified holds ~1.32x larger reserve than Egalitarian, cleanly bridging an extra forward turn).
+            c.PlantFood = 0.32 * NeolithicProduction.NaturalStorageCapacity(w, c, 0);
+            // Impose severe local famine shock on the home footprint (5% of normal food/biomass), leaving exit ring viable.
+            foreach (int id in w.Map.Radius(c.Tile, 1))
+            {
+                w.Tiles[id].Food *= 0.05;
+                w.Tiles[id].PotentialFood *= 0.05;
+                for (int s = 0; s < 4; s++)
+                {
+                    w.Tiles[id].Seasons[s].MaxFood *= 0.05f;
+                    w.Tiles[id].Seasons[s].MaxPotentialFood *= 0.05f;
+                }
+            }
+            return w;
+        }
+
+        var wEgalShock = MakeShockWorld(-0.85);
+        var wStratShock = MakeShockWorld(0.85);
+        Check(wStratShock.Camps[0].PlantFood > wEgalShock.Camps[0].PlantFood * 1.25,
+            $"Stratified starts famine shock with larger granary reserve ({wStratShock.Camps[0].PlantFood:F0} vs {wEgalShock.Camps[0].PlantFood:F0})");
+
+        double stratInitialCap = wStratShock.Camps[0].CivicCapital;
+        int egalFissionTurn = 0, stratFissionTurn = 0;
+        var resolver = new TurnResolver();
+        bool priorAudit = SocialRelocationForecastCache.AuditBounds;
+        var priorDiag = Fission.Diagnostic;
+        var shockTrace = new System.Text.StringBuilder();
+        SocialRelocationForecastCache.AuditBounds = true;
+        try
+        {
+            for (int turn = 1; turn <= 6; turn++)
+            {
+                Fission.Diagnostic = new Dictionary<int, Fission.Diag>();
+                var rE = resolver.Resolve(wEgalShock, new Dictionary<int, List<Order>>());
+                if (Fission.Diagnostic.TryGetValue(wEgalShock.Camps[0].Id, out var dE))
+                    shockTrace.Append($"[t{turn}:E={dE.Stage}(N={wEgalShock.Camps[0].Population},F={dE.BaselineNutrition:F2},mv={dE.MoverChange:F3}/{dE.Threshold:F3},src={dE.SourceChange:F3},agg={dE.AggregateChange:F3},dN={dE.DaughterNutrition:F2},dQ={dE.DaughterQoL:F2})]");
+                Fission.Diagnostic = new Dictionary<int, Fission.Diag>();
+                var rS = resolver.Resolve(wStratShock, new Dictionary<int, List<Order>>());
+                if (egalFissionTurn == 0 && rE.Fissions != null && rE.Fissions.Count > 0) egalFissionTurn = turn;
+                if (stratFissionTurn == 0 && rS.Fissions != null && rS.Fissions.Count > 0) stratFissionTurn = turn;
+            }
+        }
+        finally
+        {
+            SocialRelocationForecastCache.AuditBounds = priorAudit;
+            Fission.Diagnostic = priorDiag;
+        }
+        Check(egalFissionTurn > 0,
+            $"Famine shock triggers Egalitarian dispersal (egalPop={wEgalShock.Camps[0].Population}, egalFood={wEgalShock.Camps[0].Food:F0}, stratPop={wStratShock.Camps[0].Population}, stratFission={stratFissionTurn}) {shockTrace}");
+        Check(stratFissionTurn == 0 || egalFissionTurn < stratFissionTurn,
+            $"Egalitarian disperses strictly earlier than Stratified granary holdout (egalTurn={egalFissionTurn}, stratTurn={stratFissionTurn})");
+        Check(wStratShock.Camps[0].CivicCapital < stratInitialCap,
+            $"Stratified CivicCapital declines when famine starves civic upkeep ({wStratShock.Camps[0].CivicCapital:F1} < {stratInitialCap:F1})");
+    }
+
+    private static void Phase1BFeatureContractsAndZeroRegression()
+    {
+        // ---- 6.1 HasInfrastructure, CopyForPreparation, ReconcileInfrastructure & dt-invariant CivicCapital ----
+        var oNone = new ProductionOrder(Array.Empty<CraftGood>(), new Dictionary<CraftGood, double>());
+        Check(!oNone.HasInfrastructure, "HasInfrastructure is false when Irrigation==null and Civic==null");
+        var oIrr = new ProductionOrder(Array.Empty<CraftGood>(), new Dictionary<CraftGood, double>()) { Irrigation = new IrrigationOrder { Construction = 1 } };
+        Check(oIrr.HasInfrastructure, "HasInfrastructure is true when Irrigation!=null");
+        var oCiv = new ProductionOrder(new[] { CraftGood.CivicConstruction, CraftGood.CivicMaintenance },
+            new Dictionary<CraftGood, double> { [CraftGood.CivicConstruction] = 10, [CraftGood.CivicMaintenance] = 5 })
+        {
+            Civic = new CivicOrder { Construction = 10, Upkeep = 5 }
+        };
+        Check(oCiv.HasInfrastructure, "HasInfrastructure is true when Civic!=null");
+        var oCivCopy = oCiv.CopyForPreparation();
+        Check(oCivCopy.HasInfrastructure && oCivCopy.Civic != null && !ReferenceEquals(oCivCopy.Civic, oCiv.Civic),
+            "ProductionOrder.CopyForPreparation deep-copies CivicOrder");
+        oCivCopy.Civic.Construction = 2;
+        Check(oCiv.Civic.Construction == 10, "Mutating copied CivicOrder does not mutate original draft");
+
+        // ReconcileInfrastructure trims CivicConstruction & CivicMaintenance against prepared forecast without mutating draft.
+        var reconNeeds = new TurnNeeds
+        {
+            Order = oCiv.CopyForPreparation(),
+            Production = new Dictionary<CraftGood, double> { [CraftGood.CivicConstruction] = 4.0, [CraftGood.CivicMaintenance] = 3.0 }
+        };
+        var reconAlloc = new DemandController.Allocation();
+        reconAlloc.Requests.Add(new DemandController.Request { Service = "civic development", Good = CraftGood.CivicConstruction, Units = 10, Granted = 10 });
+        reconAlloc.Requests.Add(new DemandController.Request { Service = "civic maintenance", Good = CraftGood.CivicMaintenance, Units = 5, Granted = 5 });
+        TurnPlanner.ReconcileInfrastructure(reconNeeds, reconAlloc);
+        NearRelative(reconNeeds.Order.Civic.Construction, 4.0, "ReconcileInfrastructure caps Civic.Construction to forecast", 1e-12);
+        NearRelative(reconNeeds.Order.Civic.Upkeep, 3.0, "ReconcileInfrastructure caps Civic.Upkeep to forecast", 1e-12);
+        NearRelative(reconNeeds.Order.Ceiling(CraftGood.CivicConstruction), 4.0, "ReconcileInfrastructure caps CivicConstruction ceiling", 1e-12);
+        NearRelative(reconAlloc.Requests[0].Granted, 4.0, "ReconcileInfrastructure updates Allocation civic development Granted", 1e-12);
+        Check(reconAlloc.Requests[0].Unmet == "prepared production capacity", "ReconcileInfrastructure sets Unmet cause");
+        Check(oCiv.Civic.Construction == 10 && oCiv.Civic.Upkeep == 5, "Original draft ProductionOrder untouched by ReconcileInfrastructure");
+
+        // PlanningDraft reuse with Civic != null (Irrigation == null) clones cleanly.
+        {
+            var wDraft = Phase1VillageFixture(enableCivic: true, sanitation: false, population: 1100);
+            var cDraft = wDraft.Camps[0];
+            cDraft.People.CivicPrecedents.Add(CivicPrecedents.CeremonialIntegration);
+            cDraft.CivicComplexity = 0.25;
+            cDraft.LastEnvironmentalComplexity = 0.30;
+            cDraft.CivicCapital = 10.0;
+            var draft = TurnPlanner.Draft(wDraft, -1);
+            Check(draft.Intents.TryGetValue(cDraft.Id, out var cachedIntent) && cachedIntent.Production?.Civic != null && cachedIntent.Production?.Irrigation == null,
+                "Draft builds reusable Civic-only ProductionOrder");
+            double origBuild = cachedIntent.Production.Civic.Construction;
+            double origUpkeep = cachedIntent.Production.Civic.Upkeep;
+            var prepared = TurnPlanner.Prepare(wDraft, new Dictionary<int, List<Order>>(), null, null, draft);
+            Check(prepared.ProductionOrders.TryGetValue(cDraft.Id, out var prepOrder) && !ReferenceEquals(prepOrder, cachedIntent.Production),
+                "Prepare clones Civic-only cached ProductionOrder from PlanningDraft");
+            Check(cachedIntent.Production.Civic.Construction == origBuild && cachedIntent.Production.Civic.Upkeep == origUpkeep,
+                "Reusable PlanningDraft CivicOrder is never mutated by Prepare/ReconcileInfrastructure");
+        }
+
+        // CivicCapital analytical dt-invariance via ResolveCampNeolithic (ruin decay, full upkeep, alignment friction, !EconomyEnabled).
+        double RunCapitalDecay(double yearsTotal, int steps, bool fullUpkeep, double pDiff, bool economyEnabled)
+        {
+            var w = Phase1VillageFixture(enableCivic: true, sanitation: false, population: 1000);
+            var c = w.Camps[0];
+            c.People.CivicPrecedents.AddRange(new[] { CivicPrecedents.CeremonialIntegration, CivicPrecedents.CivicOrganization });
+            c.CivicComplexity = 0.75;
+            c.CivicStratification = pDiff;
+            c.LastEnvironmentalStratification = 0.0;
+            c.CivicCapital = 100.0;
+            c.Inventory.HousingMaterial = 1000.0;
+            c.Inventory.Tools = 1000.0;
+            c.Workforce = new PopulationLedger();
+            c.Workforce.Assign(WorkforceRoles.Builder, 50, c.Population);
+            if (!economyEnabled)
+            {
+                c.Technology = Technology.None;
+                c.Technologies[(int)Technology.Cultivation] = false;
+                c.People.Progression.Era = Era.Paleolithic;
+            }
+            double dt = yearsTotal / steps;
+            double intervals = dt * w.Config.DaysPerYear / w.Config.BaseDays;
+            for (int i = 0; i < steps; i++)
+            {
+                double u = fullUpkeep ? CivicGovernance.CivicMaintenanceTarget(w, c, dt) : 0;
+                var prod = new Dictionary<CraftGood, double>();
+                foreach (var r in NeolithicProduction.Recipes(w.Config)) prod[r.Good] = 0;
+                prod[CraftGood.CivicMaintenance] = u;
+                var order = fullUpkeep
+                    ? new ProductionOrder(new[] { CraftGood.CivicMaintenance }, prod) { Civic = new CivicOrder { Upkeep = u } }
+                    : null;
+                var needs = new TurnNeeds { Residents = c.Population, Order = order, Production = prod };
+                NeolithicProduction.ResolveCampNeolithic(w, c, intervals, dt, new TurnRecord { StartDays = w.Days, Duration = dt * w.Config.DaysPerYear }, 0, needs, resolveNeeds: false);
+            }
+            return c.CivicCapital;
+        }
+
+        double expectedDecay20 = 100.0 * Math.Exp(-0.018 * 20.0);
+        double ruin1x20 = RunCapitalDecay(20.0, 1, false, 0.0, true);
+        double ruin4x5 = RunCapitalDecay(20.0, 4, false, 0.0, true);
+        double ruin20x1 = RunCapitalDecay(20.0, 20, false, 0.0, true);
+        NearRelative(ruin1x20, expectedDecay20, "CivicCapital ruin decay 1x20y matches exp(-delta*20)", 1e-12);
+        NearRelative(ruin4x5, ruin1x20, "CivicCapital ruin decay 4x5y == 1x20y", 1e-12);
+        NearRelative(ruin20x1, ruin1x20, "CivicCapital ruin decay 20x1y == 1x20y", 1e-12);
+
+        NearRelative(RunCapitalDecay(20.0, 1, true, 0.0, true), 100.0, "CivicCapital full upkeep 1x20y preserves K_0", 1e-12);
+        NearRelative(RunCapitalDecay(20.0, 4, true, 0.0, true), 100.0, "CivicCapital full upkeep 4x5y preserves K_0", 1e-12);
+        NearRelative(RunCapitalDecay(20.0, 20, true, 0.0, true), 100.0, "CivicCapital full upkeep 20x1y preserves K_0", 1e-12);
+
+        double expectedAlignedFriction = 100.0 * Math.Exp(-0.018 * 1.35 * 20.0);
+        NearRelative(RunCapitalDecay(20.0, 1, false, 1.0, true), expectedAlignedFriction,
+            "CivicCapital decay with |P - P_env|=1.0 applies 1.35x alignment friction", 1e-12);
+        NearRelative(RunCapitalDecay(20.0, 1, false, 0.0, false), expectedDecay20,
+            "CivicCapital still decays analytically when !CultivationEconomy.EconomyEnabled", 1e-12);
+
+        // ---- 6.2 All 8 SocialCohesion & Q_civic sites + KernelSplit N=10,000 no tie-collapse + QoLModel parity ----
+        {
+            var w10k = Phase1VillageFixture(enableCivic: true, sanitation: false, population: 10000);
+            var c10k = w10k.Camps[0];
+            c10k.People.CivicPrecedents.AddRange(new[] { CivicPrecedents.CeremonialIntegration, CivicPrecedents.CivicOrganization, CivicPrecedents.TokensAndAccounting });
+            c10k.CivicComplexity = 1.0;
+            c10k.CivicStratification = 0.0;
+            c10k.LastEnvironmentalComplexity = 1.0;
+            c10k.LastEnvironmentalStratification = 0.0;
+            c10k.CivicCapital = CivicGovernance.RequiredCivicCapital(w10k, c10k) * 2.0;
+            c10k.Workforce = new PopulationLedger();
+            c10k.Workforce.Assign(WorkforceRoles.Steward, (int)Math.Ceiling(CivicGovernance.RequiredStewards(w10k, c10k)) + 20, c10k.Population);
+            c10k.Workforce.Assign(WorkforceRoles.Farmer, 3000, c10k.Population);
+            c10k.PlantFood = 500000;
+            c10k.Inventory.Cloth = 0; // force KernelSplit to choose positive Protected clothing!
+            c10k.RudimentaryExpectation = 1.0;
+            w10k.FixedHousing.Clear(); // force shelter gap too!
+            NeolithicProduction.FixedHousingChanged(w10k);
+            // Boost footprint capacity so 10k city is fed cleanly while testing KernelSplit tie-collapse fix.
+            foreach (int id in w10k.Map.Radius(c10k.Tile, 1))
+            {
+                w10k.Tiles[id].Food = 25000;
+                w10k.Tiles[id].PotentialFood = 250000;
+                for (int s = 0; s < 4; s++) { w10k.Tiles[id].Seasons[s].MaxFood = 25000f; w10k.Tiles[id].Seasons[s].MaxPotentialFood = 250000f; }
+            }
+            DemandController.Plan(w10k, c10k, EconomicIntent.From(c10k), out _, out var alloc10k);
+            Check(alloc10k.ElderAction != null && (alloc10k.ElderAction.ClothingLevel > 0 || alloc10k.ElderAction.ShelterLevel > 0),
+                $"KernelSplit at N=10,000 avoids ElderSplitObjective==2 tie-collapse (cloth={alloc10k.ElderAction?.ClothingLevel}, shelter={alloc10k.ElderAction?.ShelterLevel})");
+
+            // Check Fission.QoLModel.At(N) == EstimateSplit.QNow across P in {-1, 0, +1}, including b0 = 0.5 with eqMult = 1.10!
+            foreach (double pCoord in new[] { -1.0, 0.0, 1.0 })
+            {
+                var wq = Phase1VillageFixture(enableCivic: true, sanitation: false, population: 1500);
+                var cq = wq.Camps[0];
+                cq.People.CivicPrecedents.AddRange(new[] { CivicPrecedents.CeremonialIntegration, CivicPrecedents.CivicOrganization, CivicPrecedents.TokensAndAccounting });
+                cq.CivicComplexity = 1.0;
+                cq.CivicStratification = pCoord;
+                cq.LastEnvironmentalStratification = pCoord;
+                cq.CivicCapital = CivicGovernance.RequiredCivicCapital(wq, cq) * 2.0;
+                cq.Workforce = new PopulationLedger();
+                cq.Workforce.Assign(WorkforceRoles.Steward, (int)Math.Ceiling(CivicGovernance.RequiredStewards(wq, cq)) + 10, cq.Population);
+                cq.FoodNeedsMetRatio = 0.50; // critical corner where inner clamping inside Shape would fail for eqMult=1.10!
+                cq.WaterNeedsMetRatio = 1.0;
+                cq.ClothPerCapita = 1.0;
+                cq.HousingPerCapita = 1.0;
+                cq.RudimentaryExpectation = 1.0;
+                var qModel = Fission.QoLModelOf(wq, cq);
+                var split = Fission.EstimateSplit(wq, cq, cq.FissionPolicy);
+                NearRelative(qModel.At(cq.Population), split.QNow, $"Fission.QoLModel.At(N) == EstimateSplit.QNow at P={pCoord}, F=0.5", 1e-12);
+                NearRelative(qModel.ForwardAt(cq.Population, 0), qModel.At(cq.Population), $"Fission.QoLModel.ForwardAt(N,0) == At(N) at P={pCoord}", 1e-12);
+
+                // ExpansionValuation.Welfare reflects both CohesionMultiplier and QoLEqualityMultiplier.
+                double wBase = cq.Population * cq.FoodNeedsMetRatio * cq.WaterNeedsMetRatio * NeolithicProduction.SocialCohesion(wq, cq, cq.Population);
+                double expectedWelfare = cq.Population * Numbers.Clamp((wBase / cq.Population) * CivicGovernance.QoLEqualityMultiplier(wq, cq), 0, 1);
+                NearRelative(ExpansionValuation.Welfare(wq, cq, cq.Population, cq.Population), expectedWelfare,
+                    $"ExpansionValuation.Welfare applies CohesionMultiplier + QoLEqualityMultiplier at P={pCoord}", 1e-12);
+
+                // ResolveNeeds & CommitExperiencedWelfare both match boosted cohesion * Q_civic.
+                NeolithicProduction.CommitExperiencedWelfare(wq, cq, cq.Population, 0.50, 1.0, 1.0);
+                NearRelative(cq.QoL, split.QNow, $"CommitExperiencedWelfare matches Fission QNow at P={pCoord}", 1e-12);
+
+                // SocialRelocationForecastCache.UtilityUpperBound >= Forecast.
+                var cache = new SocialRelocationForecastCache(wq, wq.Camps);
+                var state = SocialRelocationForecastCache.Existing(cq, cq.Population, cq.PlantFood, cq.AnimalFood, cq.AquaticFood, cq.Workforce, null, 0, 0);
+                var pol = new SocialRelocationPolicy(0.05, 0, 0.05, 0.05);
+                double bound = cache.UtilityUpperBound(state, EmploymentOpportunityMatch.Zero, pol, 0);
+                var forecast = cache.Forecast(state, EmploymentOpportunityMatch.Zero);
+                double exactU = pol.WelfareWeight * forecast.QoL - pol.MortalityWeight * forecast.MortalityRisk;
+                Check(bound >= exactU - 1e-9, $"SocialRelocation UtilityUpperBound ({bound:F6}) >= exact Forecast utility ({exactU:F6}) at P={pCoord}");
+            }
+        }
+
+        // ---- 6.3 DemandControl PriorityScore, Zero-Idle Stewards, SmoothCalendar, Material Immunity & EquipmentTarget ----
+        {
+            double MeasureCivicPriorityScore(int pop, double pCoord, double cNow, double cEnv, double kOpen, double dtYears, bool tier2)
+            {
+                var w = Phase1VillageFixture(enableCivic: true, sanitation: false, population: pop);
+                w.Config.TurnDays = dtYears * w.Config.DaysPerYear;
+                var c = w.Camps[0];
+                c.People.CivicPrecedents.Add(CivicPrecedents.CeremonialIntegration);
+                if (tier2) c.People.CivicPrecedents.Add(CivicPrecedents.CivicOrganization);
+                c.CivicComplexity = cNow;
+                c.CivicStratification = pCoord;
+                c.LastEnvironmentalComplexity = cEnv;
+                c.LastEnvironmentalStratification = pCoord;
+                c.CivicCapital = kOpen;
+                c.Inventory.HousingMaterial = 0; // force full build+HM bundle matching table!
+                DemandController.Plan(w, c, EconomicIntent.From(c), out _, out var alloc);
+                var req = alloc.Requests.FirstOrDefault(r => r.Service == "civic development");
+                return req != null ? req.PriorityScore : -1;
+            }
+
+            // PriorityScore calibration checks against Docs/CivicGovernance.md §5 Choice #7 table.
+            foreach (double pCoord in new[] { -1.0, 0.0, 1.0 })
+            {
+                double s600 = MeasureCivicPriorityScore(600, pCoord, 0.30, 0.30, 0, 20.0, false);
+                Check(s600 > 0 && s600 < 7.20, $"PriorityScore at N=600, P={pCoord} stays < 7.20 ({s600:F2})");
+            }
+            double s1000 = MeasureCivicPriorityScore(1000, 0.0, 0.30, 0.30, 0, 20.0, false);
+            Check(s1000 > 7.20, $"PriorityScore at N=1000, P=0, T1 crosses 7.20 ({s1000:F2})");
+            double s1600 = MeasureCivicPriorityScore(1600, 0.0, 0.75, 0.75, 0, 20.0, true);
+            Check(s1600 > 7.70, $"PriorityScore at N=1600, P=0, T2 crosses fertile field threshold ({s1600:F2})");
+
+            // SmoothCalendar Turn 2+ (dt = 1 yr, K_open > ReqCap(N, C, P)): PriorityScore stays > 4.5 (no collapse!).
+            double sSmooth = MeasureCivicPriorityScore(1000, 0.0, 0.05, 0.30, 15.0, 1.0, false);
+            Check(sSmooth > 4.5, $"SmoothCalendar dt=1yr Turn 2+ PriorityScore does not collapse ({sSmooth:F2})");
+
+            // Zero-idle Stewards at C == 0 (Turn 1): grants CivicConstruction > 0 AND assigns exact 0 Stewards!
+            var wT1 = Phase1VillageFixture(enableCivic: true, sanitation: false, population: 1000);
+            var cT1 = wT1.Camps[0];
+            cT1.People.CivicPrecedents.Add(CivicPrecedents.CeremonialIntegration);
+            cT1.CivicComplexity = 0.0;
+            cT1.LastEnvironmentalComplexity = 0.30;
+            cT1.CivicCapital = 0.0;
+            var intentT1 = DemandController.Plan(wT1, cT1, EconomicIntent.From(cT1), out var prodT1, out var allocT1);
+            Check(prodT1?.Civic != null && prodT1.Civic.Construction > 0, "Turn 1 at C==0 grants CivicConstruction > 0");
+            int stewardsT1 = intentT1.Assignments.Where(a => a.Role == WorkforceRoles.Steward).Sum(a => a.Population);
+            Check(stewardsT1 == 0, $"Turn 1 at C==0 staffs exact 0 idle Stewards (got {stewardsT1})");
+
+            // Continuity material-shortage immunity: zero Wood/Clay/HousingMaterial trims civic maintenance,
+            // while core stewards receives 100% (Granted == Units)! Also test zero Stone/Tools!
+            foreach (bool stoneShortage in new[] { false, true })
+            {
+                var wMat = Phase1VillageFixture(enableCivic: true, sanitation: false, population: 1000);
+                var cMat = wMat.Camps[0];
+                cMat.People.CivicPrecedents.Add(CivicPrecedents.CeremonialIntegration);
+                cMat.CivicComplexity = 0.30;
+                cMat.LastEnvironmentalComplexity = 0.30;
+                cMat.CivicCapital = CivicGovernance.RequiredCivicCapital(wMat, cMat);
+                cMat.Inventory.HousingMaterial = 0;
+                if (stoneShortage)
+                {
+                    cMat.Inventory.HandTools = 0; cMat.Inventory.Tools = 0; cMat.Inventory.Stone = 0;
+                    for (int i = 0; i < wMat.Tiles.Length; i++) wMat.Resources.Stone[i] = 0;
+                }
+                else
+                {
+                    cMat.Inventory.Wood = 0; cMat.Inventory.Clay = 0;
+                    for (int i = 0; i < wMat.Tiles.Length; i++) { wMat.Resources.Wood[i] = 0; wMat.Resources.Clay[i] = 0; }
+                }
+                DemandController.Plan(wMat, cMat, EconomicIntent.From(cMat), out _, out var allocMat);
+                var upkeepReq = allocMat.Requests.FirstOrDefault(r => r.Service == "civic maintenance");
+                var stewReq = allocMat.Requests.FirstOrDefault(r => r.Service == "core stewards");
+                Check(upkeepReq != null && upkeepReq.Granted < upkeepReq.Units - 1e-6,
+                    $"Continuity {(stoneShortage ? "stone/tool" : "wood/clay")} shortage trims civic maintenance");
+                Check(stewReq != null && stewReq.Units > 0, "core stewards request created");
+                NearRelative(stewReq.Granted, stewReq.Units,
+                    $"Continuity core stewards receives 100% under {(stoneShortage ? "stone/tool" : "wood/clay")} shortage", 1e-12);
+            }
+
+            // Partial civicBuild under tight material cap: civicStewards is strictly capped to activeTarget(civicBuild.Granted)
+            // with descriptive Unmet="civic capital" and zero orphaned development Stewards.
+            {
+                var wPart = Phase1VillageFixture(enableCivic: true, sanitation: false, population: 1000);
+                var cPart = wPart.Camps[0];
+                cPart.People.CivicPrecedents.Add(CivicPrecedents.CeremonialIntegration);
+                cPart.CivicComplexity = 0.30; cPart.LastEnvironmentalComplexity = 0.30;
+                cPart.CivicCapital = 0;
+                cPart.Inventory.Wood = 0; cPart.Inventory.Clay = 0;
+                for (int i = 0; i < wPart.Tiles.Length; i++) { wPart.Resources.Wood[i] = 0; wPart.Resources.Clay[i] = 0; }
+                // Cover Continuity tool/housing needs, and cap CivicConstruction at ~50% via finite Wood stock.
+                cPart.Inventory.FarmTools = 5000;
+                cPart.Inventory.Tools = 5000;
+                double reqCapPart = CivicGovernance.RequiredCivicCapital(wPart, cPart);
+                double reqStewPart = CivicGovernance.RequiredStewards(wPart, cPart);
+                double housingReplace = NeolithicProduction.Demand(wPart, cPart, CraftGood.Housing, 20.0, cPart.Population);
+                cPart.Inventory.HousingMaterial = housingReplace;
+                cPart.Inventory.Wood = 0.5 * reqCapPart * wPart.Config.Civic.CivicBuildHousingMaterials;
+                var intentPart = DemandController.Plan(wPart, cPart, EconomicIntent.From(cPart), out _, out var allocPart);
+                var bReq = allocPart.Requests.FirstOrDefault(r => r.Service == "civic development");
+                var sReq = allocPart.Requests.FirstOrDefault(r => r.Service == "civic stewards");
+                Check(bReq != null && bReq.Granted > 1.0 && bReq.Granted < bReq.Units - 1.0,
+                    $"Material-capped civic development grants partial build ({bReq?.Granted:F2}/{bReq?.Units:F2})");
+                double expectedStewCap = Math.Min(1.0, bReq.Granted / reqCapPart) * reqStewPart;
+                Check(sReq != null && sReq.Granted <= expectedStewCap + 1e-6 && sReq.Granted >= expectedStewCap - 1e-6,
+                    $"Partial civicBuild caps civic stewards to exact activeTarget ({sReq?.Granted:F2} vs {expectedStewCap:F2})");
+                Check(sReq.Unmet == "civic capital", $"Capped civic stewards reports descriptive Unmet='civic capital' (got '{sReq.Unmet}')");
+                int staffedStewPart = intentPart.Assignments.Where(a => a.Role == WorkforceRoles.Steward).Sum(a => a.Population);
+                Check(staffedStewPart <= (int)Math.Ceiling(expectedStewCap) + 1 && staffedStewPart >= (int)Math.Floor(expectedStewCap),
+                    $"Zero orphaned development Stewards staffed ({staffedStewPart} vs expected ~{expectedStewCap:F2})");
+            }
+
+            // Steward EquipmentTarget exclusion.
+            var wEq = Phase1VillageFixture(enableCivic: true, sanitation: false, population: 1000);
+            var cEq = wEq.Camps[0];
+            cEq.People.CivicPrecedents.Add(CivicPrecedents.CeremonialIntegration);
+            cEq.CivicComplexity = 0.30; cEq.LastEnvironmentalComplexity = 0.30;
+            cEq.CivicCapital = CivicGovernance.RequiredCivicCapital(wEq, cEq);
+            var iWithStew = DemandController.Plan(wEq, cEq, EconomicIntent.From(cEq), out _, out var aWithStew);
+            int eqStew = aWithStew.Staff.TryGetValue(WorkforceRoles.Steward, out int st) ? st : 0;
+            int expectedEqTarget = Math.Min(cEq.Population, aWithStew.Staff
+                .Where(p => !WorkforceRoles.Extractors.Contains(p.Key) && p.Key != WorkforceRoles.Herder && p.Key != WorkforceRoles.Farmer && p.Key != WorkforceRoles.Steward)
+                .Sum(p => p.Value));
+            Check(eqStew > 0 && iWithStew.Labor.EquipmentTarget == expectedEqTarget,
+                $"EquipmentTarget ({iWithStew.Labor.EquipmentTarget}) excludes Stewards ({eqStew})");
+        }
+
+        // ---- 6.4 Tier 3A Trade (range, requisitions, margin reduction, RecordTradeDiffusion) ----
+        {
+            WorldState MakeTradeWorld(int distance, int extraPartners, bool req3A, bool resp3A, double diffusionRate = 0.0, bool paleolithicReceiver = false)
+            {
+                int totalCamps = 2 + extraPartners;
+                var w = Phase1VillageFixture(enableCivic: true, sanitation: false, population: 400, players: totalCamps + 1);
+                w.Config.TradeEnabled = true;
+                w.Config.TradeRange = 4;
+                w.Config.TradeRequisitionsPerCamp = 2;
+                w.Config.TradeMargin = 0.20;
+                w.Config.TradeDistanceCostPerHex = 0.01;
+                w.Config.Civic.PrecedentDiffusionPerTrade = diffusionRate;
+                w.Camps.Clear();
+                w.Societies.Clear();
+
+                // Player 0 dummy camp far away (Trade excludes Player 0).
+                var p0 = new Camp { Id = w.NextId++, Player = 0, Tile = 0, Population = 100, PlantFood = 5000 };
+                w.Camps.Add(p0);
+
+                // Requester (Player 1) at (4, 8): abundant Cloth, scarce HousingMaterial.
+                int reqTile = 8 * w.Config.Width + 4;
+                var req = new Camp { Id = w.NextId++, Player = 1, Tile = reqTile, Population = 400, PlantFood = 16000, IsVillage = true };
+                req.Inventory.Cloth = 800; req.Inventory.HousingMaterial = 0; req.Inventory.Tools = 100;
+                w.Camps.Add(req);
+
+                // Partners (Players 2..): scarce Cloth, abundant HousingMaterial.
+                var partners = new List<Camp>();
+                for (int i = 0; i < 1 + extraPartners; i++)
+                {
+                    int pTile = 8 * w.Config.Width + 4 + distance + (i == 0 ? 0 : 0);
+                    if (i > 0) pTile = (8 + (i % 2 == 0 ? i / 2 : -(i + 1) / 2)) * w.Config.Width + 4 + Math.Min(distance, 2);
+                    var resp = new Camp { Id = w.NextId++, Player = 2 + i, Tile = pTile, Population = 400, PlantFood = 16000, IsVillage = true };
+                    resp.Inventory.Cloth = 0; resp.Inventory.HousingMaterial = 600; resp.Inventory.Tools = 100;
+                    w.Camps.Add(resp);
+                    partners.Add(resp);
+                }
+                Ownership.Bind(w);
+
+                foreach (var camp in w.Camps)
+                {
+                    camp.Technology = Technology.Cultivation;
+                    camp.Technologies[(int)Technology.Cultivation] = true;
+                    camp.People.Progression.Era = Era.Neolithic;
+                    camp.People.NeolithicTechnologies.AddRange(new[] { NeolithicTech.Weaving, NeolithicTech.Construction, NeolithicTech.Toolmaking });
+                }
+                if (paleolithicReceiver)
+                    req.People.Progression.Era = Era.Paleolithic;
+                if (req3A)
+                    req.People.CivicPrecedents.AddRange(new[] { CivicPrecedents.CeremonialIntegration, CivicPrecedents.CivicOrganization, CivicPrecedents.TokensAndAccounting });
+                if (resp3A)
+                    foreach (var p in partners)
+                        p.People.CivicPrecedents.AddRange(new[] { CivicPrecedents.CeremonialIntegration, CivicPrecedents.CivicOrganization, CivicPrecedents.TokensAndAccounting });
+
+                foreach (var p in partners)
+                {
+                    ContactKnowledge.RecordTrade(w, req.People, p);
+                    ContactKnowledge.RecordTrade(w, p.People, req);
+                }
+                return w;
+            }
+
+            // Range bonus (+2 hexes): distance 6 > base TradeRange 4, <= 4 + 2 = 6.
+            var wRangeOff = MakeTradeWorld(distance: 6, extraPartners: 0, req3A: false, resp3A: false);
+            var wRangeOn = MakeTradeWorld(distance: 6, extraPartners: 0, req3A: true, resp3A: false);
+            Check(Trade.Plan(wRangeOff).Agreements.Count == 0, "Without Tier 3A, partner at TradeRange+2 is out of trade range");
+            Check(Trade.Plan(wRangeOn).Agreements.Count > 0, "With Tier 3A, partner at TradeRange+2 trades via TokensTradeRangeBonus");
+
+            // Requisition bonus (+2): base 2 + bonus 2 = 4 partners contacted instead of 2.
+            // Give each partner modest HousingMaterial (20) and one-way contact from req so partners do not pre-empt req as responders.
+            var wReqOff = MakeTradeWorld(distance: 2, extraPartners: 4, req3A: false, resp3A: false);
+            var wReqOn = MakeTradeWorld(distance: 2, extraPartners: 4, req3A: true, resp3A: false);
+            foreach (var tw in new[] { wReqOff, wReqOn })
+            {
+                for (int pi = 2; pi < tw.Camps.Count; pi++)
+                {
+                    tw.Camps[pi].People.Memory.Contacts.Clear();
+                    NeolithicProduction.AddFixedHousing(tw, tw.Camps[pi],
+                        tw.Camps[pi].Population / tw.Config.Neolithic.HousingPeoplePerUnit, tw.Days);
+                    tw.Camps[pi].Inventory.HousingMaterial = 25;
+                }
+            }
+            var planOff = Trade.Plan(wReqOff);
+            var planOn = Trade.Plan(wReqOn);
+            int pOff = planOff.Agreements.Count(a => a.Requester == wReqOff.Camps[1].Id);
+            int pOn = planOn.Agreements.Count(a => a.Requester == wReqOn.Camps[1].Id);
+            Check(planOff.Summary.Requisitions == 2 && planOn.Summary.Requisitions == 4,
+                $"Tier 3A increases trade requisitions from 2 to 4 (got off={planOff.Summary.Requisitions}, on={planOn.Summary.Requisitions})");
+            Check(pOff <= 2 && pOn > 2, $"Tier 3A closes more partner agreements beyond base limit ({pOn} > 2 vs {pOff} <= 2)");
+
+            // Margin reduction: exact multiplier checks 1.0 / 0.75 / 0.5625.
+            NearRelative(CivicGovernance.TradeMarginMultiplier(wRangeOn.Config, false, false), 1.0, "TradeMarginMultiplier(false,false) == 1.0", 1e-12);
+            NearRelative(CivicGovernance.TradeMarginMultiplier(wRangeOn.Config, true, false), 0.75, "TradeMarginMultiplier(true,false) == 0.75", 1e-12);
+            NearRelative(CivicGovernance.TradeMarginMultiplier(wRangeOn.Config, false, true), 0.75, "TradeMarginMultiplier(false,true) == 0.75", 1e-12);
+            NearRelative(CivicGovernance.TradeMarginMultiplier(wRangeOn.Config, true, true), 0.5625, "TradeMarginMultiplier(true,true) == 0.5625", 1e-12);
+
+            // Borderline trade margin test: give both camps moderate comparative advantage so the 0-side, 1-side
+            // (0.75x) and 2-side (0.5625x) break-even TradeMargin values sit cleanly in (0, 1).
+            WorldState MakeModerateTradeWorld(bool req3A, bool resp3A)
+            {
+                var tw = MakeTradeWorld(distance: 1, extraPartners: 0, req3A: req3A, resp3A: resp3A);
+                tw.Camps[1].Inventory.Cloth = 420; tw.Camps[1].Inventory.HousingMaterial = 90;
+                tw.Camps[2].Inventory.Cloth = 390; tw.Camps[2].Inventory.HousingMaterial = 110;
+                return tw;
+            }
+            var wMarginBase = MakeModerateTradeWorld(false, false);
+            var wMarginOne = MakeModerateTradeWorld(true, false);
+            var wMarginBoth = MakeModerateTradeWorld(true, true);
+            double FindMaxAcceptedMargin(WorldState tw)
+            {
+                double lo = 0.0, hi = 0.5;
+                for (int grow = 0; grow < 25; grow++)
+                {
+                    tw.Config.TradeMargin = hi;
+                    if (Trade.Plan(tw).Agreements.Count == 0) break;
+                    lo = hi; hi *= 2.0;
+                }
+                for (int iter = 0; iter < 40; iter++)
+                {
+                    double mid = 0.5 * (lo + hi);
+                    tw.Config.TradeMargin = mid;
+                    if (Trade.Plan(tw).Agreements.Count > 0) lo = mid; else hi = mid;
+                }
+                return lo;
+            }
+            double m0 = FindMaxAcceptedMargin(wMarginBase);
+            double m1 = FindMaxAcceptedMargin(wMarginOne);
+            double m2 = FindMaxAcceptedMargin(wMarginBoth);
+            Check(m0 > 1e-4, $"Moderate comparative-advantage pair trades at positive margin (m0={m0:F4})");
+            NearRelative(m1, m0 / 0.75, $"1-side Tier 3A raises max acceptable TradeMargin by exact 1/0.75 (m0={m0:F4}, m1={m1:F4})", 1e-3);
+            NearRelative(m2, m0 / 0.5625, $"2-side Tier 3A raises max acceptable TradeMargin by exact 1/0.5625 (m0={m0:F4}, m2={m2:F4})", 1e-3);
+            double mid01 = 0.5 * (m0 + m1);
+            wMarginBase.Config.TradeMargin = mid01; wMarginOne.Config.TradeMargin = mid01; wMarginBoth.Config.TradeMargin = mid01;
+            Check(Trade.Plan(wMarginBase).Agreements.Count == 0 && Trade.Plan(wMarginOne).Agreements.Count > 0,
+                $"Margin {mid01:F4} rejected at 0 sides and accepted at 1 side (0.75x)");
+            double mid12 = 0.5 * (m1 + m2);
+            wMarginOne.Config.TradeMargin = mid12; wMarginBoth.Config.TradeMargin = mid12;
+            Check(Trade.Plan(wMarginOne).Agreements.Count == 0 && Trade.Plan(wMarginBoth).Agreements.Count > 0,
+                $"Margin {mid12:F4} rejected at 1 side (0.75x) and accepted at 2 sides (0.5625x)");
+
+            // RecordTradeDiffusion in Trade.Finish: inert at 0, active at 0.25 for Neolithic, 0 for Paleolithic.
+            var wDiff0 = MakeTradeWorld(distance: 2, extraPartners: 0, req3A: false, resp3A: true, diffusionRate: 0.0);
+            var pDiff0 = Trade.Plan(wDiff0);
+            var recDiff0 = new TurnRecord();
+            var sDiff0 = Trade.Settle(wDiff0, pDiff0, recDiff0);
+            Trade.SettleAfterProduction(wDiff0, sDiff0, recDiff0);
+            Trade.Finish(wDiff0, sDiff0, recDiff0);
+            Check(recDiff0.Trades.Count > 0 && wDiff0.Camps[1].People.CivicExperience.Count == 0,
+                "Trade.Finish accrues exact 0 civic diffusion when PrecedentDiffusionPerTrade == 0");
+
+            var wDiffOn = MakeTradeWorld(distance: 2, extraPartners: 0, req3A: false, resp3A: true, diffusionRate: 0.25);
+            var pDiffOn = Trade.Plan(wDiffOn);
+            var recDiffOn = new TurnRecord();
+            var sDiffOn = Trade.Settle(wDiffOn, pDiffOn, recDiffOn);
+            Trade.SettleAfterProduction(wDiffOn, sDiffOn, recDiffOn);
+            Trade.Finish(wDiffOn, sDiffOn, recDiffOn);
+            double diffXp = 0;
+            bool hasDiffXp = wDiffOn.Camps[1].People.CivicExperience.TryGetValue(CivicPrecedents.CeremonialIntegration, out diffXp);
+            Check(recDiffOn.Trades.Count > 0 && hasDiffXp && diffXp > 0,
+                $"Trade.Finish diffuses CeremonialIntegration experience ({diffXp:F2}) when PrecedentDiffusionPerTrade == 0.25");
+
+            var wDiffPaleo = MakeTradeWorld(distance: 2, extraPartners: 0, req3A: false, resp3A: true, diffusionRate: 0.25, paleolithicReceiver: true);
+            CivicGovernance.RecordTradeDiffusion(wDiffPaleo, wDiffPaleo.Camps[1].People, wDiffPaleo.Camps[2].People, 100.0);
+            Check(wDiffPaleo.Camps[1].People.CivicExperience.Count == 0,
+                "RecordTradeDiffusion gives exact 0 civic experience to Paleolithic receiver");
+        }
+
+        // ---- 6.5 Immigration.PolicyFor, Fission.EffectiveMoverThreshold & live --bound-audit ----
+        {
+            var wPol = Phase1VillageFixture(enableCivic: true, sanitation: false, population: 1000, players: 2);
+            var src = wPol.Camps[0];
+            var dst = new Camp { Id = wPol.NextId++, Player = 1, Tile = src.Tile + 2, Population = 1000, PlantFood = 40000, IsVillage = true };
+            wPol.Camps.Add(dst);
+            Ownership.Bind(wPol);
+            dst.Technology = Technology.Cultivation; dst.Technologies[(int)Technology.Cultivation] = true;
+            dst.People.Progression.Era = Era.Neolithic;
+            foreach (var c in new[] { src, dst })
+            {
+                c.People.CivicPrecedents.AddRange(new[] { CivicPrecedents.CeremonialIntegration, CivicPrecedents.CivicOrganization, CivicPrecedents.TokensAndAccounting });
+                c.CivicComplexity = 1.0;
+                c.CivicStratification = 0.0;
+                c.LastEnvironmentalStratification = 0.0;
+                c.LastCircumscription = 0.0;
+                c.CivicCapital = CivicGovernance.RequiredCivicCapital(wPol, c) * 2.0;
+                c.Workforce = new PopulationLedger();
+                c.Workforce.Assign(WorkforceRoles.Steward, (int)Math.Ceiling(CivicGovernance.RequiredStewards(wPol, c)) + 10, c.Population);
+            }
+
+            // Immigration.PolicyFor exact costs & incumbent tolerances.
+            dst.ImmigrationPolicy = ImmigrationPolicy.Neutral;
+            var pNeut = Immigration.PolicyFor(wPol, src, dst, 2, 0);
+            dst.ImmigrationPolicy = ImmigrationPolicy.Open;
+            var pOpen = Immigration.PolicyFor(wPol, src, dst, 2, 0);
+            dst.ImmigrationPolicy = ImmigrationPolicy.Restricted;
+            var pRest = Immigration.PolicyFor(wPol, src, dst, 2, 0);
+            NearRelative(pNeut.PrivateCost - pOpen.PrivateCost, 0.030, "Open lowers PrivateCost by 0.030", 1e-12);
+            NearRelative(pOpen.IncumbentHarmTolerance, wPol.Config.FissionDaughterMargin + 0.020, "Open raises IncumbentHarmTolerance by 0.020", 1e-12);
+            NearRelative(pRest.PrivateCost - pNeut.PrivateCost, 0.150, "Restricted raises PrivateCost by 0.150", 1e-12);
+            NearRelative(pRest.IncumbentHarmTolerance, wPol.Config.FissionDaughterMargin * 0.30, "Restricted scales IncumbentHarmTolerance by 0.30", 1e-12);
+
+            // P pull on destination (Egalitarian P=-1 vs Stratified P=+1 -> exact 0.050 * C * I_civic difference).
+            dst.ImmigrationPolicy = ImmigrationPolicy.Neutral;
+            dst.CivicStratification = -1.0; dst.LastEnvironmentalStratification = -1.0;
+            dst.CivicCapital = CivicGovernance.RequiredCivicCapital(wPol, dst) * 2.0;
+            dst.Workforce = new PopulationLedger();
+            dst.Workforce.Assign(WorkforceRoles.Steward, (int)Math.Ceiling(CivicGovernance.RequiredStewards(wPol, dst)) + 10, dst.Population);
+            var pEgalDst = Immigration.PolicyFor(wPol, src, dst, 2, 0);
+            dst.CivicStratification = 1.0; dst.LastEnvironmentalStratification = 1.0;
+            dst.CivicCapital = CivicGovernance.RequiredCivicCapital(wPol, dst) * 2.0;
+            dst.Workforce = new PopulationLedger();
+            dst.Workforce.Assign(WorkforceRoles.Steward, (int)Math.Ceiling(CivicGovernance.RequiredStewards(wPol, dst)) + 10, dst.Population);
+            var pStratDst = Immigration.PolicyFor(wPol, src, dst, 2, 0);
+            NearRelative(pStratDst.PrivateCost - pEgalDst.PrivateCost, 0.050,
+                "Stratified vs Egalitarian destination PrivateCost delta == 0.050 * C * I_civic", 1e-12);
+
+            // Source ExitMismatch push (-0.030 * M_exit).
+            src.CivicStratification = 1.0; src.LastEnvironmentalStratification = -0.5; src.LastCircumscription = 0.15;
+            double mExit = CivicGovernance.ExitMismatch(src);
+            NearRelative(mExit, 1.275, "Coerced open-frontier ExitMismatch == 1.275", 1e-12);
+            var pCoercedSrc = Immigration.PolicyFor(wPol, src, dst, 2, 0);
+            NearRelative(pStratDst.PrivateCost - pCoercedSrc.PrivateCost, 0.030 * mExit,
+                "Source ExitMismatch lowers PrivateCost by 0.030 * M_exit", 1e-12);
+
+            // Fission.EffectiveMoverThreshold exact values & C==0 / custom-G* preservation.
+            wPol.Config.FissionGainThreshold = 0.113;
+            src.FissionPolicy = FissionPolicy.Neutral;
+            src.CivicStratification = -1.0; src.LastEnvironmentalStratification = -1.0; src.LastCircumscription = 0.0;
+            src.CivicCapital = CivicGovernance.RequiredCivicCapital(wPol, src) * 2.0;
+            src.Workforce = new PopulationLedger();
+            src.Workforce.Assign(WorkforceRoles.Steward, (int)Math.Ceiling(CivicGovernance.RequiredStewards(wPol, src)) + 10, src.Population);
+            NearRelative(Fission.EffectiveMoverThreshold(wPol, src), 0.068, "Aligned Egalitarian EffectiveMoverThreshold == 0.068", 1e-12);
+            src.CivicStratification = 1.0; src.LastEnvironmentalStratification = 1.0;
+            src.CivicCapital = CivicGovernance.RequiredCivicCapital(wPol, src) * 2.0;
+            src.Workforce = new PopulationLedger();
+            src.Workforce.Assign(WorkforceRoles.Steward, (int)Math.Ceiling(CivicGovernance.RequiredStewards(wPol, src)) + 10, src.Population);
+            NearRelative(Fission.EffectiveMoverThreshold(wPol, src), 0.158, "Aligned Stratified EffectiveMoverThreshold == 0.158", 1e-12);
+            src.CivicStratification = 1.0; src.LastEnvironmentalStratification = -0.5; src.LastCircumscription = 0.15;
+            src.CivicCapital = CivicGovernance.RequiredCivicCapital(wPol, src) * 2.0;
+            src.Workforce = new PopulationLedger();
+            src.Workforce.Assign(WorkforceRoles.Steward, (int)Math.Ceiling(CivicGovernance.RequiredStewards(wPol, src)) + 10, src.Population);
+            NearRelative(Fission.EffectiveMoverThreshold(wPol, src), 0.0815, "Coerced Stratified open-frontier EffectiveMoverThreshold == 0.0815", 1e-12);
+
+            // C == 0 preserves custom FissionGainThreshold (0 and 5.0) bit-identically.
+            src.CivicComplexity = 0.0;
+            wPol.Config.FissionGainThreshold = 0.0;
+            Check(Fission.EffectiveMoverThreshold(wPol, src) == 0.0, "EffectiveMoverThreshold preserves G*=0 when C==0");
+            wPol.Config.FissionGainThreshold = 5.0;
+            Check(Fission.EffectiveMoverThreshold(wPol, src) == 5.0, "EffectiveMoverThreshold preserves G*=5 when C==0");
+
+            // Live multi-camp Immigration.Resolve + Fission.Resolve under AuditBounds = true (0 bound violations).
+            wPol.Config.FissionGainThreshold = 0.113;
+            wPol.Config.ImmigrationEnabled = true;
+            wPol.Config.FissionEnabled = true;
+            src.CivicComplexity = 0.75; src.CivicStratification = 0.8; src.LastEnvironmentalStratification = -0.5; src.LastCircumscription = 0.1;
+            dst.CivicComplexity = 0.75; dst.CivicStratification = -0.8; dst.LastEnvironmentalStratification = -0.8; dst.ImmigrationPolicy = ImmigrationPolicy.Open;
+            ContactKnowledge.RecordTrade(wPol, src.People, dst);
+            ContactKnowledge.RecordTrade(wPol, dst.People, src);
+            foreach (var c in new[] { src, dst })
+            {
+                var mem = ContactKnowledge.MemoryOf(wPol, c.People);
+                foreach (int id in wPol.Map.Radius(c.Tile, 5)) mem.Explored.Add(id);
+            }
+            bool savedAudit = SocialRelocationForecastCache.AuditBounds;
+            SocialRelocationForecastCache.AuditBounds = true;
+            try
+            {
+                var rLive = new TurnRecord();
+                var liveMetrics = new ResolutionMetrics();
+                var liveForecasts = new SocialRelocationForecastCache(wPol, wPol.Camps);
+                var sat = Immigration.Resolve(wPol, rLive, null, liveMetrics, null, liveForecasts);
+                Fission.Resolve(wPol, rLive, null, liveMetrics, sat, null, liveForecasts);
+            }
+            finally { SocialRelocationForecastCache.AuditBounds = savedAudit; }
+            Check(true, "Live multi-camp Immigration.Resolve + Fission.Resolve passed with AuditBounds=true (0 bound violations)");
+        }
+
+        // ---- 6.6 HoverDetails owner-only CIVIC line, zero rival leakage & multi-policy determinism ----
+        {
+            var wHov = Phase1VillageFixture(enableCivic: false, sanitation: false, population: 600, players: 2);
+            var own = wHov.Camps[0];
+            var rival = new Camp { Id = wHov.NextId++, Player = 1, Tile = wHov.Map.Neighbors(own.Tile).First(), Population = 700, PlantFood = 10000, IsVillage = true };
+            wHov.Camps.Add(rival);
+            Ownership.Bind(wHov);
+            var obsBuilder = new AgentObservationBuilder();
+
+            // Civic == null -> zero CIVIC line.
+            var obsOff = obsBuilder.Build(wHov, 0);
+            string descOff = TileDetails.Describe(obsOff, own.Tile, Array.Empty<Order>());
+            Check(!descOff.Contains("CIVIC ·"), "HoverDetails omits CIVIC line when Civic==null");
+
+            // Civic.Enabled=true, SanitationEnabled=false.
+            wHov.Config.Civic = new CivicGovernanceSettings { Enabled = true, SanitationEnabled = false };
+            own.People.CivicPrecedents.AddRange(new[] { CivicPrecedents.CeremonialIntegration, CivicPrecedents.CivicOrganization });
+            own.CivicComplexity = 0.55; own.CivicStratification = -0.40;
+            own.LastEnvironmentalStratification = -0.40; own.CivicFocus = CivicFocus.Auto; own.ImmigrationPolicy = ImmigrationPolicy.Open;
+            own.CivicCapital = CivicGovernance.RequiredCivicCapital(wHov, own);
+            own.Workforce.Assign(WorkforceRoles.Steward, (int)Math.Ceiling(CivicGovernance.RequiredStewards(wHov, own)), own.Population);
+            rival.CivicComplexity = 0.91; rival.CivicStratification = 0.87;
+            rival.LastEnvironmentalStratification = 0.87; rival.ImmigrationPolicy = ImmigrationPolicy.Restricted;
+
+            var obsPh1 = obsBuilder.Build(wHov, 0);
+            string descOwn1 = TileDetails.Describe(obsPh1, own.Tile, Array.Empty<Order>());
+            string descRival1 = TileDetails.Describe(obsPh1, rival.Tile, Array.Empty<Order>());
+            Check(descOwn1.Contains("CIVIC ·") && descOwn1.Contains("C 0.55") && descOwn1.Contains("P -0.40") &&
+                  descOwn1.Contains("Communal") && descOwn1.Contains("I_civic") && descOwn1.Contains("Immigration Open"),
+                "HoverDetails renders owner CIVIC summary line (" + descOwn1 + ")");
+            Check(!descOwn1.Contains("Sanit"), "HoverDetails omits Sanit segment when SanitationEnabled=false");
+            Check(!descRival1.Contains("CIVIC ·") && !descRival1.Contains("0.91") && !descRival1.Contains("+0.87") && !descRival1.Contains("Restricted"),
+                "HoverDetails never leaks rival civic fields");
+
+            // Mutating rival civic state produces byte-identical hover on both own and rival tiles!
+            rival.CivicComplexity = 0.12; rival.CivicStratification = -0.66; rival.ImmigrationPolicy = ImmigrationPolicy.Open;
+            var obsPh1Mut = obsBuilder.Build(wHov, 0);
+            Check(TileDetails.Describe(obsPh1Mut, own.Tile, Array.Empty<Order>()) == descOwn1,
+                "Mutating rival civic state leaves own hover byte-identical");
+            Check(TileDetails.Describe(obsPh1Mut, rival.Tile, Array.Empty<Order>()) == descRival1,
+                "Mutating rival civic state leaves rival hover byte-identical");
+
+            // SanitationEnabled=true adds Sanit & water to owner tile.
+            wHov.Config.Civic.SanitationEnabled = true;
+            own.SanitationWaterRatio = 0.85;
+            var obsPh2 = obsBuilder.Build(wHov, 0);
+            string descOwn2 = TileDetails.Describe(obsPh2, own.Tile, Array.Empty<Order>());
+            Check(descOwn2.Contains("Sanit") && descOwn2.Contains("water 85%"), "HoverDetails includes Sanit and water when SanitationEnabled=true");
+
+            // Multi-policy queued order permutation invariance.
+            var qForward = new[]
+            {
+                new Order(OrderKind.Economy, own.Id) { Economy = EconomicIntent.From(own) },
+                new Order(OrderKind.FissionPolicy, own.Id, target: (int)FissionPolicy.Encourage),
+                new Order(OrderKind.ImmigrationPolicy, own.Id, target: (int)ImmigrationPolicy.Open),
+                new Order(OrderKind.CivicFocus, own.Id, target: (int)CivicFocus.Communal)
+            };
+            var qReverse = qForward.Reverse().ToArray();
+            Check(TileDetails.Describe(obsPh1, own.Tile, qForward) == TileDetails.Describe(obsPh1, own.Tile, qReverse),
+                "HoverDetails queued multi-policy order output is permutation-invariant");
+        }
+
+        // ---- 6.7 Bit-Exact Zero-Regression When Civic == null ----
+        {
+            var wZeroA = Phase1VillageFixture(enableCivic: false, sanitation: false, population: 600);
+            wZeroA.Config.FissionEnabled = true;
+            wZeroA.Config.ImmigrationEnabled = true;
+            wZeroA.Config.TradeEnabled = true;
+            var c0 = wZeroA.Camps[0];
+            Check(CivicGovernance.CrowdingMitigation(wZeroA, c0) == 1.0 &&
+                  CivicGovernance.DiseaseMitigation(wZeroA, c0) == 1.0 &&
+                  CivicGovernance.CohesionMultiplier(wZeroA, c0) == 1.0 &&
+                  CivicGovernance.QoLEqualityMultiplier(wZeroA, c0) == 1.0 &&
+                  CivicGovernance.PublicWorksMobilizationMultiplier(wZeroA, c0) == 1.0 &&
+                  CivicGovernance.GranaryStorageMultiplier(wZeroA, c0) == 1.0 &&
+                  CivicGovernance.GranaryStorageMultiplierLowerBound(wZeroA, c0, 20.0) == 1.0,
+                "All civic multipliers return exact 1.0 when Civic==null");
+            Check(Fission.EffectiveMoverThreshold(wZeroA, c0) == Kinship.GainThreshold(wZeroA.Config, c0.FissionPolicy),
+                "EffectiveMoverThreshold matches Kinship.GainThreshold bit-for-bit when Civic==null");
+
+            var wZeroB = SaveCodec.Load(SaveCodec.Save(wZeroA));
+            var resolver = new TurnResolver();
+            TurnRecord lastA = null;
+            for (int t = 0; t < 3; t++)
+            {
+                lastA = resolver.Resolve(wZeroA, new Dictionary<int, List<Order>>());
+                resolver.Resolve(wZeroB, new Dictionary<int, List<Order>>());
+            }
+            Check(lastA.CivicReports == null && lastA.SanitationWater == null, "Civic==null leaves CivicReports and SanitationWater null");
+            Check(SaveCodec.Fingerprint(wZeroA) == SaveCodec.Fingerprint(wZeroB), "Civic==null multi-turn save/reload fingerprint matches bit-for-bit");
+        }
     }
 
     private static byte[] Unzip(byte[] bytes)

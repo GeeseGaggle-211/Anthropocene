@@ -841,11 +841,19 @@ namespace Anthropocene.Simulation
             double e = Expectation(n, c);
             double protection = Math.Max(n.RudimentaryWeightClothing * (1 - e), n.RudimentaryWeightClothing)
                 + Math.Max(n.RudimentaryWeightHousing * (1 - e), n.RudimentaryWeightHousing);
-            double scaleLow = NeolithicProduction.CohesionScale(n, 0), scaleHigh = NeolithicProduction.CohesionScale(n, 1);
-            if (!(scaleLow > 0) || !(scaleHigh > 0) || !(n.SocialCohesionExponent > 0)) return double.PositiveInfinity;
-            double cohesion = Math.Max(NeolithicProduction.SocialCohesion(n, 0, c.Population),
-                NeolithicProduction.SocialCohesion(n, 1, c.Population));
-            double qoL = Numbers.Clamp(f.Nutrition * state.WaterCoverage * Math.Max(0, protection) * cohesion, 0, 1);
+            bool civicEnabled = CivicGovernance.Enabled(cfg);
+            double civicMult = civicEnabled ? CivicGovernance.CohesionMultiplier(world, c) : 1;
+            double eqMult = civicEnabled ? CivicGovernance.QoLEqualityMultiplier(world, c) : 1;
+            if (!(civicMult > 0) || double.IsNaN(civicMult) || double.IsInfinity(civicMult) ||
+                !(eqMult >= 0) || double.IsNaN(eqMult) || double.IsInfinity(eqMult))
+                return double.PositiveInfinity;
+            double scaleLow = NeolithicProduction.CohesionScale(n, 0, civicMult), scaleHigh = NeolithicProduction.CohesionScale(n, 1, civicMult);
+            if (!(scaleLow > 0) || double.IsInfinity(scaleLow) || !(scaleHigh > 0) || double.IsInfinity(scaleHigh) || !(n.SocialCohesionExponent > 0))
+                return double.PositiveInfinity;
+            double cohesion = Math.Max(NeolithicProduction.SocialCohesion(n, 0, c.Population, civicMult),
+                NeolithicProduction.SocialCohesion(n, 1, c.Population, civicMult));
+            double baseQoL = f.Nutrition * state.WaterCoverage * Math.Max(0, protection) * cohesion;
+            double qoL = Numbers.Clamp(civicEnabled ? baseQoL * eqMult : baseQoL, 0, 1);
 
             bool deficient = f.Nutrition < 1 - 1e-12;
             double years = f.Years;
@@ -931,13 +939,17 @@ namespace Anthropocene.Simulation
                     + opportunity.ShelterPeople;
                 shelter = new NeolithicProduction.ShelterCapacity(fixedPeople, lightPeople);
             }
+            bool civicEnabled = CivicGovernance.Enabled(cfg);
+            double civicMult = civicEnabled ? CivicGovernance.CohesionMultiplier(world, c) : 1;
+            double eqMult = civicEnabled ? CivicGovernance.QoLEqualityMultiplier(world, c) : 1;
             double housingCoverage = NeolithicProduction.HousingCoverage(shelter, c.Population);
             double housingShare = NeolithicProduction.HousingShare(n, shelter, c.Population);
             double expectation = Expectation(n, c);
             double protection = n.RudimentaryWeightClothing * (1 - expectation * (1 - clothingCoverage))
                 + n.RudimentaryWeightHousing * (1 - expectation * (1 - housingCoverage));
             double qoL = nutrition * state.WaterCoverage * protection
-                * NeolithicProduction.SocialCohesion(n, housingShare, c.Population);
+                * NeolithicProduction.SocialCohesion(n, housingShare, c.Population, civicMult);
+            if (civicEnabled) qoL *= eqMult;
 
             bool deficient = nutrition < 1 - 1e-12;
             double graceRemaining = deficient

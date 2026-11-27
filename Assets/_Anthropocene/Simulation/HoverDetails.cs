@@ -88,9 +88,28 @@ namespace Anthropocene.Simulation
             b.AppendLine("FEATURES · " + (t.Oasis ? "Oasis spring (finite). " : "") + cultFeature + (t.Fishery ? "Fishery. " : "") + (!t.Oasis && !t.Cultivated && !t.Fishery ? "Unimproved" : ""));
             var occupants = Occupants(o, id); b.AppendLine("OCCUPANTS · " + occupants.Length);
             foreach (var occupant in occupants) b.AppendLine(occupant.Description);
-            foreach (var order in queued.OrderBy(p => p.Entity))
+            if (o.CivicGovernanceEnabled)
             {
-                int origin = order.Entity == o.CampId ? o.CampTile : o.Hunters.FirstOrDefault(h => h.Id == order.Entity)?.Tile ?? -1;
+                foreach (var own in o.Settlements.Where(s => s.Tile == id).OrderBy(s => s.Id))
+                {
+                    string focus = CivicGovernance.EffectiveFocusLabel(own.CivicFocus, own.LastEnvironmentalStratification);
+                    string sanit = o.SanitationEnabled
+                        ? " · Sanit " + Math.Round(own.SanitationCoverage * 100).ToString("F0", System.Globalization.CultureInfo.InvariantCulture)
+                            + "% (water " + Math.Round(own.SanitationWaterRatio * 100).ToString("F0", System.Globalization.CultureInfo.InvariantCulture) + "%)"
+                        : "";
+                    b.AppendLine("CIVIC · C " + own.CivicComplexity.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)
+                        + " · P " + own.CivicStratification.ToString("+0.00;-0.00;0.00", System.Globalization.CultureInfo.InvariantCulture)
+                        + " · " + focus
+                        + " · I_civic " + Math.Round(own.CivicCoverage * 100).ToString("F0", System.Globalization.CultureInfo.InvariantCulture) + "%"
+                        + sanit
+                        + " · Immigration " + own.ImmigrationPolicy);
+                }
+            }
+            foreach (var order in (queued ?? Array.Empty<Order>()).OrderBy(p => p.Entity).ThenBy(p => (int)p.Kind))
+            {
+                int origin = order.Entity == o.CampId ? o.CampTile
+                    : o.Settlements.FirstOrDefault(s => s.Id == order.Entity)?.Tile
+                    ?? o.Hunters.FirstOrDefault(h => h.Id == order.Entity)?.Tile ?? -1;
                 bool prey = order.Kind == OrderKind.Hunt && o.Herds.Any(h => h.Id == order.Target && h.Tile == id);
                 if (origin == id || order.Destination == id || order.Kind == OrderKind.Fish && order.Target == id || prey) b.AppendLine("QUEUED · " + order.Kind + " by group " + order.Entity + (origin == id ? " from here" : " targeting here"));
             }

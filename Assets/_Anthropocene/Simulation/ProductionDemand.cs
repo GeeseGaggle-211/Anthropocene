@@ -833,6 +833,8 @@ namespace Anthropocene.Simulation
             double housing = 1 - e * (1 - Math.Min(1, c.HousingPerCapita * dilution));
             double q = c.FoodNeedsMetRatio * c.WaterNeedsMetRatio * NeolithicProduction.SocialCohesion(w, c, population)
                 * (n.RudimentaryWeightClothing * clothing + n.RudimentaryWeightHousing * housing);
+            if (CivicGovernance.Enabled(w.Config))
+                q = Numbers.Clamp(q * CivicGovernance.QoLEqualityMultiplier(w, c), 0, 1);
             return population * q;
         }
         public static double MarginalWelfare(WorldState w, Camp c)
@@ -1001,6 +1003,8 @@ namespace Anthropocene.Simulation
         // the Elder committed ahead of meals; negative (the default) means none.
         internal double ProtectedClothingUnits = -1;
         internal IrrigationOrder Irrigation;
+        internal CivicOrder Civic;
+        internal bool HasInfrastructure => Irrigation != null || Civic != null;
         internal ProductionOrder CopyForPreparation()
         {
             var copy = ceilings == null
@@ -1009,6 +1013,8 @@ namespace Anthropocene.Simulation
             copy.ProtectedClothingUnits = ProtectedClothingUnits;
             if (Irrigation != null) copy.Irrigation = new IrrigationOrder {
                 Project = Irrigation.Project, Construction = Irrigation.Construction, Upkeep = Irrigation.Upkeep };
+            if (Civic != null) copy.Civic = new CivicOrder {
+                Construction = Civic.Construction, Upkeep = Civic.Upkeep };
             return copy;
         }
         // An explicit access order with output ceilings (DemandControl).

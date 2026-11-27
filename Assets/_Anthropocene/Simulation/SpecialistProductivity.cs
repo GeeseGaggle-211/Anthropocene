@@ -18,7 +18,12 @@ namespace Anthropocene.Simulation
         {
             bool specialist = role == recipe.Specialist && camp.People.HasTech(recipe.Track);
             if (specialist)
-                return recipe.Rate * Multiplier(world.Config.Neolithic, residentPopulation < 0 ? camp.Population : residentPopulation);
+            {
+                double rate = recipe.Rate * Multiplier(world.Config.Neolithic, residentPopulation < 0 ? camp.Population : residentPopulation);
+                if (role == WorkforceRoles.Builder && NeolithicProduction.IsInfrastructureGood(recipe.Good) && CivicGovernance.Enabled(world.Config))
+                    rate *= CivicGovernance.PublicWorksMobilizationMultiplier(world, camp);
+                return rate;
+            }
             return role == WorkforceRoles.Craftsperson && !recipe.SpecialistOnly
                 ? recipe.Rate * world.Config.Neolithic.GeneralistTaskEfficiency
                 : 0;

@@ -319,7 +319,7 @@ namespace Anthropocene.Simulation
                     Interlocked.Increment(ref diagnostics.DraftIntentsReused);
                     // Reconciliation belongs to this prepared turn, never to
                     // the reusable draft displayed while the player plans.
-                    bool construction = cached.Production?.Irrigation != null;
+                    bool construction = cached.Production?.HasInfrastructure == true;
                     return new AutomaticPlan { Order = cached.Order.Copy(), Production = construction ? cached.Production.CopyForPreparation() : cached.Production,
                         FishingAccess = fishingAccess.TryGetValue(camp.Id, out var cachedAccess) ? cachedAccess : null,
                         DemandAllocation = construction ? cached.DemandAllocation?.CopyForPreparation() : cached.DemandAllocation };
@@ -509,15 +509,15 @@ namespace Anthropocene.Simulation
         internal static void ReconcileInfrastructure(TurnNeeds needs, DemandController.Allocation allocation)
         {
             var order = needs?.Order;
-            if (order?.Irrigation == null || needs.Production == null) return;
-            foreach (var good in new[] { CraftGood.CanalConstruction, CraftGood.CanalMaintenance })
+            if (order?.HasInfrastructure != true || needs.Production == null) return;
+            foreach (var good in NeolithicProduction.InfrastructureGoods)
             {
-                double authorized = IrrigationEconomy.Demand(order, good);
+                double authorized = NeolithicProduction.InfrastructureDemand(order, good);
+                if (!(authorized > 0)) continue;
                 double output = Math.Min(authorized, Math.Max(0, needs.Production.TryGetValue(good, out double q) ? q : 0));
                 if (output >= authorized - 1e-9) continue;
                 order.Cap(good, output);
-                if (good == CraftGood.CanalConstruction) order.Irrigation.Construction = output;
-                else order.Irrigation.Upkeep = output;
+                NeolithicProduction.SetInfrastructureDemand(order, good, output);
                 if (allocation != null) foreach (var request in allocation.Requests.Where(r => r.Good == good))
                 { request.Granted = Math.Min(request.Granted, output); request.Unmet = "prepared production capacity"; }
             }

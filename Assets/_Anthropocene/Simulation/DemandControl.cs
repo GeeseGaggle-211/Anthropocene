@@ -995,6 +995,108 @@ namespace Anthropocene.Simulation
                     }
                 }
             }
+            Request civicUpkeep = null, civicBuild = null, civicStewards = null;
+            double coreStewards = 0, civicReqCapNow = 0, civicReqStewardsNow = 0;
+            double RecurringBundleRoleYears(CraftGood good)
+            {
+                if (!byGood.TryGetValue(good, out var r) || !Usable(r)) return double.PositiveInfinity;
+                var b = Craft(good);
+                if (b == null) return double.PositiveInfinity;
+                double ry = b.RoleYears.Values.Sum();
+                if (r.HousingMaterial > 0)
+                {
+                    var hm = byGood.TryGetValue(CraftGood.HousingMaterial, out var hmr) && Usable(hmr)
+                        ? Craft(CraftGood.HousingMaterial) : null;
+                    if (hm == null) return double.PositiveInfinity;
+                    ry += r.HousingMaterial * hm.RoleYears.Values.Sum();
+                }
+                return ry;
+            }
+            if (CivicGovernance.Enabled(cfg) && c.IsVillage)
+            {
+                var cs = cfg.Civic;
+                double cMax = CivicGovernance.MaxComplexity(w, c);
+                double tAmort = Math.Max(years, n.ReferenceTurnYears);
+                double cPlan = Math.Min(cMax, Math.Max(c.CivicComplexity, CivicGovernance.NextComplexity(w, c, tAmort)));
+                double deltaEff = CivicGovernance.EffectiveCivicDecayRate(w, c);
+                bool civicRecipes = CivicGovernance.CivicRecipesAvailable(w, c);
+                civicReqCapNow = CivicGovernance.RequiredCivicCapital(w, c, residents);
+                civicReqStewardsNow = CivicGovernance.RequiredStewards(w, c, residents);
+                double reqCapPlan = CivicGovernance.RequiredCivicCapital(cfg, residents, cPlan, c.CivicStratification);
+
+                // Continuity 1: civic maintenance (capped to ReqCap(N, C_plan, P) so bootstrapped
+                // SmoothCalendar capital is maintained while abandoned ruins decay naturally).
+                if (c.CivicCapital > Epsilon && civicRecipes && reqCapPlan > 1e-12)
+                {
+                    double upkeep = CivicGovernance.CivicMaintenanceTarget(w, c, years, cPlan, residents);
+                    if (upkeep > Epsilon)
+                        civicUpkeep = Request("civic maintenance", ServiceClass.Continuity, CraftGood.CivicMaintenance, upkeep);
+                }
+
+                // Continuity 2: core stewards (WholeUnits = false, pure labour -> immune to material shortages).
+                if (CivicGovernance.StewardAvailable(w, c) && c.CivicCapital > Epsilon && c.CivicComplexity > 1e-12 &&
+                    civicReqCapNow > 1e-12 && civicReqStewardsNow > 1e-12)
+                {
+                    coreStewards = Math.Min(1.0, c.CivicCapital / civicReqCapNow) * civicReqStewardsNow;
+                    if (coreStewards > Epsilon)
+                        LabourRequest("core stewards", ServiceClass.Continuity, WorkforceRoles.Steward, coreStewards);
+                }
+
+                // Development 1: civic development (competes in PriorityScore order without requiring a food gap).
+                if (civicRecipes && residents >= cs.DevelopmentMinPopulation && reqCapPlan > 1e-12)
+                {
+                    double deltaK = Math.Max(0, reqCapPlan - c.CivicCapital);
+                    if (deltaK > Epsilon)
+                    {
+                        civicBuild = Request("civic development", ServiceClass.Development, CraftGood.CivicConstruction, deltaK);
+                        if (civicBuild != null && civicBuild.Bundle != null)
+                        {
+                            bool has3A = c.People != null && c.People.HasCivicPrecedent(CivicPrecedents.TokensAndAccounting);
+                            double deltaI = deltaK / reqCapPlan;
+                            double reqStewardsPlan = CivicGovernance.RequiredStewards(cfg, residents, cPlan,
+                                c.CivicStratification, has3A, c.LastEnvironmentalStratification);
+                            // Marginal Steward cost matched to deltaI so deltaI cancels algebraically in all states
+                            // (including SmoothCalendar Turn 2+ when K_open > ReqCap(N, C, P) and post-dip over-capitalization).
+                            double deltaSScore = deltaI * reqStewardsPlan;
+                            double buildRoleYears = civicBuild.Bundle.RoleYears.Values.Sum();
+                            double maintRoleYears = RecurringBundleRoleYears(CraftGood.CivicMaintenance);
+                            double wCivicYr = buildRoleYears * deltaK / Math.Max(Epsilon, tAmort)
+                                + deltaSScore
+                                + maintRoleYears * deltaK * deltaEff;
+                            double dCrowd = PhysicalDemography.CrowdingMortalityRate(cfg, residents);
+                            double alphaC = CivicGovernance.CrowdingMitigationAlpha(cfg, cPlan, c.CivicStratification);
+                            double foodPerDeath = cs.CivicDeathFoodYears * PhysicalDemography.FoodPerPersonYear(cfg);
+                            double numerator = residents * dCrowd * alphaC * deltaI * foodPerDeath;
+                            civicBuild.PriorityScore = wCivicYr > Epsilon && !double.IsInfinity(wCivicYr)
+                                ? Math.Max(0, numerator / wCivicYr) : 0;
+                        }
+
+                        // Development 2: civic stewards (placed immediately after civic development with identical
+                        // PriorityScore; sized strictly to opening C so Turn 1 at C == 0 staffs 0 idle Stewards).
+                        if (civicBuild != null && civicBuild.Bundle != null &&
+                            c.CivicComplexity > 1e-12 && CivicGovernance.StewardAvailable(w, c) &&
+                            civicReqCapNow > 1e-12 && civicReqStewardsNow > 1e-12 &&
+                            c.CivicCapital < civicReqCapNow - Epsilon)
+                        {
+                            double devStewards = Math.Max(0, civicReqStewardsNow - coreStewards);
+                            if (devStewards > Epsilon)
+                            {
+                                civicStewards = LabourRequest("civic stewards", ServiceClass.Development,
+                                    WorkforceRoles.Steward, devStewards);
+                                if (civicStewards != null)
+                                    civicStewards.PriorityScore = civicBuild.PriorityScore;
+                            }
+                        }
+                    }
+                }
+            }
+            double ActiveCivicStewardDevelopmentTarget()
+            {
+                if (civicStewards == null || c.CivicComplexity <= 1e-12 || !(civicReqCapNow > 1e-12) || !(civicReqStewardsNow > 1e-12))
+                    return 0;
+                double activeTarget = Math.Min(1.0, (c.CivicCapital + (civicBuild?.Granted ?? 0)) / civicReqCapNow) * civicReqStewardsNow;
+                return Math.Min(civicStewards.Units, Math.Max(0, activeTarget - coreStewards));
+            }
             // Field development is authorized by the same projected food gap,
             // plus only the typed plant-feedstock shortfall that current stock
             // and receipts cannot cover. Counting the whole textile input on
@@ -1211,6 +1313,9 @@ namespace Anthropocene.Simulation
                 double diseaseMitigation = PhysicalDemography.DiseaseMitigation(w, c);
                 double fertilityFactor = PhysicalDemography.FertilityFactor(w, c);
                 double additionalMortality = PhysicalDemography.AdditionalMortality(w, c);
+                bool civicEnabled = CivicGovernance.Enabled(cfg);
+                double civicCohesionMult = civicEnabled ? CivicGovernance.CohesionMultiplier(w, c) : 1;
+                double civicQoLMult = civicEnabled ? CivicGovernance.QoLEqualityMultiplier(w, c) : 1;
                 double effective = Math.Max(0, c.Population + c.GrowthRemainder - c.DeathRemainder + (d.Consumers - c.Population));
                 double maximumYears = PhysicalDemography.BirthOnlyPersonYears(effective, cfg.BaseBirthRate * fertilityFactor, years);
                 RouteCost ClothingCost(CraftGood good)
@@ -1296,8 +1401,9 @@ namespace Anthropocene.Simulation
                     double clothingTerm = 1 - c.RudimentaryExpectation * (1 - result.ClothingCoverage);
                     double housingTerm = 1 - c.RudimentaryExpectation * (1 - result.AverageHousingCoverage);
                     var shelter = new NeolithicProduction.ShelterCapacity(capacityNow.Fixed + (shelterRoute == CraftGood.Housing ? qh : 0), capacityNow.Light + (shelterRoute == CraftGood.Housing ? 0 : qh));
-                    return result.Nutrition * c.WaterNeedsMetRatio * (n.RudimentaryWeightClothing * clothingTerm + n.RudimentaryWeightHousing * housingTerm)
-                        * NeolithicProduction.SocialCohesion(n, NeolithicProduction.HousingShare(n, shelter, people), people);
+                    double baseQoL = result.Nutrition * c.WaterNeedsMetRatio * (n.RudimentaryWeightClothing * clothingTerm + n.RudimentaryWeightHousing * housingTerm)
+                        * NeolithicProduction.SocialCohesion(n, NeolithicProduction.HousingShare(n, shelter, people), people, civicCohesionMult);
+                    return civicEnabled ? Numbers.Clamp(baseQoL * civicQoLMult, 0, 1) : baseQoL;
                 }
                 // Objectives: 0 person-years; 1 QoL-weighted person-years; 2 lexicographic (person-years within the
                 // tolerance of the best, then QoL; the default); 3 terminal-population welfare; 4 deaths averted.
@@ -1515,9 +1621,18 @@ namespace Anthropocene.Simulation
                     for (int i = 0; i < 40; i++) { double mid = (lo + hi) / 2; if (Binding(q => Grant(q, mid)) == null) lo = mid; else hi = mid; }
                     string binding = Binding(q => Grant(q, hi)) ?? "labor";
                     foreach (var q in active) q.Granted = q.Units * lo;
-                    // Labour and equipment bind every request alike; an input binds only the requests that use it.
-                    if (binding == "labor" || binding == "equipment") { foreach (var q in active) q.Unmet = binding == "labor" ? "labor rationing" : "equipment shortage"; break; }
+                    // Labour binds every request alike; equipment and inputs bind only requests that use them.
+                    if (binding == "labor") { foreach (var q in active) q.Unmet = "labor rationing"; break; }
+                    if (binding == "equipment")
+                    {
+                        var equipUsers = active.Where(q => q.Bundle.ToolOutputs > 0).ToList();
+                        if (equipUsers.Count == 0 || equipUsers.Count == active.Count) { foreach (var q in active) q.Unmet = "equipment shortage"; break; }
+                        foreach (var q in equipUsers) { q.Unmet = "equipment shortage"; active.Remove(q); }
+                        continue;
+                    }
                     var users = active.Where(q => Uses(q.Bundle, binding)).ToList();
+                    if (users.Count == 0 && toolmaking != null && Uses(toolmaking, binding))
+                        users = active.Where(q => q.Bundle.ToolOutputs > 0).ToList();
                     if (users.Count == 0) users = active.ToList();
                     foreach (var q in users) { q.Unmet = binding.StartsWith("material") ? "material shortage" : binding; active.Remove(q); }
                 }
@@ -1620,6 +1735,8 @@ namespace Anthropocene.Simulation
                 }
                 wanted = Math.Max(wanted, Math.Min(request.Units,
                     request.PolicyDevelopmentUnits));
+                if (request == civicStewards)
+                    wanted = ActiveCivicStewardDevelopmentTarget();
                 request.Granted = MaximumDevelopmentGrant(request, wanted,
                     out string binding);
                 if (textileHerdFloor.TryGetValue(request, out double textileFloor) && request.Granted < textileFloor)
@@ -1662,7 +1779,7 @@ namespace Anthropocene.Simulation
                     remainingSubstitutionFood - substitution);
                 if (request.Granted < request.Units - Epsilon)
                     request.Unmet = binding == null
-                        ? "service filled" : UnmetCause(binding);
+                        ? (request == civicStewards ? "civic capital" : "service filled") : UnmetCause(binding);
             }
             alloc.DevelopmentFoodGap = remainingCurrentDevelopmentFood;
 
@@ -1697,6 +1814,15 @@ namespace Anthropocene.Simulation
             for (int repair = 0; repair < 3; repair++)
             {
                 QuantizeHerdDevelopment();
+                if (civicStewards != null && civicStewards.Granted > Epsilon)
+                {
+                    double cap = ActiveCivicStewardDevelopmentTarget();
+                    if (civicStewards.Granted > cap + Epsilon)
+                    {
+                        civicStewards.Granted = cap;
+                        if (string.IsNullOrEmpty(civicStewards.Unmet)) civicStewards.Unmet = "civic capital";
+                    }
+                }
                 var total = new Bundle();
                 foreach (var q in alloc.Requests) if (q.Bundle != null) total.Add(q.Bundle, q.Granted);
                 double approximateDevelopmentHerderYears = herdDevelopment
@@ -1896,6 +2022,9 @@ namespace Anthropocene.Simulation
             if ((canalBuild?.Granted ?? 0) > Epsilon || (canalUpkeep?.Granted ?? 0) > Epsilon)
                 production.Irrigation = new IrrigationOrder { Project = irrigationProject,
                     Construction = canalBuild?.Granted ?? 0, Upkeep = canalUpkeep?.Granted ?? 0 };
+            if ((civicBuild?.Granted ?? 0) > Epsilon || (civicUpkeep?.Granted ?? 0) > Epsilon)
+                production.Civic = new CivicOrder {
+                    Construction = civicBuild?.Granted ?? 0, Upkeep = civicUpkeep?.Granted ?? 0 };
             if (protectedSplit && protectedClothingUnits >= 0)
                 production.ProtectedClothingUnits = alloc.Requests.Where(q => q.Service == "clothing" && q.Class == ServiceClass.Protected).Sum(q => q.Granted);
             foreach (var request in alloc.Requests) request.GrantedBeforeProduction = request.Granted;

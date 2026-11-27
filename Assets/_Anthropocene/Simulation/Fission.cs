@@ -159,9 +159,17 @@ namespace Anthropocene.Simulation
             double housingAfter = housingNow + relief * (housingRelieved - housingNow);
             double shareNow = Share(residents, fixedPeople, portable), shareRelieved = Share(stay, fixedPeople, portable * (1 - f));
             double shareAfter = shareNow + relief * (shareRelieved - shareNow);
-            double sNow = NeolithicProduction.SocialCohesion(n, shareNow, residents), sAfter = NeolithicProduction.SocialCohesion(n, shareAfter, stay);
+            bool civicEnabled = CivicGovernance.Enabled(cfg);
+            double civicMult = civicEnabled ? CivicGovernance.CohesionMultiplier(w, camp) : 1;
+            double eqMult = civicEnabled ? CivicGovernance.QoLEqualityMultiplier(w, camp) : 1;
+            double sNow = NeolithicProduction.SocialCohesion(n, shareNow, residents, civicMult), sAfter = NeolithicProduction.SocialCohesion(n, shareAfter, stay, civicMult);
             double qNow = b0 * Coverage(e, housingNow) * sNow;
             double qAfter = stayFood * Coverage(e, housingAfter) * sAfter;
+            if (civicEnabled)
+            {
+                qNow = Numbers.Clamp(qNow * eqMult, 0, 1);
+                qAfter = Numbers.Clamp(qAfter * eqMult, 0, 1);
+            }
             // Q_now = 0 (no food or no coverage at all) leaves a relative gain undefined: the fallback is the cohesion gain S_after / S_now - 1,
             // the QoL a unit-coverage camp would gain, so a destitute crowded camp still feels its crowding.
             double gain = qNow > 1e-9 ? qAfter / qNow - 1 : Ratio(sAfter, sNow) - 1;
@@ -171,9 +179,16 @@ namespace Anthropocene.Simulation
                 ? e
                 : floor + (1 - floor) * Numbers.Clamp((cfg.TurnDays / cfg.DaysPerYear) / n.RudimentaryExpectationRampYears, 0, 1);
             var own = DaughterShelter(w, camp, nd);
-            double housingD = Housing(nd, own.Total), cohesionD = NeolithicProduction.SocialCohesion(n, Share(nd, own.Fixed, own.Light), nd);
+            double housingD = Housing(nd, own.Total), cohesionD = NeolithicProduction.SocialCohesion(n, Share(nd, own.Fixed, own.Light), nd, 1);
             double qd = Numbers.Clamp(vetoFood, 0, 1) * Coverage(daughterExpectation, housingD) * cohesionD;
             double qdExpected = Numbers.Clamp(daughterFood, 0, 1) * Numbers.Clamp(daughterWater, 0, 1) * Coverage(e, housingD) * cohesionD;
+            if (civicEnabled)
+            {
+                var (daughterC, daughterP) = CivicGovernance.DaughterCoordinates(w, camp);
+                double daughterEqMult = CivicGovernance.QoLEqualityMultiplierFor(cfg, daughterC, daughterP, 0);
+                qd = Numbers.Clamp(qd * daughterEqMult, 0, 1);
+                qdExpected = Numbers.Clamp(qdExpected * daughterEqMult, 0, 1);
+            }
             double daughterGain = qNow > 1e-9 ? qdExpected / qNow - 1 : (qdExpected > 1e-9 ? 1e9 : -1);
             return new Estimate { Residents = residents, Daughter = nd, QNow = qNow, QAfter = qAfter, Gain = gain, DaughterQoL = qd, StayFood = stayFood, DaughterExpected = qdExpected, DaughterGain = daughterGain };
         }
@@ -241,6 +256,7 @@ namespace Anthropocene.Simulation
         public readonly struct QoLModel
         {
             private readonly NeolithicConfig n; private readonly Camp camp; private readonly double b0, expectation; private readonly NeolithicProduction.ShelterCapacity shelter;
+            private readonly bool civicEnabled; private readonly double civicMult, eqMult;
             public readonly int Residents;
             internal QoLModel(WorldState w, Camp camp)
             {
@@ -249,15 +265,23 @@ namespace Anthropocene.Simulation
                 expectation = camp.RudimentaryExpectation > 0 ? camp.RudimentaryExpectation : floor + (1 - floor) * Numbers.Clamp(camp.StationaryYears / n.RudimentaryExpectationRampYears, 0, 1);
                 shelter = NeolithicProduction.HousingCapacity(w, camp, w.Days);
                 b0 = camp.FoodNeedsMetRatio * camp.WaterNeedsMetRatio;
+                civicEnabled = CivicGovernance.Enabled(w.Config);
+                civicMult = civicEnabled ? CivicGovernance.CohesionMultiplier(w, camp) : 1;
+                eqMult = civicEnabled ? CivicGovernance.QoLEqualityMultiplier(w, camp) : 1;
             }
-            public double At(int people) => people <= 0 ? 0 : b0 * Shape(people);
+            public double At(int people)
+            {
+                if (people <= 0) return 0;
+                double q = b0 * Shape(people);
+                return civicEnabled ? Numbers.Clamp(q * eqMult, 0, 1) : q;
+            }
             // Clothing coverage, housing per head and social cohesion at a headcount (everything in QoL except food and water).
             private double Shape(int people)
             {
                 double cloth = Math.Min(1, camp.ClothPerCapita * Residents / people), housing = NeolithicProduction.HousingCoverage(shelter, people);
                 double coverage = n.RudimentaryWeightClothing * (1 - expectation * (1 - cloth)) + n.RudimentaryWeightHousing * (1 - expectation * (1 - housing));
                 // Housing stays with the camp: arrivals dilute H (they have to be housed) and leavers raise it (they leave housing behind).
-                return coverage * NeolithicProduction.SocialCohesion(n, NeolithicProduction.HousingShare(n, shelter, people), people);
+                return coverage * NeolithicProduction.SocialCohesion(n, NeolithicProduction.HousingShare(n, shelter, people), people, civicMult);
             }
             // Forward-looking QoL at a headcount (WP10b-2): At() plus the food and water dilution that a change of headcount implies.
             //   F_hat(N') = min(1, (F * N + carried) / N'), W_hat(N') = min(1, W * N / N') when W < 1 and 1 otherwise,
@@ -267,13 +291,30 @@ namespace Anthropocene.Simulation
             public double ForwardAt(int people, double carried = 0)
             {
                 if (people <= 0) return 0;
-                return FoodAt(camp.FoodNeedsMetRatio, Residents, carried, people) * WaterAt(camp.WaterNeedsMetRatio, Residents, people) * Shape(people);
+                double q = FoodAt(camp.FoodNeedsMetRatio, Residents, carried, people) * WaterAt(camp.WaterNeedsMetRatio, Residents, people) * Shape(people);
+                return civicEnabled ? Numbers.Clamp(q * eqMult, 0, 1) : q;
             }
             // The shared dilution rule of fission (stayers), immigration (both ends) and the distress estimate: local supply over a new headcount.
             public static double FoodAt(double met, int residents, double carried, int people) => Math.Min(1, (met * residents + Math.Max(0, carried)) / people);
             public static double WaterAt(double met, int residents, int people) => met < 1 ? Math.Min(1, met * residents / people) : 1;
         }
         public static QoLModel QoLModelOf(WorldState w, Camp camp) => new QoLModel(w, camp);
+
+        public static double EffectiveMoverThreshold(WorldState w, Camp camp)
+        {
+            var cfg = w.Config;
+            double baseThreshold = Kinship.GainThreshold(cfg, camp.FissionPolicy);
+            if (!CivicGovernance.Enabled(cfg) || camp == null || !(camp.CivicComplexity > 1e-12))
+                return baseThreshold;
+            var cs = cfg.Civic;
+            double cov = CivicGovernance.CivicCoverage(w, camp);
+            double p = Numbers.Clamp(camp.CivicStratification, -1, 1);
+            double c = Numbers.Clamp(camp.CivicComplexity, 0, 1);
+            double adjusted = baseThreshold
+                + cs.FissionStratificationResistance * p * c * cov
+                - cs.FissionExitMismatchReduction * CivicGovernance.ExitMismatch(camp);
+            return Numbers.Clamp(adjusted, Math.Min(0.02, baseThreshold), Math.Max(0.50, baseThreshold));
+        }
 
         public static FissionRegime RegimeOf(WorldState world, Camp camp)
         {
@@ -521,7 +562,7 @@ namespace Anthropocene.Simulation
                 SocialRelocationDestination.NewDaughter, workforce.MoverComposition);
             var opportunity = EmploymentOpportunityMatcher.Match(context.Opportunities, request);
             var daughterAfter = context.Forecasts.Forecast(daughterState, opportunity);
-            var policy = new SocialRelocationPolicy(Kinship.GainThreshold(cfg, parent.FissionPolicy), 0,
+            var policy = new SocialRelocationPolicy(EffectiveMoverThreshold(w, parent), 0,
                 cfg.FissionDaughterMargin, cfg.FissionDaughterMargin);
             return SocialRelocationEvaluator.Evaluate(SocialRelocationDestination.NewDaughter,
                 context.Baseline(parent), source.Forecast,
@@ -546,7 +587,7 @@ namespace Anthropocene.Simulation
             int n1 = distressLegal ? Math.Max(minimum, Math.Min(largest, Math.Max(n0, short0))) : n0;
             e.Daughter = crowdLegal ? n0 : n1;
             if (!crowdLegal && !distressLegal) return e;
-            double threshold = Kinship.GainThreshold(cfg, policy), screen = cfg.FissionSearchFraction * threshold;
+            double threshold = EffectiveMoverThreshold(w, camp), screen = cfg.FissionSearchFraction * threshold;
             Estimate crowd = crowdLegal ? EstimateSplit(w, camp, n0, 1, 1) : default;
             Estimate optimistic = !distressLegal ? default : n1 == n0 && crowdLegal ? crowd : EstimateSplit(w, camp, n1, 1, 1);
             bool crowdScreen = crowdLegal && crowd.Gain >= screen, distressScreen = distressLegal && optimistic.DaughterGain >= screen;
@@ -646,18 +687,25 @@ namespace Anthropocene.Simulation
             // realized F/C/H/W are not inputs. FissionSearchFraction only lowers
             // this valid upper-bound threshold to preserve early cache searches;
             // it cannot screen a candidate that could meet the final mover gate.
-            double threshold = Kinship.GainThreshold(cfg, policy);
+            double threshold = EffectiveMoverThreshold(w, camp);
             double searchThreshold = cfg.FissionSearchFraction * threshold;
             double baselineUtility = baseline.QoL - baseline.MortalityRisk;
             var candidateSizes = DistressSizes(n1, n0, minimum, largest, distressLegal);
             double bestSourceRelief = double.NegativeInfinity;
             bool candidateCanPass = false;
             double years = cfg.TurnDays / cfg.DaysPerYear;
+            bool civicEnabled = CivicGovernance.Enabled(cfg);
+            var (daughterC, daughterP) = civicEnabled ? CivicGovernance.DaughterCoordinates(w, camp) : (0.0, 0.0);
+            double daughterEqMult = civicEnabled ? CivicGovernance.QoLEqualityMultiplierFor(cfg, daughterC, daughterP, 0) : 1;
             foreach (int candidateSize in candidateSizes)
             {
                 // Full F/C/H/W and zero linked-settlement density are the best
                 // physically possible new-site services at this headcount.
-                double daughterQoLUpper = NeolithicProduction.SocialCohesion(cfg.Neolithic, 1, candidateSize);
+                double daughterQoLUpper = civicEnabled
+                    ? Numbers.Clamp(Math.Max(
+                        NeolithicProduction.SocialCohesion(cfg.Neolithic, 0, candidateSize),
+                        NeolithicProduction.SocialCohesion(cfg.Neolithic, 1, candidateSize)) * daughterEqMult, 0, 1)
+                    : NeolithicProduction.SocialCohesion(cfg.Neolithic, 1, candidateSize);
                 var daughterRatesLower = PhysicalDemography.Rates(cfg, candidateSize, 1, 1,
                     candidateSize, false);
                 double daughterRiskLower = 1 - Math.Exp(-Math.Max(0, daughterRatesLower.Death) * years);

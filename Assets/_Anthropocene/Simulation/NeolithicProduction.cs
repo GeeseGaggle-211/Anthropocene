@@ -53,7 +53,7 @@ namespace Anthropocene.Simulation
         public static readonly string[] Convergence = { WheelAndAxle, CopperWorking };
     }
     // Append new values so existing saved/history enum ordinals remain stable.
-    public enum CraftGood { HandTools, Pots, Cloth, FarmTools, Housing, Tools, AnimalFabric, LightHousing, HerdingTools, HousingMaterial, FishingTools, CanalConstruction, CanalMaintenance }
+    public enum CraftGood { HandTools, Pots, Cloth, FarmTools, Housing, Tools, AnimalFabric, LightHousing, HerdingTools, HousingMaterial, FishingTools, CanalConstruction, CanalMaintenance, CivicConstruction, CivicMaintenance }
     public sealed class CraftRecipe
     {
         public CraftGood Good;
@@ -291,6 +291,25 @@ namespace Anthropocene.Simulation
     }
     public static class NeolithicProduction
     {
+        public static readonly CraftGood[] InfrastructureGoods =
+        {
+            CraftGood.CanalConstruction, CraftGood.CanalMaintenance,
+            CraftGood.CivicConstruction, CraftGood.CivicMaintenance
+        };
+        public static bool IsInfrastructureGood(CraftGood good)
+            => IrrigationEconomy.InfrastructureGood(good) || CivicGovernance.IsCivicGood(good);
+        internal static double InfrastructureDemand(ProductionOrder order, CraftGood good)
+            => IrrigationEconomy.InfrastructureGood(good) ? IrrigationEconomy.Demand(order, good)
+                : CivicGovernance.IsCivicGood(good) ? CivicGovernance.Demand(order, good) : 0;
+        internal static void SetInfrastructureDemand(ProductionOrder order, CraftGood good, double amount)
+        {
+            if (order == null) return;
+            double value = Math.Max(0, amount);
+            if (good == CraftGood.CanalConstruction && order.Irrigation != null) order.Irrigation.Construction = value;
+            else if (good == CraftGood.CanalMaintenance && order.Irrigation != null) order.Irrigation.Upkeep = value;
+            else if (good == CraftGood.CivicConstruction && order.Civic != null) order.Civic.Construction = value;
+            else if (good == CraftGood.CivicMaintenance && order.Civic != null) order.Civic.Upkeep = value;
+        }
         // A new segment includes its first operating period. Manufacturing demand
         // and the assembly recipe must price that same commissioning bundle.
         private static double CanalConstructionMaterials(SimulationConfig config)
@@ -323,9 +342,24 @@ namespace Anthropocene.Simulation
                         Rate = config.BaseDays / config.DaysPerYear / a.UpkeepBuilderYears, HousingMaterial = a.UpkeepHousingMaterials, Equipment = true, SpecialistOnly = true, AgricultureOnly = true }
                 }).ToArray();
             }
-            return config.NeolithicFishingEnabled ? recipes.Concat(new[] {
-                new CraftRecipe { Good = CraftGood.FishingTools, Specialist = WorkforceRoles.Carpenter, Track = NeolithicTech.Carpentry, Rate = n.FarmToolsOutput, Stone = 1, Wood = 1, Equipment = true, FishingOnly = true }
-            }).ToArray() : recipes;
+            if (config.NeolithicFishingEnabled)
+            {
+                recipes = recipes.Concat(new[] {
+                    new CraftRecipe { Good = CraftGood.FishingTools, Specialist = WorkforceRoles.Carpenter, Track = NeolithicTech.Carpentry, Rate = n.FarmToolsOutput, Stone = 1, Wood = 1, Equipment = true, FishingOnly = true }
+                }).ToArray();
+            }
+            if (CivicGovernance.Enabled(config))
+            {
+                var cv = config.Civic;
+                double intervalYears = config.BaseDays / config.DaysPerYear;
+                recipes = recipes.Concat(new[] {
+                    new CraftRecipe { Good = CraftGood.CivicConstruction, Specialist = WorkforceRoles.Builder, Track = NeolithicTech.Construction,
+                        Rate = intervalYears / cv.CivicBuildBuilderYears, HousingMaterial = cv.CivicBuildHousingMaterials, Equipment = true, SpecialistOnly = false, AgricultureOrFishing = true },
+                    new CraftRecipe { Good = CraftGood.CivicMaintenance, Specialist = WorkforceRoles.Builder, Track = NeolithicTech.Construction,
+                        Rate = intervalYears / cv.CivicMaintainBuilderYears, HousingMaterial = cv.CivicMaintainHousingMaterials, Equipment = true, SpecialistOnly = false, AgricultureOrFishing = true }
+                }).ToArray();
+            }
+            return recipes;
         }
         public static double Stock(Camp c, CraftGood good)
         {
@@ -342,7 +376,8 @@ namespace Anthropocene.Simulation
                 case CraftGood.HerdingTools: return c.Inventory.HerdingTools;
                 case CraftGood.HousingMaterial: return c.Inventory.HousingMaterial;
                 case CraftGood.FishingTools: return c.Inventory.FishingTools;
-                case CraftGood.CanalConstruction: case CraftGood.CanalMaintenance: return 0;
+                case CraftGood.CanalConstruction: case CraftGood.CanalMaintenance:
+                case CraftGood.CivicConstruction: case CraftGood.CivicMaintenance: return 0;
                 default: throw new ArgumentOutOfRangeException(nameof(good), good, "Unknown craft good.");
             }
         }
@@ -361,7 +396,8 @@ namespace Anthropocene.Simulation
                 case CraftGood.HerdingTools: return c.CraftingPriorities.HerdingTools;
                 case CraftGood.HousingMaterial: return c.CraftingPriorities.Housing;
                 case CraftGood.FishingTools: return c.CraftingPriorities.FishingTools;
-                case CraftGood.CanalConstruction: case CraftGood.CanalMaintenance: return 1;
+                case CraftGood.CanalConstruction: case CraftGood.CanalMaintenance:
+                case CraftGood.CivicConstruction: case CraftGood.CivicMaintenance: return 1;
                 default: throw new ArgumentOutOfRangeException(nameof(good), good, "Unknown craft good.");
             }
         }
@@ -369,6 +405,7 @@ namespace Anthropocene.Simulation
         {
             if (recipe == null) return false;
             if (IrrigationEconomy.InfrastructureGood(recipe.Good) && (!IrrigationEconomy.Enabled(w) || !c.People.HasTech(NeolithicTech.Irrigation))) return false;
+            if (CivicGovernance.IsCivicGood(recipe.Good) && !CivicGovernance.CivicRecipesAvailable(w, c)) return false;
             if (recipe.AgricultureOnly && !CultivationEconomy.Enabled(c)) return false;
             if (recipe.HusbandryOnly && !CultivationEconomy.HusbandryEnabled(c)) return false;
             if (recipe.AgricultureOrFishing && !CultivationEconomy.Enabled(c) &&
@@ -519,10 +556,11 @@ namespace Anthropocene.Simulation
             var n = w.Config.Neolithic;
             double residents = residentPopulation < 0 ? c.Population : residentPopulation;
             // Manufacture against housing and authorized infrastructure, net of shared stock/exports.
-            if (IrrigationEconomy.InfrastructureGood(good)) return IrrigationEconomy.Demand(order, good);
+            if (IsInfrastructureGood(good)) return InfrastructureDemand(order, good);
             if (good == CraftGood.HousingMaterial)
                 return Math.Max(0, Demand(w, c, CraftGood.Housing, years, residentPopulation, fieldWorkAlreadyResolved, potsAlreadyDecayed, knownSources, order) +
-                    (w.Config.Agriculture == null ? 0 : IrrigationEconomy.Demand(order, CraftGood.CanalConstruction) * CanalConstructionMaterials(w.Config) + IrrigationEconomy.Demand(order, CraftGood.CanalMaintenance) * w.Config.Agriculture.UpkeepHousingMaterials) - (Math.Max(0, c.Inventory.HousingMaterial) - c.TradeExport(CraftGood.HousingMaterial)));
+                    (w.Config.Agriculture == null ? 0 : IrrigationEconomy.Demand(order, CraftGood.CanalConstruction) * CanalConstructionMaterials(w.Config) + IrrigationEconomy.Demand(order, CraftGood.CanalMaintenance) * w.Config.Agriculture.UpkeepHousingMaterials) +
+                    CivicGovernance.InfrastructureHousingMaterials(w.Config, order) - (Math.Max(0, c.Inventory.HousingMaterial) - c.TradeExport(CraftGood.HousingMaterial)));
             if (good == CraftGood.HandTools || good == CraftGood.Tools)
             {
                 var tools = ToolReplacementDemands(w, c, years, residents, fieldWorkAlreadyResolved, potsAlreadyDecayed, knownSources, order);
@@ -604,7 +642,7 @@ namespace Anthropocene.Simulation
             double BaseDemand(CraftGood good)
             {
                 if (!baseDemand.TryGetValue(good, out double value))
-                    baseDemand[good] = value = DemandWithoutToolReplacement(w, c, good, years, residents, fieldWorkAlreadyResolved, potsAlreadyDecayed);
+                    baseDemand[good] = value = DemandWithoutToolReplacement(w, c, good, years, residents, fieldWorkAlreadyResolved, potsAlreadyDecayed, order);
                 return value;
             }
             var recipes = ProductionOrder.Sort(Recipes(w.Config).Where(r => (r.Equipment || r.Good == CraftGood.HousingMaterial) && RecipeAvailable(w, c, r)),
@@ -665,7 +703,7 @@ namespace Anthropocene.Simulation
                 if (recipe.AnimalFood > 0) amount = Math.Min(amount, probeAnimalFood / recipe.AnimalFood);
                 if (recipe.AnimalFabric > 0) amount = Math.Min(amount, probeAnimalFabric / recipe.AnimalFabric);
                 if (recipe.HousingMaterial > 0) amount = Math.Min(amount, probeHousingMaterial / recipe.HousingMaterial);
-                if (recipe.Good == CraftGood.HousingMaterial) amount = Math.Min(wanted, FlatHousingMaterialLimit(rate, availableLabor, wanted, probeHousingMaterial));
+                if (recipe.Good == CraftGood.HousingMaterial && order?.HasInfrastructure != true) amount = Math.Min(wanted, FlatHousingMaterialLimit(rate, availableLabor, wanted, probeHousingMaterial));
                 if (amount <= 1e-12) continue;
                 availableLabor -= amount / rate;
                 probeLabor[role] = availableLabor;
@@ -705,7 +743,7 @@ namespace Anthropocene.Simulation
                 if (recipe.AnimalFood > 0) amount = Math.Min(amount, animalFood / recipe.AnimalFood);
                 if (recipe.AnimalFabric > 0) amount = Math.Min(amount, animalFabric / recipe.AnimalFabric);
                 if (recipe.HousingMaterial > 0) amount = Math.Min(amount, housingMaterial / recipe.HousingMaterial);
-                if (recipe.Good == CraftGood.HousingMaterial) amount = Math.Min(amount, FlatHousingMaterialLimit(rate, availableLabor, wanted, housingMaterial));
+                if (recipe.Good == CraftGood.HousingMaterial && order?.HasInfrastructure != true) amount = Math.Min(amount, FlatHousingMaterialLimit(rate, availableLabor, wanted, housingMaterial));
                 if (amount <= 1e-12) { housingPlan.Settle(recipe, role); continue; }
                 availableLabor -= amount / rate;
                 labor[role] = availableLabor;
@@ -777,19 +815,25 @@ namespace Anthropocene.Simulation
                 (1 + competingRate / Math.Max(1e-12, generalistRate));
             return (specialistOutput + generalistOutput, 0);
         }
-        private static double DemandWithoutToolReplacement(WorldState w, Camp c, CraftGood good, double years, double residents, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed)
+        private static double DemandWithoutToolReplacement(WorldState w, Camp c, CraftGood good, double years, double residents, bool fieldWorkAlreadyResolved, bool potsAlreadyDecayed, ProductionOrder order = null)
         {
             if (good == CraftGood.FarmTools) return Math.Max(0, FarmToolDemand(w, c, years, fieldWorkAlreadyResolved)) + c.TradeExport(good);
             if (good == CraftGood.FishingTools) return FishingToolDemand(w, c, years, fieldWorkAlreadyResolved);
-            return Demand(w, c, good, years, residents, fieldWorkAlreadyResolved, potsAlreadyDecayed);
+            return Demand(w, c, good, years, residents, fieldWorkAlreadyResolved, potsAlreadyDecayed, null, order);
         }
         private static double IntervalsForYears(WorldState w, double years) => Math.Max(0, years) * w.Config.DaysPerYear / w.Config.BaseDays;
+        private static double BaseNaturalStorageCapacity(WorldState w, Camp c, double residents = -1)
+        {
+            double population = NaturalStoragePopulation(w, c, residents);
+            return PhysicalFoodTimebase.StockForReferenceHorizon(w, population, TurnResolver.StorageGenerations(w, c.Tile));
+        }
         // `intervals` remains in the signature for existing callers; the stored
         // capacity is fixed by site and physical storage years, never this turn.
         public static double NaturalStorageCapacity(WorldState w, Camp c, double intervals, double residents = -1)
         {
-            double population = NaturalStoragePopulation(w, c, residents);
-            return PhysicalFoodTimebase.StockForReferenceHorizon(w, population, TurnResolver.StorageGenerations(w, c.Tile));
+            double baseCap = BaseNaturalStorageCapacity(w, c, residents);
+            double mult = CivicGovernance.GranaryStorageMultiplier(w, c);
+            return mult == 1 ? baseCap : baseCap * mult;
         }
         public static double NaturalStoragePopulation(WorldState w, Camp c, double residents = -1)
         {
@@ -833,7 +877,10 @@ namespace Anthropocene.Simulation
         {
             var n = w.Config.Neolithic;
             double retainedPots = Math.Max(0, c.Inventory.Pots) * Math.Pow(1 - n.PotDecayPerReferenceTurn, Math.Max(0, years) / n.ReferenceTurnYears);
-            return NaturalStorageCapacity(w, c, 0) + retainedPots * n.PotStorageFoodPerUnit;
+            double baseNatural = BaseNaturalStorageCapacity(w, c);
+            double mult = CivicGovernance.GranaryStorageMultiplierLowerBound(w, c, years);
+            double natural = mult == 1 ? baseNatural : baseNatural * mult;
+            return natural + retainedPots * n.PotStorageFoodPerUnit;
         }
         public static double FabricFeedstockNeed(WorldState w, Camp c, double intervals, double years, double residentPopulation = -1, bool fieldWorkAlreadyResolved = false, bool potsAlreadyDecayed = false)
         {
@@ -972,7 +1019,7 @@ namespace Anthropocene.Simulation
                 planned[recipe.Good] = Math.Min(usefulDemand, recipe.Equipment
                     ? coverage.Capacity(recipe.Good, rate, workerIntervals)
                     : recipe.Good == CraftGood.HousingMaterial
-                        ? (order?.Irrigation != null ? coverage.HousingMaterialCapacity(rate, workerIntervals) : coverage.Capacity(recipe.Good, rate, workerIntervals))
+                        ? (order?.HasInfrastructure == true ? coverage.HousingMaterialCapacity(rate, workerIntervals) : coverage.Capacity(recipe.Good, rate, workerIntervals))
                         : workerIntervals * rate);
                 housing = MaterialEconomy.PlanHousingMaterials(w, c, Recipes(w.Config), planned, intervals * w.Config.BaseDays / w.Config.DaysPerYear, w.Days, null, order);
             }
@@ -982,7 +1029,7 @@ namespace Anthropocene.Simulation
             double labor = workerIntervals;
             // Housing Material shares its Builder pool with the assembly that will
             // consume it, so it never takes labour the assembly needs this turn.
-            double amount = recipe.Good == CraftGood.HousingMaterial && order?.Irrigation == null
+            double amount = recipe.Good == CraftGood.HousingMaterial && order?.HasInfrastructure != true
                 ? ExportedHousingMaterialLimit(coverage, rate, labor, usefulDemand, c.Inventory.HousingMaterial - c.TradeHeldForExport(CraftGood.HousingMaterial), c.TradeOutstanding(CraftGood.HousingMaterial))
                 : Math.Min(usefulDemand, recipe.Equipment
                     ? coverage.Capacity(recipe.Good, rate, labor)
@@ -1000,7 +1047,7 @@ namespace Anthropocene.Simulation
             if (recipe.AnimalFood > 0) amount = Math.Min(amount, c.AnimalFood / recipe.AnimalFood);
             double foodLimit = amount;
             // Goods already made for export after production (Docs/Trade.md) are not inputs.
-            if (IrrigationEconomy.InfrastructureGood(recipe.Good)) amount = Math.Min(amount, IrrigationEconomy.Demand(order, recipe.Good));
+            if (IsInfrastructureGood(recipe.Good)) amount = Math.Min(amount, InfrastructureDemand(order, recipe.Good));
             if (recipe.AnimalFabric > 0) amount = Math.Min(amount, Math.Max(0, inv.AnimalFabric - c.TradeHeldForExport(CraftGood.AnimalFabric)) / recipe.AnimalFabric);
             if (recipe.HousingMaterial > 0) amount = Math.Min(amount, Math.Max(0, inv.HousingMaterial - c.TradeHeldForExport(CraftGood.HousingMaterial)) / recipe.HousingMaterial);
             // A recipe ranked below Housing Material leaves the Wood/Clay its
@@ -1041,7 +1088,7 @@ namespace Anthropocene.Simulation
             double toolsBeforeBudget = recipe.Equipment ? coverage.ToolsConsumed : 0;
             double used = recipe.Equipment ? coverage.Spend(recipe.Good, rate, amount)
                 : recipe.Good == CraftGood.HousingMaterial
-                    ? (order?.Irrigation != null ? coverage.HousingMaterialTime(rate, amount) : coverage.Time(recipe.Good, rate, amount))
+                    ? (order?.HasInfrastructure == true ? coverage.HousingMaterialTime(rate, amount) : coverage.Time(recipe.Good, rate, amount))
                     : amount / rate;
             // Spend reports cumulative budget use. Debit only this receipt's
             // delta while keeping the budget shared across all production calls.
@@ -1050,7 +1097,7 @@ namespace Anthropocene.Simulation
             inv.HandTools -= consumedHand; inv.Tools -= consumedTools;
             inv.Stone -= amount * recipe.Stone; inv.Wood -= wood; inv.Clay -= clay; c.PlantFood -= amount * recipe.PlantFood; c.AnimalFood -= amount * recipe.AnimalFood; inv.AnimalFabric -= amount * recipe.AnimalFabric; inv.HousingMaterial -= amount * recipe.HousingMaterial;
             if (housing != null) housing.CompleteDirect(recipe, amount);
-            switch (recipe.Good) { case CraftGood.HandTools: inv.HandTools += amount; break; case CraftGood.Pots: inv.Pots += amount; break; case CraftGood.Cloth: inv.Cloth += amount; break; case CraftGood.FarmTools: inv.FarmTools += amount; break; case CraftGood.Housing: AddFixedHousing(w, c, amount, record.Duration > 0 ? record.StartDays + record.Duration : w.Days + intervals * w.Config.BaseDays); break; case CraftGood.Tools: inv.Tools += amount; break; case CraftGood.AnimalFabric: inv.AnimalFabric += amount; break; case CraftGood.LightHousing: inv.LightHousingUnits += amount; break; case CraftGood.HerdingTools: inv.HerdingTools += amount; break; case CraftGood.HousingMaterial: inv.HousingMaterial += amount; break; case CraftGood.FishingTools: inv.FishingTools += amount; break; case CraftGood.CanalConstruction: case CraftGood.CanalMaintenance: IrrigationEconomy.Produce(w, c, recipe.Good, amount, order, record.StartDays + record.Duration); break; default: throw new ArgumentOutOfRangeException(nameof(recipe.Good), recipe.Good, "Unknown craft good."); }
+            switch (recipe.Good) { case CraftGood.HandTools: inv.HandTools += amount; break; case CraftGood.Pots: inv.Pots += amount; break; case CraftGood.Cloth: inv.Cloth += amount; break; case CraftGood.FarmTools: inv.FarmTools += amount; break; case CraftGood.Housing: AddFixedHousing(w, c, amount, record.Duration > 0 ? record.StartDays + record.Duration : w.Days + intervals * w.Config.BaseDays); break; case CraftGood.Tools: inv.Tools += amount; break; case CraftGood.AnimalFabric: inv.AnimalFabric += amount; break; case CraftGood.LightHousing: inv.LightHousingUnits += amount; break; case CraftGood.HerdingTools: inv.HerdingTools += amount; break; case CraftGood.HousingMaterial: inv.HousingMaterial += amount; break; case CraftGood.FishingTools: inv.FishingTools += amount; break; case CraftGood.CanalConstruction: case CraftGood.CanalMaintenance: IrrigationEconomy.Produce(w, c, recipe.Good, amount, order, record.StartDays + record.Duration); break; case CraftGood.CivicConstruction: case CraftGood.CivicMaintenance: break; default: throw new ArgumentOutOfRangeException(nameof(recipe.Good), recipe.Good, "Unknown craft good."); }
             // Output first fills what this camp still owes for export; Hand Tools made for export are not this turn's coverage.
             double forExport = c.TradeOwed == null ? 0 : Math.Min(amount, Math.Max(0, c.TradeOwed[(int)recipe.Good]));
             if (forExport > 0) c.TradeOwed[(int)recipe.Good] -= forExport;
@@ -1088,6 +1135,7 @@ namespace Anthropocene.Simulation
             c.TradeExports = (double[])needs?.Exports?.Clone(); c.TradeOwed = (double[])c.TradeExports?.Clone();
             DepreciateHousing(w, c, years, residents);
             DepreciatePots(w, c, years);
+            double civicMaintPaid = 0, civicBuilt = 0;
             if (CultivationEconomy.EconomyEnabled(w, c))
             {
                 var recipes = Recipes(w.Config);
@@ -1137,7 +1185,7 @@ namespace Anthropocene.Simulation
                         if (Priority(c, recipe.Good) <= 0) continue;
                         double labor = laborByRole[role];
                         double target = needs?.Production != null
-                            ? Math.Max(0, needs.Production[recipe.Good] - (produced.TryGetValue(recipe.Good, out double made) ? made : 0))
+                            ? Math.Max(0, (needs.Production.TryGetValue(recipe.Good, out double plannedTarget) ? plannedTarget : 0) - (produced.TryGetValue(recipe.Good, out double made) ? made : 0))
                             : Demand(w, c, recipe.Good, years, -1, true, true, null, order);
                         int before = record.Production.Count;
                         labor -= Produce(w, c, recipe, role, labor, intervals, target, ref equipment, record, coverage, housing, order);
@@ -1147,24 +1195,30 @@ namespace Anthropocene.Simulation
                             produced[recipe.Good] = (produced.TryGetValue(recipe.Good, out double prior) ? prior : 0) + record.Production[record.Production.Count - 1].Output;
                     }
                 }
+                produced.TryGetValue(CraftGood.CivicMaintenance, out civicMaintPaid);
+                produced.TryGetValue(CraftGood.CivicConstruction, out civicBuilt);
             }
+            // Atomic post-Layer-1 commit outside EconomyEnabled so existing CivicCapital still decays analytically.
+            CivicGovernance.CommitCapitals(w, c, years, civicMaintPaid, civicBuilt);
             c.TradeExports = null; c.TradeOwed = null;
             if (resolveNeeds) ResolveNeeds(w, c, years, residents);
         }
-        // Derived social-cohesion scale (Docs/SocialCohesion.md): N_s = N_band (1 + k H) with the housing share H from
-        // HousingShare. No technology or regime label enters; a camp with no housing has N_s = N_band.
-        public static double CohesionScale(NeolithicConfig n, double housingShare)
-            => n.CohesionBandScale * (1 + n.CohesionHousingGain * Numbers.Clamp(housingShare, 0, 1));
+        // Derived social-cohesion scale (Docs/SocialCohesion.md): N_s = N_band (1 + k H) * civicMultiplier.
+        public static double CohesionScale(NeolithicConfig n, double housingShare, double civicMultiplier = 1)
+        {
+            double baseScale = n.CohesionBandScale * (1 + n.CohesionHousingGain * Numbers.Clamp(housingShare, 0, 1));
+            return civicMultiplier == 1 ? baseScale : baseScale * Math.Max(1e-12, civicMultiplier);
+        }
         // S(N) = exp(-(N / N_s)^beta): the single shared social-cohesion multiplier at an explicit housing share.
-        public static double SocialCohesion(NeolithicConfig n, double housingShare, double population)
-            => Math.Exp(-Math.Pow(Math.Max(0, population) / CohesionScale(n, housingShare), n.SocialCohesionExponent));
+        public static double SocialCohesion(NeolithicConfig n, double housingShare, double population, double civicMultiplier = 1)
+            => Math.Exp(-Math.Pow(Math.Max(0, population) / CohesionScale(n, housingShare, civicMultiplier), n.SocialCohesionExponent));
         // Pure: the camp's committed housing capacity at the present clock, evaluated at the cohort size N.
         public static double CohesionScale(WorldState w, Camp c, double population)
-            => CohesionScale(w.Config.Neolithic, HousingShare(w.Config.Neolithic, HousingCapacity(w, c, w.Days), population));
+            => CohesionScale(w.Config.Neolithic, HousingShare(w.Config.Neolithic, HousingCapacity(w, c, w.Days), population), CivicGovernance.CohesionMultiplier(w, c));
         public static double SocialCohesion(WorldState w, Camp c, double population)
         {
             var n = w.Config.Neolithic;
-            return SocialCohesion(n, HousingShare(n, HousingCapacity(w, c, w.Days), population), population);
+            return SocialCohesion(n, HousingShare(n, HousingCapacity(w, c, w.Days), population), population, CivicGovernance.CohesionMultiplier(w, c));
         }
         public static void ResolveNeeds(WorldState w, Camp c, double years, int residents = -1)
         {
@@ -1183,7 +1237,11 @@ namespace Anthropocene.Simulation
             c.StationaryYears += years;
             c.RudimentaryExpectation = n.RudimentaryExpectationFloor + (1 - n.RudimentaryExpectationFloor) * Numbers.Clamp(c.StationaryYears / n.RudimentaryExpectationRampYears, 0, 1);
             double clothing = 1 - c.RudimentaryExpectation * (1 - c.ClothPerCapita), housing = 1 - c.RudimentaryExpectation * (1 - c.HousingPerCapita);
-            c.QoL = c.FoodNeedsMetRatio * c.WaterNeedsMetRatio * (n.RudimentaryWeightClothing * clothing + n.RudimentaryWeightHousing * housing) * SocialCohesion(n, HousingShare(n, shelter, cohort), cohort);
+            double baseQoL = c.FoodNeedsMetRatio * c.WaterNeedsMetRatio * (n.RudimentaryWeightClothing * clothing + n.RudimentaryWeightHousing * housing)
+                * SocialCohesion(n, HousingShare(n, shelter, cohort), cohort, CivicGovernance.CohesionMultiplier(w, c));
+            c.QoL = CivicGovernance.Enabled(w.Config)
+                ? Numbers.Clamp(baseQoL * CivicGovernance.QoLEqualityMultiplier(w, c), 0, 1)
+                : baseQoL;
         }
 
         // Reconcile the existing composite experienced-welfare signal with the physical coverage that the demographic
@@ -1200,9 +1258,12 @@ namespace Anthropocene.Simulation
             c.HousingPerCapita = Numbers.Clamp(housingCoverage, 0, 1);
             double clothing = 1 - c.RudimentaryExpectation * (1 - c.ClothPerCapita);
             double housing = 1 - c.RudimentaryExpectation * (1 - c.HousingPerCapita);
-            c.QoL = c.FoodNeedsMetRatio * c.WaterNeedsMetRatio
+            double baseQoL = c.FoodNeedsMetRatio * c.WaterNeedsMetRatio
                 * (n.RudimentaryWeightClothing * clothing + n.RudimentaryWeightHousing * housing)
-                * SocialCohesion(n, HousingShare(n, shelter, people), people);
+                * SocialCohesion(n, HousingShare(n, shelter, people), people, CivicGovernance.CohesionMultiplier(w, c));
+            c.QoL = CivicGovernance.Enabled(w.Config)
+                ? Numbers.Clamp(baseQoL * CivicGovernance.QoLEqualityMultiplier(w, c), 0, 1)
+                : baseQoL;
         }
     }
 }

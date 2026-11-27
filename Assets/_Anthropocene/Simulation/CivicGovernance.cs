@@ -199,6 +199,11 @@ namespace Anthropocene.Simulation
         public double CivicCoverage, SanitationCoverage;
     }
 
+    public sealed class CivicOrder
+    {
+        public double Construction, Upkeep;
+    }
+
     public readonly struct CivicEnvironmentDrivers
     {
         public readonly double D1, D2, D3, D4;
@@ -306,6 +311,117 @@ namespace Anthropocene.Simulation
 
         public static bool SanitationRecipesAvailable(WorldState w, Camp c)
             => SanitationEnabled(w?.Config) && c?.People != null && c.People.HasCivicPrecedent(CivicPrecedents.PlannedQuartersAndDrainage);
+
+        public static bool IsCivicGood(CraftGood good)
+            => good == CraftGood.CivicConstruction || good == CraftGood.CivicMaintenance;
+
+        public static bool IsPublicWorksGood(CraftGood good)
+            => NeolithicProduction.IsInfrastructureGood(good);
+
+        internal static double Demand(ProductionOrder order, CraftGood good)
+            => order?.Civic == null ? 0
+                : good == CraftGood.CivicConstruction ? NonNegativeFinite(order.Civic.Construction)
+                : good == CraftGood.CivicMaintenance ? NonNegativeFinite(order.Civic.Upkeep) : 0;
+
+        internal static double InfrastructureHousingMaterials(SimulationConfig cfg, ProductionOrder order)
+        {
+            if (!Enabled(cfg) || order?.Civic == null) return 0;
+            var s = cfg.Civic;
+            double build = Demand(order, CraftGood.CivicConstruction) * NonNegativeFinite(s.CivicBuildHousingMaterials);
+            double maint = Demand(order, CraftGood.CivicMaintenance) * NonNegativeFinite(s.CivicMaintainHousingMaterials);
+            return NonNegativeFinite(build + maint);
+        }
+
+        public static double EffectiveCivicDecayRate(WorldState w, Camp c)
+        {
+            if (w == null || c == null || !Enabled(w.Config)) return 0;
+            double rate = NonNegativeFinite(w.Config.Civic.CivicCapitalDecayPerYear) * AlignmentFriction(w, c);
+            return NonNegativeFinite(rate);
+        }
+
+        public static double ProjectedLowerBoundCivicCapital(WorldState w, Camp c, double years)
+        {
+            if (w == null || c == null || !Enabled(w.Config)) return 0;
+            double kOpen = NonNegativeFinite(c.CivicCapital);
+            if (!(kOpen > 0)) return 0;
+            if (!(years > 0) || double.IsNaN(years)) return kOpen;
+            double rate = EffectiveCivicDecayRate(w, c);
+            if (!(rate > 0)) return kOpen;
+            double dtDecay = double.IsInfinity(years) ? double.PositiveInfinity : rate * years;
+            return dtDecay > 709.0 ? 0 : kOpen * Math.Exp(-dtDecay);
+        }
+
+        public static double GranaryStorageMultiplierLowerBound(WorldState w, Camp c, double years)
+            => w == null || c == null || !Enabled(w.Config)
+                ? 1
+                : GranaryStorageMultiplier(w, c, ProjectedLowerBoundCivicCapital(w, c, years));
+
+        public static double CivicMaintenanceTarget(WorldState w, Camp c, double years,
+            double? complexityOverride = null, double? populationOverride = null)
+        {
+            if (w == null || c == null || !Enabled(w.Config) || !(years > 0) || double.IsNaN(years)) return 0;
+            double kOpen = NonNegativeFinite(c.CivicCapital);
+            if (!(kOpen > Epsilon)) return 0;
+            double pop = populationOverride ?? c.Population;
+            double comp = complexityOverride ?? c.CivicComplexity;
+            double req = RequiredCivicCapital(w.Config, pop, comp, c.CivicStratification);
+            double capped = Math.Min(kOpen, NonNegativeFinite(req));
+            if (!(capped > 0)) return 0;
+            double rate = EffectiveCivicDecayRate(w, c);
+            if (!(rate > 0)) return 0;
+            if (double.IsInfinity(years)) return double.MaxValue;
+            return NonNegativeFinite(rate * capped * years);
+        }
+
+        // Pure semigroup-exact dt-invariant excess-decay retention law (Docs/CivicGovernance.md §5 Choice #3):
+        // K_maint = min(K_open, u_paid / (delta_eff * dt))
+        // K_retained = K_maint + (K_open - K_maint) * exp(-delta_eff * dt)
+        public static double RetainCapital(double opening, double decayRate, double years, double maintPaid)
+        {
+            double kOpen = NonNegativeFinite(opening);
+            if (!(kOpen > 0)) return 0;
+            if (!(years > 0) || double.IsNaN(years) || !(decayRate > 0) || double.IsNaN(decayRate)) return kOpen;
+            double dtDecay = double.IsInfinity(years) || double.IsInfinity(decayRate) ? double.PositiveInfinity : decayRate * years;
+            if (!(dtDecay > 0)) return kOpen;
+            double paid = NonNegativeFinite(maintPaid);
+            double kMaint = !(paid > 0) || double.IsInfinity(dtDecay) ? 0 : Math.Min(kOpen, paid / dtDecay);
+            if (kMaint >= kOpen) return kOpen;
+            double decayFactor = dtDecay > 709.0 ? 0.0 : Math.Exp(-dtDecay);
+            double lower = kOpen * decayFactor;
+            if (!(kMaint > 0)) return NonNegativeFinite(lower);
+            double retained = dtDecay <= 0.5
+                ? kOpen + (kOpen - kMaint) * PhysicalDemography.Expm1(-dtDecay)
+                : kMaint + (kOpen - kMaint) * decayFactor;
+            return NonNegativeFinite(Math.Max(lower, Math.Min(kOpen, retained)));
+        }
+
+        // Phase 1B atomic post-Layer-1 commit for CivicCapital only (SanitationCapital commit deferred to Phase 2).
+        public static void CommitCapitals(WorldState w, Camp c, double years, double civicMaintPaid, double civicBuilt)
+        {
+            if (w == null || c == null || !Enabled(w.Config)) return;
+            double retained = RetainCapital(c.CivicCapital, EffectiveCivicDecayRate(w, c), years, civicMaintPaid);
+            c.CivicCapital = NonNegativeFinite(retained + NonNegativeFinite(civicBuilt));
+        }
+
+        // Tier 3A trade helpers (pure & thread-safe for Trade.Plan parallel workers).
+        public static bool HasAccounting(WorldState w, Camp c)
+            => Enabled(w?.Config) && c?.People != null && c.People.HasCivicPrecedent(CivicPrecedents.TokensAndAccounting);
+
+        public static int ExtraTradeRange(WorldState w, Camp c)
+            => HasAccounting(w, c) ? Math.Max(0, w.Config.Civic.TokensTradeRangeBonus) : 0;
+
+        public static int ExtraTradeRequisitions(WorldState w, Camp c)
+            => HasAccounting(w, c) ? Math.Max(0, w.Config.Civic.TokensTradeRequisitionBonus) : 0;
+
+        public static double TradeMarginMultiplier(SimulationConfig cfg, bool requesterAccounting, bool responderAccounting)
+        {
+            if (!Enabled(cfg) || (!requesterAccounting && !responderAccounting)) return 1.0;
+            double keep = 1.0 - Numbers.Clamp(cfg.Civic.TokensMarginReduction, 0, 0.9);
+            double mult = 1.0;
+            if (requesterAccounting) mult *= keep;
+            if (responderAccounting) mult *= keep;
+            return mult;
+        }
 
         // Pure alignment, staffing, capital & coverage laws (Docs/CivicGovernance.md §5 Choice #3)
         public static double AlignmentFriction(SimulationConfig cfg, double stratification, double envStratification)
@@ -460,20 +576,25 @@ namespace Anthropocene.Simulation
         }
 
         // Mitigation, cohesion, QoL & continuous P trade-offs (Docs/CivicGovernance.md §5 Choices #4 & #5)
-        public static double CrowdingMitigationFor(SimulationConfig cfg, double complexity, double stratification, double coverage)
+        public static double CrowdingMitigationAlpha(SimulationConfig cfg, double complexity, double stratification)
         {
-            if (!Enabled(cfg) || !(complexity > Epsilon) || !(coverage > 0) || double.IsNaN(stratification)) return 1;
+            if (!Enabled(cfg) || !(complexity > Epsilon) || double.IsNaN(stratification)) return 0;
             var s = cfg.Civic;
             double c = Numbers.Clamp(complexity, 0, 1);
             double p = Numbers.Clamp(stratification, -1, 1);
-            double cov = Numbers.Clamp(coverage, 0, 1);
             double cp = Math.Pow(c, s.CrowdingShapeExponent);
             double denom = -PhysicalDemography.Expm1(-s.CrowdingShapeRate);
             double fc = s.CrowdingShapeRate > 1e-16 && denom > 0
                 ? Numbers.Clamp((-PhysicalDemography.Expm1(-s.CrowdingShapeRate * cp)) / denom, 0, 1)
                 : cp;
-            double alpha = Numbers.Clamp((s.CrowdingMitigationBase + s.CrowdingMitigationStratBonus * p * c) * fc, 0, 1 - s.MinCrowdingMitigation);
-            return Numbers.Clamp(1 - alpha * cov, s.MinCrowdingMitigation, 1);
+            return Numbers.Clamp((s.CrowdingMitigationBase + s.CrowdingMitigationStratBonus * p * c) * fc, 0, 1 - s.MinCrowdingMitigation);
+        }
+        public static double CrowdingMitigationFor(SimulationConfig cfg, double complexity, double stratification, double coverage)
+        {
+            if (!Enabled(cfg) || !(complexity > Epsilon) || !(coverage > 0) || double.IsNaN(stratification)) return 1;
+            double cov = Numbers.Clamp(coverage, 0, 1);
+            double alpha = CrowdingMitigationAlpha(cfg, complexity, stratification);
+            return Numbers.Clamp(1 - alpha * cov, cfg.Civic.MinCrowdingMitigation, 1);
         }
         public static double CrowdingMitigation(WorldState w, Camp c)
             => w == null || c == null || !Enabled(w.Config) ? 1 : CrowdingMitigationFor(w.Config, c.CivicComplexity, c.CivicStratification, CivicCoverage(w, c));
@@ -628,15 +749,17 @@ namespace Anthropocene.Simulation
         }
 
         // UI / Hover display classification only; never feeds P*.
-        public static string EffectiveFocusLabel(Camp c)
+        public static string EffectiveFocusLabel(CivicFocus focus, double envStratification)
         {
-            if (c == null) return "Hybrid";
-            if (c.CivicFocus == CivicFocus.Communal) return "Communal";
-            if (c.CivicFocus == CivicFocus.Centralized) return "Centralized";
-            if (c.LastEnvironmentalStratification <= -0.15) return "Communal";
-            if (c.LastEnvironmentalStratification >= 0.15) return "Centralized";
+            if (focus == CivicFocus.Communal) return "Communal";
+            if (focus == CivicFocus.Centralized) return "Centralized";
+            if (double.IsNaN(envStratification)) return "Hybrid";
+            if (envStratification <= -0.15) return "Communal";
+            if (envStratification >= 0.15) return "Centralized";
             return "Hybrid";
         }
+        public static string EffectiveFocusLabel(Camp c)
+            => c == null ? "Hybrid" : EffectiveFocusLabel(c.CivicFocus, c.LastEnvironmentalStratification);
 
         // Fission daughter dampening, abandonment & copy helpers (Docs/CivicGovernance.md §3.2 & §5 Choice #2)
         public static (double Complexity, double Stratification) DaughterCoordinates(WorldState w, Camp parent)

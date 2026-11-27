@@ -108,7 +108,7 @@ namespace Anthropocene.Presentation
                     else if (society.Player == prior) society.Player = 0;
             Ownership.Bind(world);
             drafting = null;
-            planned.Clear();
+            ClearPlanned();
             center = cameraTile >= 0 ? cameraTile : target.Tile;
             selected = target.Id;
             inspected = center;

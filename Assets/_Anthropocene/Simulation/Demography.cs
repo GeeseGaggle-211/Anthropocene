@@ -75,7 +75,11 @@ namespace Anthropocene.Simulation
         [ThreadStatic] internal static Func<WorldState, Camp, double> AdditionalMortalityOverride;
 
         public static double FertilityFactor(WorldState world, Camp camp) => FertilityFactorOverride != null ? FertilityFactorOverride(world, camp) : 1;
-        public static double CrowdingMitigation(WorldState world, Camp camp) => CrowdingMitigationOverride != null ? CrowdingMitigationOverride(world, camp) : 1;
+        public static double CrowdingMitigation(WorldState world, Camp camp)
+            => CrowdingMitigationOverride != null ? CrowdingMitigationOverride(world, camp)
+                : world != null && CivicGovernance.Enabled(world.Config) && camp != null && camp.Population > 0
+                    ? CivicGovernance.CrowdingMitigation(world, camp)
+                    : 1;
         public static double DiseaseMitigation(WorldState world, Camp camp) => DiseaseMitigationOverride != null ? DiseaseMitigationOverride(world, camp) : 1;
         public static double AdditionalMortality(WorldState world, Camp camp) => AdditionalMortalityOverride != null ? AdditionalMortalityOverride(world, camp) : 0;
 
@@ -97,6 +101,13 @@ namespace Anthropocene.Simulation
             => config.Neolithic.FabricConsumptionPerPersonTurn / config.Neolithic.ReferenceTurnYears;
         public static double StarvationGraceYears(SimulationConfig config)
             => config.StarvationGraceTurns * config.Neolithic.ReferenceTurnYears;
+
+        // Unmitigated crowding mortality rate d_crowd(N) = c_1000 * Phi(N; k_c) for DemandControl PriorityScore.
+        internal static double CrowdingMortalityRate(SimulationConfig config, double population)
+        {
+            if (config == null || !(population > 0) || !Finite(population)) return 0;
+            return config.CrowdingMortalityRateAt1000 * ExponentialExcess(population, config.CrowdingExponent);
+        }
 
         public static DemographicRates Rates(SimulationConfig config, double population, double nutrition,
             double clothingCoverage, double housingCapacity, bool legacyStarvationActive = false,
