@@ -15,6 +15,12 @@ internal static class CivicGovernanceChecks
     private static void Check(bool ok, string message) { checks++; if (!ok) throw new Exception("Civic governance: " + message); }
     private static void Near(double value, double expected, string message, double tolerance = 1e-8)
         => Check(Math.Abs(value - expected) <= tolerance * Math.Max(1.0, Math.Abs(expected)), message + $" ({value} != {expected})");
+    private static void NearRelative(double value, double expected, string message, double relTolerance = 1e-12)
+        => Check(expected != 0.0 && !double.IsNaN(expected) && !double.IsInfinity(expected)
+            && !double.IsNaN(value) && !double.IsInfinity(value)
+            && relTolerance >= 0.0 && !double.IsNaN(relTolerance) && !double.IsInfinity(relTolerance)
+            && Math.Abs(value - expected) <= relTolerance * Math.Abs(expected),
+            message + $" ({value} != {expected})");
     private static void ExpectThrows<TException>(Action action, string message) where TException : Exception
     {
         bool threw = false;
@@ -1366,9 +1372,9 @@ internal static class CivicGovernanceChecks
             }
         };
         asymRateCfg.Validate();
-        Near(CivicGovernance.RequiredStewards(asymRateCfg, 1000.0, 1.0, -1.0, false, -1.0), 1000.0 * 1e-20, "StewardRate exact egalitarian endpoint at P=-1", 1e-12);
+        NearRelative(CivicGovernance.RequiredStewards(asymRateCfg, 1000.0, 1.0, -1.0, false, -1.0), 1000.0 * 1e-20, "StewardRate exact egalitarian endpoint at P=-1", 1e-12);
         Near(CivicGovernance.RequiredStewards(asymRateCfg, 1000.0, 1.0,  1.0, false,  1.0), 1000.0 * 1e20,  "StewardRate exact stratified endpoint at P=+1", 1e-12);
-        Near(CivicGovernance.RequiredCivicCapital(asymRateCfg, 1000.0, 1.0, -1.0), 1000.0 * 1e-20, "CapitalPerPerson exact egalitarian endpoint at P=-1", 1e-12);
+        NearRelative(CivicGovernance.RequiredCivicCapital(asymRateCfg, 1000.0, 1.0, -1.0), 1000.0 * 1e-20, "CapitalPerPerson exact egalitarian endpoint at P=-1", 1e-12);
         Near(CivicGovernance.RequiredCivicCapital(asymRateCfg, 1000.0, 1.0,  1.0), 1000.0 * 1e20,  "CapitalPerPerson exact stratified endpoint at P=+1", 1e-12);
 
         // Subnormal midpoint convex rate must not underflow 0.5*double.Epsilon + 0.5*double.Epsilon to 0
@@ -1387,8 +1393,8 @@ internal static class CivicGovernanceChecks
         };
         epsRateCfg.Validate();
         double expectedEpsMid = Math.Exp(Math.Log(1.0) + Math.Log(1e308) + Math.Log(double.Epsilon));
-        Near(CivicGovernance.RequiredStewards(epsRateCfg, 1e308, 1.0, 0.0, false, 0.0), expectedEpsMid, "RequiredStewards midpoint at double.Epsilon does not underflow to 0", 1e-12);
-        Near(CivicGovernance.RequiredCivicCapital(epsRateCfg, 1e308, 1.0, 0.0), expectedEpsMid, "RequiredCivicCapital midpoint at double.Epsilon does not underflow to 0", 1e-12);
+        NearRelative(CivicGovernance.RequiredStewards(epsRateCfg, 1e308, 1.0, 0.0, false, 0.0), expectedEpsMid, "RequiredStewards midpoint at double.Epsilon does not underflow to 0", 1e-12);
+        NearRelative(CivicGovernance.RequiredCivicCapital(epsRateCfg, 1e308, 1.0, 0.0), expectedEpsMid, "RequiredCivicCapital midpoint at double.Epsilon does not underflow to 0", 1e-12);
 
         // =========================================================================
         // Regression (Iter 4 Bug #2): Subnormal quantization guard on direct fast paths
@@ -1441,10 +1447,10 @@ internal static class CivicGovernanceChecks
         double r25 = EvalSubRate(2.5e-316);
         double r74 = EvalSubRate(7.4e-316);
         double r305 = EvalSubRate(1e-305);
-        Near(r25, 9.952679199553523e-19, "Bug #2 reproducer #2 rate=2.5e-316 exact to < 1e-12", 1e-12);
-        Near(r74, 2.9459930532956414e-18, "Bug #2 reproducer #2 rate=7.4e-316 exact to < 1e-12", 1e-12);
+        NearRelative(r25, 9.952679199553523e-19, "Bug #2 reproducer #2 rate=2.5e-316 exact to < 1e-12", 1e-12);
+        NearRelative(r74, 2.9459930532956414e-18, "Bug #2 reproducer #2 rate=7.4e-316 exact to < 1e-12", 1e-12);
         Check(r74 > r25, "Bug #2 reproducer #2 RequiredStewards strictly monotone across subnormal rates (7.4e-316 > 2.5e-316)");
-        Near(r305, 3.9810717055348015e-8, "Bug #2 reproducer #2 rate=1e-305 exact to < 1e-12", 1e-12);
+        NearRelative(r305, 3.9810717055348015e-8, "Bug #2 reproducer #2 rate=1e-305 exact to < 1e-12", 1e-12);
 
         // Reproducer #3: default StewardScalingKnee=3500, C=0.75, rate=double.Epsilon, AlignmentFrictionRate=1e100
         var subCfg3 = new SimulationConfig
@@ -1457,7 +1463,7 @@ internal static class CivicGovernanceChecks
             }
         };
         subCfg3.Validate();
-        Near(CivicGovernance.RequiredStewards(subCfg3, 1000.0, 0.75, -1.0, false, 1.0), 7.89113998452051e-221,
+        NearRelative(CivicGovernance.RequiredStewards(subCfg3, 1000.0, 0.75, -1.0, false, 1.0), 7.89113998452051e-221,
             "Bug #2 reproducer #3 default knee + double.Epsilon rate matches exact 7.89113998452051e-221", 1e-12);
 
         // Subnormal cp = c * population intermediate guard in both RequiredStewards and RequiredCivicCapital
@@ -1475,9 +1481,9 @@ internal static class CivicGovernanceChecks
             }
         };
         subCpCfg.Validate();
-        Near(CivicGovernance.RequiredStewards(subCpCfg, 1e-300, 1e-11, 0.0, false, 0.0), 1e-6,
+        NearRelative(CivicGovernance.RequiredStewards(subCpCfg, 1e-300, 1e-11, 0.0, false, 0.0), 1e-6,
             "RequiredStewards guards subnormal cp = c * population via log-space fallback", 1e-12);
-        Near(CivicGovernance.RequiredCivicCapital(subCpCfg, 1e-300, 1e-11, 0.0), 1e-6,
+        NearRelative(CivicGovernance.RequiredCivicCapital(subCpCfg, 1e-300, 1e-11, 0.0), 1e-6,
             "RequiredCivicCapital guards subnormal cp = c * population via log-space fallback", 1e-12);
 
         var subCapRateCfg = new SimulationConfig
@@ -1491,7 +1497,7 @@ internal static class CivicGovernanceChecks
         };
         subCapRateCfg.Validate();
         double expectedSubCap = Math.Exp(Math.Log(1e-11) + Math.Log(1e308) + Math.Log(2.5e-316));
-        Near(CivicGovernance.RequiredCivicCapital(subCapRateCfg, 1e308, 1e-11, 0.0), expectedSubCap,
+        NearRelative(CivicGovernance.RequiredCivicCapital(subCapRateCfg, 1e308, 1e-11, 0.0), expectedSubCap,
             "RequiredCivicCapital guards subnormal rate via log-space fallback", 1e-12);
 
         // =========================================================================
@@ -1717,6 +1723,607 @@ internal static class CivicGovernanceChecks
                 if (!IsFinite(tv) || tv < 0) { tradeFail = $"TradeVol({good},{qty})={tv}"; break; }
             }
         Check(tradeFail == null, "TradeRecordVolumePersonYears finite >= 0 across all TradeGoods and non-finite quantities" + (tradeFail == null ? "" : " (" + tradeFail + ")"));
+
+        // =========================================================================
+        // Regression (Iter 5 Groups A-E): Irrigated boost, deep subnormal cp,
+        // UseActiveSanitationCapital, F2-F6 edge cases, and Relax/TargetStratification.
+        // =========================================================================
+        static bool ValidEnv(CivicEnvironmentDrivers e)
+            => IsFinite(e.D1) && e.D1 >= 0 && e.D1 <= 1
+            && IsFinite(e.D2) && e.D2 >= 0 && e.D2 <= 1
+            && IsFinite(e.D3) && e.D3 >= 0 && e.D3 <= 1
+            && IsFinite(e.D4) && e.D4 >= 0 && e.D4 <= 1
+            && IsFinite(e.RawComplexity) && e.RawComplexity >= 0 && e.RawComplexity <= 1
+            && IsFinite(e.EnvironmentalComplexity) && e.EnvironmentalComplexity >= 0 && e.EnvironmentalComplexity <= 1
+            && IsFinite(e.EnvironmentalStratification) && e.EnvironmentalStratification >= -1 && e.EnvironmentalStratification <= 1;
+
+        // -------------------------------------------------------------------------
+        // Group A (F1): CivicLocalIndex.Evaluate irrigated boost overflow & 0 * +Inf
+        // -------------------------------------------------------------------------
+        // A1: Valid SoilCapacityGain = 2e307, WaterService = 0, Moisture = 0.05f ->
+        // SaveCodec roundtrip + baseline parity + live TurnResolver.Resolve + invariants.
+        var wA1 = CivicFixture(sanitation: true);
+        wA1.Config.Agriculture = new AgriculturalTechnologySettings
+        {
+            IrrigationEnabled = false,
+            TargetMoisture = 0.50,
+            SoilCapacityGain = 2e307
+        };
+        wA1.Config.Validate();
+        var cA1 = wA1.Camps[0];
+        int nA1 = cA1.Tile;
+        for (int s = 0; s < 4; s++)
+        {
+            wA1.Tiles[nA1].Seasons[s].Moisture = 0.05f;
+            if (wA1.Tiles[nA1].Seasons[s].MaxFood <= 0f) wA1.Tiles[nA1].Seasons[s].MaxFood = 200f;
+        }
+        wA1.Canals = new List<CanalSegment>
+        {
+            new CanalSegment
+            {
+                Id = 1, Source = nA1, Tile = nA1, From = nA1, Parent = -1,
+                Operator = cA1.Id, Construction = 1.0, Condition = 1.0, Throughput = 1000
+            }
+        };
+        wA1.IrrigatedFields = new List<IrrigatedField>
+        {
+            new IrrigatedField
+            {
+                Tile = nA1, Endpoint = 1, Operator = cA1.Id,
+                Soil = 1.0, Area = 1.0, WaterService = 0.0
+            }
+        };
+        IrrigationEconomy.Validate(wA1);
+        TurnResolver.Invariants(wA1);
+        var loadedA1 = SaveCodec.Load(SaveCodec.Save(wA1));
+        var baseA1 = SaveCodec.Load(SaveCodec.Save(wA1));
+        baseA1.Config.Agriculture.SoilCapacityGain = 0.0;
+        var envA1 = CivicGovernance.EvaluateEnvironment(loadedA1, loadedA1.Camps[0]);
+        var baseEnvA1 = CivicGovernance.EvaluateEnvironment(baseA1, baseA1.Camps[0]);
+        Check(ValidEnv(envA1), "F1 A1 EvaluateEnvironment valid & finite for valid SoilCapacityGain=2e307, WaterService=0");
+        Check(baseEnvA1.D2 > 0.0 && baseEnvA1.D2 < 0.72, "F1 A1 fixture has viable unblocked exit ring (0 < D2 < 0.72)");
+        NearRelative(envA1.D2, baseEnvA1.D2, "F1 A1 WaterService=0 matches unboosted SoilCapacityGain=0 D2 exactly", 1e-12);
+        new TurnResolver().Resolve(loadedA1, TurnPlanner.Prepare(loadedA1, new Dictionary<int, List<Order>>()));
+        CivicGovernance.ValidateInvariants(loadedA1);
+        TurnResolver.Invariants(loadedA1);
+        var lastRecA1 = loadedA1.History[loadedA1.History.Count - 1];
+        Check(lastRecA1.CivicReports != null && lastRecA1.CivicReports.Count >= 1
+            && IsFinite(lastRecA1.CivicReports[0].Circumscription)
+            && IsFinite(lastRecA1.CivicReports[0].EnvironmentalStratification),
+            "F1 A1 live TurnResolver.Resolve commits finite CivicReports");
+        Check(SaveCodec.Fingerprint(SaveCodec.Load(SaveCodec.Save(loadedA1))) == SaveCodec.Fingerprint(loadedA1),
+            "F1 A1 post-turn SaveCodec roundtrip fingerprint matches exactly");
+
+        // A2: Valid IrrigationEnabled=true, SoilCapacityGain=double.MaxValue, arid moisture {0.10f, 0.20f}
+        foreach (float aridM in new[] { 0.10f, 0.20f })
+        {
+            var wA2 = CivicFixture(sanitation: true);
+            wA2.Config.Agriculture = new AgriculturalTechnologySettings
+            {
+                IrrigationEnabled = true,
+                TargetMoisture = 0.50,
+                SoilCapacityGain = double.MaxValue
+            };
+            wA2.Config.Validate();
+            var cA2 = wA2.Camps[0];
+            int nA2 = cA2.Tile;
+            for (int s = 0; s < 4; s++)
+            {
+                wA2.Tiles[nA2].Seasons[s].Moisture = aridM;
+                if (wA2.Tiles[nA2].Seasons[s].MaxFood <= 0f) wA2.Tiles[nA2].Seasons[s].MaxFood = 200f;
+            }
+            wA2.Canals = new List<CanalSegment>
+            {
+                new CanalSegment
+                {
+                    Id = 1, Source = nA2, Tile = nA2, From = nA2, Parent = -1,
+                    Operator = cA2.Id, Construction = 1.0, Condition = 1.0, Throughput = 1000
+                }
+            };
+            wA2.IrrigatedFields = new List<IrrigatedField>
+            {
+                new IrrigatedField
+                {
+                    Tile = nA2, Endpoint = 1, Operator = cA2.Id,
+                    Soil = 1.0, Area = 1.0, WaterService = 0.0
+                }
+            };
+            IrrigationEconomy.Validate(wA2);
+            var loadedA2 = SaveCodec.Load(SaveCodec.Save(wA2));
+            var envA2 = CivicGovernance.EvaluateEnvironment(loadedA2, loadedA2.Camps[0]);
+            var zeroA2 = SaveCodec.Load(SaveCodec.Save(wA2));
+            zeroA2.Config.Agriculture.SoilCapacityGain = 0.0;
+            var zeroEnvA2 = CivicGovernance.EvaluateEnvironment(zeroA2, zeroA2.Camps[0]);
+            Check(ValidEnv(envA2), $"F1 A2 valid SoilCapacityGain=MaxValue aridM={aridM} stays finite");
+            NearRelative(envA2.D2, zeroEnvA2.D2, $"F1 A2 WaterService=0 matches zero-gain D2 at aridM={aridM}", 1e-12);
+            var recA2 = new TurnRecord();
+            CivicGovernance.Close(loadedA2, recA2, 20.0);
+            CivicGovernance.ValidateInvariants(loadedA2);
+            Check(recA2.CivicReports != null && recA2.CivicReports.Count >= 1
+                && IsFinite(recA2.CivicReports[0].Circumscription)
+                && IsFinite(recA2.CivicReports[0].EnvironmentalStratification),
+                $"F1 A2 Close commits finite report at aridM={aridM}");
+        }
+
+        // A3: Default config (SoilCapacityGain=0.50) + non-finite/extreme Soil + zero/non-finite WaterService
+        var wA3 = CivicFixture(sanitation: true);
+        wA3.Config.Agriculture = new AgriculturalTechnologySettings { IrrigationEnabled = true, TargetMoisture = 0.50, SoilCapacityGain = 0.50 };
+        var cA3 = wA3.Camps[0];
+        int nA3 = cA3.Tile;
+        for (int s = 0; s < 4; s++)
+        {
+            wA3.Tiles[nA3].Seasons[s].Moisture = 0.10f;
+            if (wA3.Tiles[nA3].Seasons[s].MaxFood <= 0f) wA3.Tiles[nA3].Seasons[s].MaxFood = 200f;
+        }
+        wA3.Canals = new List<CanalSegment>
+        {
+            new CanalSegment
+            {
+                Id = 1, Source = nA3, Tile = nA3, From = nA3, Parent = -1,
+                Operator = cA3.Id, Construction = 1.0, Condition = 1.0, Throughput = 1000
+            }
+        };
+        var fA3 = new IrrigatedField { Tile = nA3, Endpoint = 1, Operator = cA3.Id, Soil = 0.0, Area = 1.0, WaterService = 0.0 };
+        wA3.IrrigatedFields = new List<IrrigatedField> { fA3 };
+        double unboostedD2A3 = CivicGovernance.EvaluateEnvironment(wA3, cA3).D2;
+        Check(unboostedD2A3 > 0.0 && unboostedD2A3 < 0.72, "F1 A3 unboosted D2 has active exit ring");
+        string a3Fail = null;
+        foreach (double soilVal in new[] { double.PositiveInfinity, double.MaxValue, double.NaN, double.NegativeInfinity })
+            foreach (double wsVal in new[] { 0.0, double.NaN, -1.0, double.NegativeInfinity })
+            {
+                fA3.Soil = soilVal;
+                fA3.WaterService = wsVal;
+                var envA3 = CivicGovernance.EvaluateEnvironment(wA3, cA3);
+                if (!ValidEnv(envA3) || Math.Abs(envA3.D2 - unboostedD2A3) > 1e-12 * Math.Abs(unboostedD2A3))
+                {
+                    a3Fail = $"soil={soilVal},ws={wsVal},D2={envA3.D2}!=base {unboostedD2A3}";
+                    break;
+                }
+            }
+        Check(a3Fail == null, "F1 A3 default config + extreme/non-finite Soil + zero/non-finite WaterService matches unboosted D2" + (a3Fail == null ? "" : " (" + a3Fail + ")"));
+        foreach (double wsClose in new[] { 0.0, double.NaN })
+        {
+            fA3.Soil = double.PositiveInfinity;
+            fA3.WaterService = wsClose;
+            CivicGovernance.Close(wA3, new TurnRecord(), 20.0);
+            CivicGovernance.ValidateInvariants(wA3);
+        }
+        Check(true, "F1 A3 Close + ValidateInvariants pass for Soil=+Inf with WaterService in {0, NaN}");
+
+        // A4: Barren arid tile (pn == 0) parity across WaterService values
+        var wA4 = CivicFixture(sanitation: true);
+        var cA4 = wA4.Camps[0];
+        int nA4 = cA4.Tile;
+        for (int s = 0; s < 4; s++)
+        {
+            wA4.Tiles[nA4].Seasons[s].Moisture = 0.10f;
+            wA4.Tiles[nA4].Seasons[s].MaxFood = 0f;
+            wA4.Tiles[nA4].Seasons[s].MaxPotentialFood = 0f;
+        }
+        wA4.Canals = new List<CanalSegment>
+        {
+            new CanalSegment
+            {
+                Id = 1, Source = nA4, Tile = nA4, From = nA4, Parent = -1,
+                Operator = cA4.Id, Construction = 1.0, Condition = 1.0, Throughput = 1000
+            }
+        };
+        var fA4 = new IrrigatedField { Tile = nA4, Endpoint = 1, Operator = cA4.Id, Soil = 1.0, Area = 1.0, WaterService = 0.0 };
+        wA4.IrrigatedFields = new List<IrrigatedField> { fA4 };
+        wA4.Config.Agriculture = new AgriculturalTechnologySettings { IrrigationEnabled = true, TargetMoisture = 0.50, SoilCapacityGain = 0.50 };
+        double barrenDryD2 = CivicGovernance.EvaluateEnvironment(wA4, cA4).D2;
+        Check(barrenDryD2 > 0.0, "F1 A4 barren tile baseline D2 > 0");
+        string a4Fail = null;
+        foreach (var (gainVal, soilVal) in new[] { (double.MaxValue, 1.0), (0.50, double.PositiveInfinity) })
+        {
+            wA4.Config.Agriculture.SoilCapacityGain = gainVal;
+            fA4.Soil = soilVal;
+            foreach (double wsVal in new[] { 0.0, 0.5, 1.0, double.NaN, double.PositiveInfinity })
+            {
+                fA4.WaterService = wsVal;
+                var envA4 = CivicGovernance.EvaluateEnvironment(wA4, cA4);
+                if (!ValidEnv(envA4) || Math.Abs(envA4.D2 - barrenDryD2) > 1e-12 * Math.Abs(barrenDryD2))
+                {
+                    a4Fail = $"gain={gainVal},soil={soilVal},ws={wsVal},D2={envA4.D2}!=barren {barrenDryD2}";
+                    break;
+                }
+            }
+            if (a4Fail != null) break;
+        }
+        Check(a4Fail == null, "F1 A4 barren pn==0 tile preserves exact dry D2 across all WaterService & extreme boost inputs" + (a4Fail == null ? "" : " (" + a4Fail + ")"));
+        wA4.Config.Agriculture.SoilCapacityGain = double.MaxValue;
+        fA4.Soil = 1.0;
+        fA4.WaterService = 1.0;
+        CivicGovernance.Close(wA4, new TurnRecord(), 20.0);
+        CivicGovernance.ValidateInvariants(wA4);
+        Check(true, "F1 A4 barren tile Close + ValidateInvariants pass");
+
+        // A5: Fertile (pn > 0) overflow saturation + normal-domain monotonicity
+        var wA5 = CivicFixture(sanitation: true);
+        wA5.Config.Agriculture = new AgriculturalTechnologySettings { IrrigationEnabled = true, TargetMoisture = 0.50, SoilCapacityGain = 0.50 };
+        var cA5 = wA5.Camps[0];
+        int nA5 = cA5.Tile;
+        for (int s = 0; s < 4; s++)
+        {
+            wA5.Tiles[nA5].Seasons[s].Moisture = 0.10f;
+            if (wA5.Tiles[nA5].Seasons[s].MaxFood <= 0f) wA5.Tiles[nA5].Seasons[s].MaxFood = 200f;
+        }
+        wA5.Canals = new List<CanalSegment>
+        {
+            new CanalSegment
+            {
+                Id = 1, Source = nA5, Tile = nA5, From = nA5, Parent = -1,
+                Operator = cA5.Id, Construction = 1.0, Condition = 1.0, Throughput = 1000
+            }
+        };
+        var fA5 = new IrrigatedField { Tile = nA5, Endpoint = 1, Operator = cA5.Id, Soil = 1.0, Area = 1.0, WaterService = 0.0 };
+        wA5.IrrigatedFields = new List<IrrigatedField> { fA5 };
+        double unboostedD2A5 = CivicGovernance.EvaluateEnvironment(wA5, cA5).D2;
+        foreach (var (gainVal, soilVal, label) in new[] { (double.MaxValue, 1.0, "gain=MaxValue,soil=1"), (0.50, double.PositiveInfinity, "gain=0.5,soil=+Inf") })
+        {
+            wA5.Config.Agriculture.SoilCapacityGain = gainVal;
+            fA5.Soil = soilVal;
+            fA5.WaterService = 1.0;
+            var envSat = CivicGovernance.EvaluateEnvironment(wA5, cA5);
+            Check(ValidEnv(envSat) && envSat.D2 >= 0.72 - 1e-12 && envSat.D2 > unboostedD2A5,
+                $"F1 A5 fertile overflow saturation yields high circumscription D2 >= 0.72 and > unboosted ({label}, D2={envSat.D2}, base={unboostedD2A5})");
+            CivicGovernance.Close(wA5, new TurnRecord(), 20.0);
+            CivicGovernance.ValidateInvariants(wA5);
+        }
+        // Normal-domain monotonicity: D2(0) < D2(0.6) < D2(1.0)
+        wA5.Config.Agriculture.SoilCapacityGain = 0.50;
+        for (int s = 0; s < 4; s++) wA5.Tiles[nA5].Seasons[s].Moisture = 0.20f;
+        fA5.Soil = 0.80;
+        fA5.WaterService = 0.0; var envM0 = CivicGovernance.EvaluateEnvironment(wA5, cA5);
+        fA5.WaterService = 0.6; var envM60 = CivicGovernance.EvaluateEnvironment(wA5, cA5);
+        fA5.WaterService = 1.0; var envM100 = CivicGovernance.EvaluateEnvironment(wA5, cA5);
+        Check(ValidEnv(envM0) && ValidEnv(envM60) && ValidEnv(envM100) && envM0.D2 < envM60.D2 && envM60.D2 < envM100.D2,
+            $"F1 A5 normal-domain irrigated boost strict monotonicity D2(0)<D2(0.6)<D2(1.0) ({envM0.D2} < {envM60.D2} < {envM100.D2})");
+
+        // A6: 448-case Cartesian matrix checking all 7 ValidEnv fields
+        string a6Fail = null;
+        int a6Count = 0;
+        foreach (bool fertile in new[] { true, false })
+        {
+            for (int s = 0; s < 4; s++)
+            {
+                wA5.Tiles[nA5].Seasons[s].Moisture = 0.10f;
+                wA5.Tiles[nA5].Seasons[s].MaxFood = fertile ? 200f : 0f;
+                wA5.Tiles[nA5].Seasons[s].MaxPotentialFood = fertile ? 200f : 0f;
+            }
+            foreach (double gainVal in new[] { 0.0, 0.5, 2e307, double.MaxValue })
+            {
+                wA5.Config.Agriculture.SoilCapacityGain = gainVal;
+                foreach (double soilVal in new[] { double.NaN, double.NegativeInfinity, -1.0, 0.0, 1.0, double.MaxValue, double.PositiveInfinity })
+                    foreach (double wsVal in new[] { double.NaN, double.NegativeInfinity, -1.0, 0.0, 0.5, 1.0, 2.0, double.PositiveInfinity })
+                    {
+                        a6Count++;
+                        fA5.Soil = soilVal;
+                        fA5.WaterService = wsVal;
+                        var envMat = CivicGovernance.EvaluateEnvironment(wA5, cA5);
+                        if (!ValidEnv(envMat))
+                        {
+                            a6Fail = $"fertile={fertile},gain={gainVal},soil={soilVal},ws={wsVal},D2={envMat.D2},P={envMat.EnvironmentalStratification}";
+                            break;
+                        }
+                    }
+                if (a6Fail != null) break;
+            }
+            if (a6Fail != null) break;
+        }
+        Check(a6Count == 448 && a6Fail == null, "F1 A6 448-case Cartesian irrigated-boost matrix satisfies all 7 ValidEnv invariants" + (a6Fail == null ? "" : " (" + a6Fail + ")"));
+
+        // -------------------------------------------------------------------------
+        // Group B: Deep subnormal cp = c * population regression (closes L1478/L1480 blind spot)
+        // -------------------------------------------------------------------------
+        var subCpDeepCfg = new SimulationConfig
+        {
+            Civic = new CivicGovernanceSettings
+            {
+                Enabled = true,
+                EgalitarianStewardRate = 1e308,
+                StratifiedStewardRate = 1e308,
+                EgalitarianStewardExponent = 1.0,
+                StratifiedStewardExponent = 1.0,
+                EgalitarianCapitalPerPerson = 1e308,
+                StratifiedCapitalPerPerson = 1e308
+            }
+        };
+        subCpDeepCfg.Validate();
+        NearRelative(CivicGovernance.RequiredStewards(subCpDeepCfg, 5.0e-308, 1e-11, 0.0, false, 0.0), 5.0e-11,
+            "RequiredStewards guards deep subnormal cp (5e-319) via log-space fallback", 1e-12);
+        NearRelative(CivicGovernance.RequiredCivicCapital(subCpDeepCfg, 5.0e-308, 1e-11, 0.0), 5.0e-11,
+            "RequiredCivicCapital guards deep subnormal cp (5e-319) via log-space fallback", 1e-12);
+        NearRelative(CivicGovernance.RequiredStewards(subCpDeepCfg, 2.5e-308, 2.0e-12, 0.0, false, 0.0), 5.0e-12,
+            "RequiredStewards guards deep subnormal cp (5e-320) via log-space fallback", 1e-12);
+        NearRelative(CivicGovernance.RequiredCivicCapital(subCpDeepCfg, 2.5e-308, 2.0e-12, 0.0), 5.0e-12,
+            "RequiredCivicCapital guards deep subnormal cp (5e-320) via log-space fallback", 1e-12);
+
+        // -------------------------------------------------------------------------
+        // Group C: UseActiveSanitationCapital = true non-finite coverage
+        // -------------------------------------------------------------------------
+        string activeSanFail = null;
+        cc.UseActiveSanitationCapital = true;
+        cc.SanitationWaterRatio = 1.0;
+        foreach (double v in campBad)
+        {
+            cc.ActiveSanitationCapital = v;
+            double acap = CivicGovernance.ActiveSanitationCapital(cc);
+            double scov = CivicGovernance.SanitationCoverage(campW, cc);
+            if (!IsFinite(acap) || acap < 0.0 || !IsFinite(scov) || scov < 0.0 || scov > 1.0)
+            {
+                activeSanFail = $"v={v} acap={acap} scov={scov}";
+                break;
+            }
+        }
+        cc.UseActiveSanitationCapital = false;
+        Check(activeSanFail == null, "Group C UseActiveSanitationCapital=true stays finite & bounded across non-finite ActiveSanitationCapital" + (activeSanFail == null ? "" : " (" + activeSanFail + ")"));
+
+        // -------------------------------------------------------------------------
+        // Group D (F2-F6): Additional arithmetic, overflow & non-finite regressions
+        // -------------------------------------------------------------------------
+        // D-F2a: Valid Consumption = 1e308 + PotStorageFoodPerUnit = 1e308 (Inf/Inf guard + log-space parity)
+        var wF2a = CivicFixture(sanitation: true);
+        wF2a.Config.Consumption = 1e308;
+        wF2a.Config.Neolithic.PotStorageFoodPerUnit = 1e308;
+        wF2a.Config.Validate();
+        wF2a.Resources = null;
+        var cF2a = wF2a.Camps[0];
+        cF2a.Population = 100;
+        cF2a.PlantFood = 1e308;
+        cF2a.AnimalFood = 0;
+        cF2a.AquaticFood = 0;
+        cF2a.Inventory.Pots = 10.0;
+        cF2a.RecentTradeVolume = 0;
+        cF2a.People.NeolithicTechnologies.Remove(NeolithicTech.Pottery);
+        cF2a.People.Memory = null;
+        var envF2a = CivicGovernance.EvaluateEnvironment(wF2a, cF2a);
+        double expectedPotYearsF2a = Math.Exp(Math.Log(10.0) + Math.Log(1e308) - Math.Log(100.0) - Math.Log(double.MaxValue));
+        double expectedD3F2a = 0.55 * (0.25 * (expectedPotYearsF2a / 15.0));
+        Check(ValidEnv(envF2a), "F2a valid Consumption=1e308 & PotStorageFoodPerUnit=1e308 yields ValidEnv");
+        NearRelative(envF2a.D3, expectedD3F2a, "F2a log-space potYears matches exact D3", 1e-12);
+        CivicGovernance.Close(wF2a, new TurnRecord(), 20.0);
+        CivicGovernance.ValidateInvariants(wF2a);
+        Check(true, "F2a Close + ValidateInvariants pass on Consumption=1e308");
+
+        // D-F2b: Valid BaseDays = 1e-305 (default Consumption & PotStorage) + Pots = 1e307 -> exact log-space potYears
+        var wF2b = CivicFixture(sanitation: true);
+        wF2b.Config.BaseDays = 1e-305;
+        wF2b.Config.Validate();
+        wF2b.Resources = null;
+        var cF2b = wF2b.Camps[0];
+        cF2b.Population = 100;
+        cF2b.PlantFood = 1e308;
+        cF2b.AnimalFood = 0;
+        cF2b.AquaticFood = 0;
+        cF2b.Inventory.Pots = 1e307;
+        cF2b.RecentTradeVolume = 0;
+        cF2b.People.NeolithicTechnologies.Remove(NeolithicTech.Pottery);
+        cF2b.People.Memory = null;
+        var envF2b = CivicGovernance.EvaluateEnvironment(wF2b, cF2b);
+        double expectedD3F2b = 0.55 * (0.25 * ((80.0 / 365.0) / 15.0));
+        Check(ValidEnv(envF2b), "F2b valid BaseDays=1e-305 & Pots=1e307 yields ValidEnv");
+        NearRelative(envF2b.D3, expectedD3F2b, "F2b log-space potYears matches exact D3 = 0.55*0.25*(80/365)/15", 1e-12);
+        CivicGovernance.Close(wF2b, new TurnRecord(), 20.0);
+        CivicGovernance.ValidateInvariants(wF2b);
+        Check(true, "F2b Close + ValidateInvariants pass on BaseDays=1e-305");
+
+        // D-F2c: Close Step 2 Tier 3A uStore log-space fallback when fYr * 20 overflows
+        var wF2c = CivicFixture(sanitation: true);
+        wF2c.Config.BaseDays = 1e-305;
+        wF2c.Config.Validate();
+        var cF2c = wF2c.Camps[0];
+        cF2c.Population = 1200;
+        cF2c.PlantFood = 1e308;
+        cF2c.AnimalFood = 0;
+        cF2c.AquaticFood = 0;
+        cF2c.Inventory.Pots = 10.0;
+        cF2c.RecentTradeVolume = 0;
+        cF2c.Workforce = new PopulationLedger();
+        cF2c.Workforce.Assign(WorkforceRoles.Steward, 35, 1200);
+        cF2c.People.Progression.Era = Era.Neolithic;
+        cF2c.People.NeolithicTechnologies.Remove(NeolithicTech.Pottery);
+        cF2c.People.CivicPrecedents = new List<string> { CivicPrecedents.CeremonialIntegration, CivicPrecedents.CivicOrganization };
+        cF2c.People.CivicExperience = new Dictionary<string, double>();
+        CivicGovernance.Close(wF2c, new TurnRecord(), 20.0);
+        CivicGovernance.ValidateInvariants(wF2c);
+        double expectedT3A = 20.0 * 0.65 * (1.0 / 8760.0);
+        Check(cF2c.People.CivicExperience.TryGetValue(CivicPrecedents.TokensAndAccounting, out double actualT3A) && actualT3A > 0,
+            "F2c Close Tier 3A accrues non-zero experience when fYr * 20 overflows");
+        NearRelative(actualT3A, expectedT3A, "F2c Close Tier 3A uStore log-space matches exact 20*0.65/8760", 1e-12);
+
+        // D-F3: Valid LightHousingPermanence=0.0 + overflowing shelter.Light must NOT zero cRaw or Tier-1/Tier-2 accrual
+        var wF3 = CivicFixture(sanitation: true);
+        wF3.Config.Neolithic.LightHousingPermanence = 0.0;
+        wF3.Config.Neolithic.LightHousingPeoplePerUnit = 1e308;
+        wF3.Config.Validate();
+        var cF3 = wF3.Camps[0];
+        cF3.Population = 1000;
+        cF3.Inventory.LightHousingUnits = 10.0;
+        wF3.FixedHousing.Clear();
+        NeolithicProduction.FixedHousingChanged(wF3);
+        cF3.StationaryTurns = 5;
+        cF3.StationaryYears = 100.0;
+        cF3.People.Progression.Era = Era.Neolithic;
+        cF3.People.CivicPrecedents = new List<string>();
+        cF3.People.CivicExperience = new Dictionary<string, double>();
+        var envF3 = CivicGovernance.EvaluateEnvironment(wF3, cF3);
+        Check(ValidEnv(envF3) && envF3.RawComplexity > 0.99,
+            $"F3 LightHousingPermanence=0 + LightHousingPeoplePerUnit=1e308 preserves cRaw > 0.99 (got {envF3.RawComplexity})");
+        CivicGovernance.Close(wF3, new TurnRecord(), 20.0);
+        CivicGovernance.ValidateInvariants(wF3);
+        Check(cF3.People.CivicExperience.TryGetValue(CivicPrecedents.CeremonialIntegration, out double f3T1) && f3T1 > 19.0,
+            $"F3 Close accrues Tier-1 experience despite 0 * +Inf shelter.Light (got {f3T1})");
+        cF3.People.CivicPrecedents.Add(CivicPrecedents.CeremonialIntegration);
+        cF3.People.CivicExperience.Clear();
+        cF3.Workforce = new PopulationLedger();
+        cF3.Workforce.Assign(WorkforceRoles.Steward, 15, 1000);
+        CivicGovernance.Close(wF3, new TurnRecord(), 20.0);
+        CivicGovernance.ValidateInvariants(wF3);
+        Check(cF3.People.CivicExperience.TryGetValue(CivicPrecedents.CivicOrganization, out double f3T2) && f3T2 > 10.0,
+            $"F3 Close accrues Tier-2 experience despite 0 * +Inf shelter.Light (got {f3T2})");
+
+        // D-F4: Poisoned Tile.Seasons (Inf - Inf, Inf / Inf, NaN) stays ValidEnv and passes Close + ValidateInvariants
+        var wF4 = CivicFixture(sanitation: true);
+        var cF4 = wF4.Camps[0];
+        int ringTileF4 = wF4.Map.Radius(cF4.Tile, wF4.Config.FissionRadius)
+            .First(t => wF4.Map.Distance(cF4.Tile, t) >= wF4.Config.MinimumCampSpacing && wF4.Tiles[t].TraversableLand);
+        for (int s = 0; s < 4; s++) wF4.Tiles[cF4.Tile].Seasons[s].Moisture = float.PositiveInfinity;
+        wF4.Tiles[cF4.Tile].Seasons[0].MaxPotentialFood = 0f;
+        wF4.Tiles[cF4.Tile].Seasons[1].MaxPotentialFood = float.PositiveInfinity;
+        wF4.Tiles[cF4.Tile].Seasons[0].MaxFood = float.NaN;
+        wF4.Tiles[cF4.Tile].Seasons[1].MaxFood = float.PositiveInfinity;
+        wF4.Tiles[ringTileF4].Seasons[0].MaxFood = float.PositiveInfinity;
+        wF4.Tiles[ringTileF4].Seasons[0].MaxFreshwater = float.PositiveInfinity;
+        wF4.Tiles[ringTileF4].Seasons[0].WaterRecoveryPerDay = 0f;
+        var envF4 = CivicGovernance.EvaluateEnvironment(wF4, cF4);
+        Check(ValidEnv(envF4), "F4 poisoned Tile.Seasons (Moisture=+Inf, MaxPotentialFood=0/+Inf, MaxFood=NaN/+Inf) yields ValidEnv");
+        CivicGovernance.Close(wF4, new TurnRecord(), 20.0);
+        CivicGovernance.ValidateInvariants(wF4);
+        Check(true, "F4 poisoned Tile.Seasons Close + ValidateInvariants pass");
+
+        // D-F5: Valid MinimumCampSpacing = int.MaxValue completes immediately and blocks exit ring
+        var wF5Open = CivicFixture(sanitation: true);
+        wF5Open.Config.MinimumCampSpacing = int.MaxValue;
+        wF5Open.Config.Validate();
+        var envF5Open = CivicGovernance.EvaluateEnvironment(wF5Open, wF5Open.Camps[0]);
+        var wF5Blocked = CivicFixture(sanitation: true);
+        wF5Blocked.Config.MinimumCampSpacing = int.MaxValue;
+        wF5Blocked.Config.Validate();
+        int rivalTileF5 = wF5Blocked.Map.Radius(wF5Blocked.Camps[0].Tile, 3)
+            .First(t => t != wF5Blocked.Camps[0].Tile && wF5Blocked.Tiles[t].TraversableLand);
+        wF5Blocked.Camps.Add(new Camp { Id = 999, Player = 1, SocietyId = 1, Tile = rivalTileF5, Population = 100 });
+        var envF5Blocked = CivicGovernance.EvaluateEnvironment(wF5Blocked, wF5Blocked.Camps[0]);
+        Check(ValidEnv(envF5Open) && ValidEnv(envF5Blocked)
+            && envF5Blocked.D2 >= 0.72 - 1e-12 && envF5Blocked.D2 > envF5Open.D2,
+            $"F5 MinimumCampSpacing=int.MaxValue completes without overflow/hang and blocks exit ring (blocked D2={envF5Blocked.D2} > open D2={envF5Open.D2})");
+
+        // D-F6: hFixed quarter-scaling on 1e308 overflow, animalsByCamp long sum, StationaryYears = double.MaxValue
+        // F6b: FixedHousing & LightHousing both 1e308 -> hFixed == 0.5 -> D2 == 0.72 + 0.28 * 0.45 * 0.5 = 0.783
+        var wF6b = CivicFixture(sanitation: true);
+        wF6b.Config.MinimumCampSpacing = int.MaxValue;
+        wF6b.Config.Neolithic.HousingPeoplePerUnit = 1e308;
+        wF6b.Config.Neolithic.LightHousingPeoplePerUnit = 1e308;
+        wF6b.Config.Validate();
+        var cF6b = wF6b.Camps[0];
+        foreach (int t in wF6b.Map.Radius(cF6b.Tile, 1)) wF6b.Tiles[t].CultivationCapital = 0;
+        wF6b.Canals?.Clear();
+        wF6b.Herds?.Clear();
+        wF6b.FixedHousing = new List<FixedHousingStock> { new FixedHousingStock { CampId = cF6b.Id, Tile = cF6b.Tile, Units = 1.0, LastUpdatedDays = wF6b.Days } };
+        NeolithicProduction.FixedHousingChanged(wF6b);
+        cF6b.Inventory.LightHousingUnits = 1.0;
+        int rivalTileF6b = wF6b.Map.Radius(cF6b.Tile, 3).First(t => t != cF6b.Tile && wF6b.Tiles[t].TraversableLand);
+        wF6b.Camps.Add(new Camp { Id = 998, Player = 1, SocietyId = 1, Tile = rivalTileF6b, Population = 100 });
+        var envF6b = CivicGovernance.EvaluateEnvironment(wF6b, cF6b);
+        Check(ValidEnv(envF6b), "F6b hFixed overflow case yields ValidEnv");
+        NearRelative(envF6b.D2, 0.783, "F6b equal 1e308 fixed & light housing yields hFixed=0.5 (D2=0.783, not 0.720)", 1e-12);
+
+        // F6a: Two domestic herds with 1,500,000,000 animals each (3e9 > int.MaxValue) do not wrap negative
+        var wF6a = CivicFixture(sanitation: true);
+        wF6a.Config.MinimumCampSpacing = int.MaxValue;
+        wF6a.Config.Neolithic.HousingPeoplePerUnit = 1.0;
+        wF6a.Config.Validate();
+        var cF6a = wF6a.Camps[0];
+        cF6a.Population = 100;
+        foreach (int t in wF6a.Map.Radius(cF6a.Tile, 1)) wF6a.Tiles[t].CultivationCapital = 0;
+        wF6a.Canals?.Clear();
+        wF6a.FixedHousing = new List<FixedHousingStock> { new FixedHousingStock { CampId = cF6a.Id, Tile = cF6a.Tile, Units = 1000.0, LastUpdatedDays = wF6a.Days } };
+        NeolithicProduction.FixedHousingChanged(wF6a);
+        cF6a.Inventory.LightHousingUnits = 0.0;
+        wF6a.Herds = new List<Herd>
+        {
+            new Herd { Id = 1, DomesticCamp = cF6a.Id, Tile = cF6a.Tile, Animals = 1_500_000_000 },
+            new Herd { Id = 2, DomesticCamp = cF6a.Id, Tile = cF6a.Tile, Animals = 1_500_000_000 }
+        };
+        int rivalTileF6a = wF6a.Map.Radius(cF6a.Tile, 3).First(t => t != cF6a.Tile && wF6a.Tiles[t].TraversableLand);
+        wF6a.Camps.Add(new Camp { Id = 997, Player = 1, SocietyId = 1, Tile = rivalTileF6a, Population = 100 });
+        var envF6a = CivicGovernance.EvaluateEnvironment(wF6a, cF6a);
+        double expectedD2F6a = 0.72 + 0.28 * 0.45 * (1000.0 / (1000.0 + 2.0 * 3_000_000_000.0 + 50.0));
+        Check(ValidEnv(envF6a), "F6a 3e9 summed domestic herd animals yields ValidEnv");
+        NearRelative(envF6a.D2, expectedD2F6a, "F6a animalsByCamp uses 64-bit long (no signed int wrap-around)", 1e-12);
+
+        // F6d: StationaryYears = double.MaxValue with dt = 20 accrues full dt = 20 Tier-1 experience
+        var wF6d = CivicFixture(sanitation: true);
+        var cF6d = wF6d.Camps[0];
+        cF6d.Population = 1000;
+        wF6d.FixedHousing.Clear();
+        NeolithicProduction.FixedHousingChanged(wF6d);
+        cF6d.Inventory.LightHousingUnits = 0.0;
+        cF6d.StationaryTurns = 100;
+        cF6d.StationaryYears = double.MaxValue;
+        cF6d.People.Progression.Era = Era.Neolithic;
+        cF6d.People.CivicPrecedents = new List<string>();
+        cF6d.People.CivicExperience = new Dictionary<string, double>();
+        CivicGovernance.Close(wF6d, new TurnRecord(), 20.0);
+        CivicGovernance.ValidateInvariants(wF6d);
+        Check(cF6d.People.CivicExperience.TryGetValue(CivicPrecedents.CeremonialIntegration, out double f6dT1),
+            "F6d StationaryYears=double.MaxValue accrues Tier-1 experience");
+        NearRelative(f6dT1, 20.0, "F6d StationaryYears=double.MaxValue with dt=20 accrues full dt=20 weight (no s1-s0 cancellation)", 1e-12);
+
+        // F6d: Extreme dt = 1e308 overflows denomDt * 10 / denomDt * 20; builder contribution must NOT collapse to 0
+        var wF6dB = CivicFixture(sanitation: true);
+        var cF6dB = wF6dB.Camps[0];
+        cF6dB.Population = 100;
+        wF6dB.FixedHousing?.Clear();
+        NeolithicProduction.FixedHousingChanged(wF6dB);
+        cF6dB.Inventory.LightHousingUnits = 0.0;
+        cF6dB.Workforce = new PopulationLedger();
+        cF6dB.Workforce.Assign(WorkforceRoles.Steward, 15, 100);
+        cF6dB.People.Progression.Era = Era.Neolithic;
+        cF6dB.People.CivicPrecedents = new List<string> { CivicPrecedents.CeremonialIntegration };
+        cF6dB.People.CivicExperience = new Dictionary<string, double>();
+        var recF6dB2 = new TurnRecord();
+        recF6dB2.Production.Add(new ProductionReceipt { Camp = cF6dB.Id, Role = WorkforceRoles.Builder, WorkerIntervals = 1e308 });
+        CivicGovernance.Close(wF6dB, recF6dB2, 1e308);
+        CivicGovernance.ValidateInvariants(wF6dB);
+        Check(cF6dB.People.CivicExperience.TryGetValue(CivicPrecedents.CivicOrganization, out double f6dT2),
+            "F6d extreme dt=1e308 accrues Tier-2 builder experience without denomDt*10 overflow");
+        NearRelative(f6dT2, 1.125e306, "F6d Tier-2 builder term matches exact 1e308 * 0.45 * 0.025", 1e-12);
+
+        cF6dB.Population = 3000;
+        cF6dB.Workforce = new PopulationLedger();
+        cF6dB.People.CivicPrecedents = new List<string> { CivicPrecedents.CeremonialIntegration, CivicPrecedents.CivicOrganization };
+        cF6dB.People.CivicExperience = new Dictionary<string, double>();
+        var recF6dB3 = new TurnRecord();
+        recF6dB3.Production.Add(new ProductionReceipt { Camp = cF6dB.Id, Role = WorkforceRoles.Builder, WorkerIntervals = 1e308 });
+        CivicGovernance.Close(wF6dB, recF6dB3, 1e308);
+        CivicGovernance.ValidateInvariants(wF6dB);
+        Check(cF6dB.People.CivicExperience.TryGetValue(CivicPrecedents.PlannedQuartersAndDrainage, out double f6dT3B),
+            "F6d extreme dt=1e308 accrues Tier-3B builder experience without denomDt*20 overflow");
+        NearRelative(f6dT3B, 5.625e305, "F6d Tier-3B builder term matches exact 1e308 * 0.45 * 0.0125", 1e-12);
+
+        // -------------------------------------------------------------------------
+        // Group E (E1 & E2): Relax subnormal log-space accuracy & TargetStratification pre-clamp
+        // -------------------------------------------------------------------------
+        NearRelative(CivicGovernance.Relax(0.0, double.MaxValue, 1e-160, 1e-160), 1.7976931348623157e-12,
+            "E1 Relax(0, MaxValue, 1e-160, 1e-160) avoids subnormal rt quantization", 1e-12);
+        NearRelative(CivicGovernance.Relax(0.0, double.MaxValue, 1e-160, 1e-164), 1.7976931348623157e-16,
+            "E1 Relax(0, MaxValue, 1e-160, 1e-164) avoids rt underflow to 0", 1e-12);
+        NearRelative(CivicGovernance.Relax(0.0, double.MaxValue, double.Epsilon, 0.5), 4.440892098500626e-16,
+            "E1 Relax(0, MaxValue, double.Epsilon, 0.5) avoids rt underflow to 0", 1e-12);
+        var semiCfgE1 = new SimulationConfig
+        {
+            Civic = new CivicGovernanceSettings
+            {
+                Enabled = true,
+                TradeVolumeRelaxationRate = 1e-321
+            }
+        };
+        semiCfgE1.Validate();
+        double rateE1 = semiCfgE1.Civic.TradeVolumeRelaxationRate;
+        double oneStepE1 = CivicGovernance.Relax(0.0, double.MaxValue, rateE1, 20.0);
+        double expectedOneStepE1 = Math.Exp(Math.Log(double.MaxValue) + Math.Log(rateE1) + Math.Log(20.0));
+        NearRelative(oneStepE1, expectedOneStepE1, "E1 Relax 1x20y at TradeVolumeRelaxationRate=1e-321 matches exact analytical value", 1e-12);
+        double dailyE1 = 0.0;
+        double dtDayE1 = 20.0 / 7300.0;
+        for (int i = 0; i < 7300; i++)
+            dailyE1 = CivicGovernance.Relax(dailyE1, double.MaxValue, rateE1, dtDayE1);
+        NearRelative(dailyE1, oneStepE1, "E1 Relax SmoothCalendar 1x20y vs 7300x1d semigroup invariance at TradeVolumeRelaxationRate=1e-321", 1e-11);
+
+        NearRelative(CivicGovernance.TargetStratification(cfg, double.PositiveInfinity, FissionPolicy.Encourage, ImmigrationPolicy.Open, CivicFocus.Communal), 0.25,
+            "E2 TargetStratification(+Infinity) pre-clamps to +1 before applying -0.75 steering offset", 1e-12);
+        NearRelative(CivicGovernance.TargetStratification(cfg, double.NegativeInfinity, FissionPolicy.Discourage, ImmigrationPolicy.Restricted, CivicFocus.Centralized), -0.25,
+            "E2 TargetStratification(-Infinity) pre-clamps to -1 before applying +0.75 steering offset", 1e-12);
     }
 
     private static byte[] Unzip(byte[] bytes)

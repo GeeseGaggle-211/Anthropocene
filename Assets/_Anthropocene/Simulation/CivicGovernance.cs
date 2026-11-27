@@ -224,6 +224,40 @@ namespace Anthropocene.Simulation
         private static double NonNegativeFinite(double x)
             => !(x > 0) ? 0 : (double.IsInfinity(x) ? double.MaxValue : x);
 
+        private static double FiniteSeason(float x)
+            => float.IsNaN(x) ? 0.0 : (float.IsInfinity(x) ? (x > 0 ? float.MaxValue : -float.MaxValue) : (double)x);
+
+        private static double NonNegativeFiniteSeason(float x)
+            => !(x > 0) ? 0.0 : (float.IsInfinity(x) ? (double)float.MaxValue : (double)x);
+
+        private static double SafeFoodPerPersonYear(SimulationConfig cfg)
+        {
+            double raw = PhysicalDemography.FoodPerPersonYear(cfg);
+            return raw > Epsilon && !double.IsInfinity(raw)
+                ? raw
+                : (double.IsPositiveInfinity(raw) ? double.MaxValue : Epsilon);
+        }
+
+        private static double BaseCohesionCrowding(WorldState w, Camp c)
+        {
+            var n = w.Config.Neolithic;
+            var shelter = NeolithicProduction.HousingCapacity(w, c, w.Days);
+            double hCamp = NeolithicProduction.HousingShare(n, shelter, c.Population);
+            if (double.IsNaN(hCamp))
+            {
+                double fixedP = NonNegativeFinite(shelter.Fixed);
+                double lightRaw = NonNegativeFinite(shelter.Light);
+                double perm = NonNegativeFinite(n.LightHousingPermanence);
+                double lightP = perm > 0 && lightRaw > 0 ? NonNegativeFinite(perm * lightRaw) : 0;
+                hCamp = c.Population > 0
+                    ? ClampFinite((fixedP + lightP) / c.Population, 0, 1)
+                    : (fixedP + lightRaw > 0 ? 1 : 0);
+            }
+            double ns0 = NeolithicProduction.CohesionScale(n, hCamp);
+            if (double.IsNaN(ns0)) ns0 = NonNegativeFinite(n.CohesionBandScale);
+            return Math.Max(0, c.Population) / Math.Max(1.0, ns0);
+        }
+
         private static double LogConvexPositive(double a, double b, double u)
         {
             double t1 = u < 1.0 && a > 0 ? Math.Log(1.0 - u) + Math.Log(a) : double.NegativeInfinity;
@@ -553,8 +587,8 @@ namespace Anthropocene.Simulation
         public static double TargetStratification(SimulationConfig cfg, double envStratification,
             FissionPolicy fission, ImmigrationPolicy immigration, CivicFocus focus)
         {
-            double env = double.IsNaN(envStratification) ? 0 : envStratification;
-            return Numbers.Clamp(env + SteeringOffset(cfg, fission, immigration, focus), -1, 1);
+            double env = ClampFinite(envStratification, -1, 1);
+            return ClampFinite(env + SteeringOffset(cfg, fission, immigration, focus), -1, 1);
         }
 
         public static double Relax(double current, double target, double rate, double years)
@@ -563,7 +597,20 @@ namespace Anthropocene.Simulation
             else if (double.IsInfinity(current)) current = current > 0 ? double.MaxValue : -double.MaxValue;
             if (double.IsNaN(target) || !(years > 0) || double.IsInfinity(years) || !(rate > 0) || double.IsInfinity(rate)) return current;
             if (double.IsInfinity(target)) target = target > 0 ? double.MaxValue : -double.MaxValue;
-            double w = -PhysicalDemography.Expm1(-rate * years);
+            double rt = rate * years;
+            if (rt < 1e-290)
+            {
+                double diffSmall = target - current;
+                if (diffSmall == 0.0) return current;
+                double logAbsDiff = double.IsInfinity(diffSmall)
+                    ? Math.Log(Math.Abs(0.5 * target - 0.5 * current)) + Math.Log(2.0)
+                    : Math.Log(Math.Abs(diffSmall));
+                double delta = Math.Exp(logAbsDiff + Math.Log(rate) + Math.Log(years));
+                double step = diffSmall > 0 ? delta : -delta;
+                double resSmall = current + step;
+                return double.IsInfinity(resSmall) ? (resSmall > 0 ? double.MaxValue : -double.MaxValue) : resSmall;
+            }
+            double w = -PhysicalDemography.Expm1(-rt);
             if (w <= 0.0) return current;
             if (w >= 1.0) return target;
             double diff = target - current;
@@ -664,10 +711,7 @@ namespace Anthropocene.Simulation
         public static double TradeRecordVolumePersonYears(SimulationConfig cfg, TradeRecord t)
         {
             if (cfg == null || t == null) return 0;
-            double rawFoodPerYear = PhysicalDemography.FoodPerPersonYear(cfg);
-            double foodPerPersonYear = rawFoodPerYear > Epsilon && !double.IsInfinity(rawFoodPerYear)
-                ? rawFoodPerYear
-                : (double.IsPositiveInfinity(rawFoodPerYear) ? double.MaxValue : Epsilon);
+            double foodPerPersonYear = SafeFoodPerPersonYear(cfg);
             double pyWant = TradeLegPersonYears(t.Want, t.WantQuantity > 0 ? t.WantQuantity : 0, foodPerPersonYear);
             double pyGive = TradeLegPersonYears(t.Give, t.GiveQuantity > 0 ? t.GiveQuantity : 0, foodPerPersonYear);
             double vol = 0.5 * pyWant + 0.5 * pyGive;
@@ -733,7 +777,7 @@ namespace Anthropocene.Simulation
         // Pure single-camp driver query (reuses CivicLocalIndex)
         public static CivicEnvironmentDrivers EvaluateEnvironment(WorldState w, Camp c)
         {
-            if (w == null || c == null) return default;
+            if (w == null || c == null || w.Config == null || w.Tiles == null) return default;
             return new CivicLocalIndex(w).Evaluate(c);
         }
 
@@ -788,6 +832,7 @@ namespace Anthropocene.Simulation
                 if (record?.Production != null && record.Production.Count > 0)
                 {
                     double intervalYears = cfg.BaseDays / cfg.DaysPerYear;
+                    if (!(intervalYears > 0) || double.IsInfinity(intervalYears)) intervalYears = 0;
                     builderWorkYears = new Dictionary<int, double>();
                     foreach (var p in record.Production)
                     {
@@ -798,7 +843,7 @@ namespace Anthropocene.Simulation
                     }
                 }
 
-                double foodPerPersonYear = Math.Max(Epsilon, PhysicalDemography.FoodPerPersonYear(cfg));
+                double foodPerPersonYear = SafeFoodPerPersonYear(cfg);
                 bool sanitationOn = SanitationEnabled(cfg);
                 double denomDt = Math.Max(1e-6, dt);
 
@@ -812,11 +857,8 @@ namespace Anthropocene.Simulation
                     if (soc.Progression == null || soc.Progression.Era != Era.Neolithic) continue;
 
                     // Anti-oscillation invariant: unboosted base housing cohesion scale N_{s,0}.
-                    var shelter = NeolithicProduction.HousingCapacity(w, c, w.Days);
-                    double hCamp = NeolithicProduction.HousingShare(cfg.Neolithic, shelter, c.Population);
-                    double ns0 = NeolithicProduction.CohesionScale(cfg.Neolithic, hCamp);
-                    double rhoCrowd = c.Population / Math.Max(1.0, ns0);
-                    int stewards = c.Workforce != null ? CultivationEconomy.Workers(c, WorkforceRoles.Steward) : 0;
+                    double rhoCrowd = BaseCohesionCrowding(w, c);
+                    int stewards = c.Workforce != null ? Math.Max(0, CultivationEconomy.Workers(c, WorkforceRoles.Steward)) : 0;
                     double bwy = builderWorkYears != null && builderWorkYears.TryGetValue(c.Id, out double bw) ? bw : 0;
 
                     bool hasT1 = soc.HasCivicPrecedent(CivicPrecedents.CeremonialIntegration);
@@ -831,7 +873,7 @@ namespace Anthropocene.Simulation
                         double s1 = NonNegativeFinite(c.StationaryYears);
                         double s0 = Math.Max(0, s1 - dt);
                         double a1 = Math.Min(s1, 40.0), a0 = Math.Min(s0, 40.0);
-                        double dtEff = (a1 * a1 - a0 * a0) / 80.0 + Math.Max(0.0, s1 - Math.Max(s0, 40.0));
+                        double dtEff = (a1 * a1 - a0 * a0) / 80.0 + (s1 > 40.0 ? Math.Min(dt, s1 - 40.0) : 0.0);
                         double dx = dtEff * Numbers.Clamp((rhoCrowd - 0.25) / 0.50, 0, 1);
                         if (dx > 0) AddExperience(soc, CivicPrecedents.CeremonialIntegration, dx);
                     }
@@ -839,9 +881,11 @@ namespace Anthropocene.Simulation
                     // Tier 2: CivicOrganization
                     if (hasT1 && !hasT2)
                     {
+                        double denom10 = denomDt * 10.0;
+                        double bwy10 = double.IsInfinity(denom10) ? (bwy / denomDt) / 10.0 : bwy / denom10;
                         double dx = dt * Math.Min(1.0, stewards / 15.0)
                             * (0.55 * Numbers.Clamp((rhoCrowd - 0.50) / 0.60, 0, 1)
-                             + 0.45 * Math.Min(1.0, bwy / (denomDt * 10.0)));
+                             + 0.45 * Math.Min(1.0, bwy10));
                         if (dx > 0) AddExperience(soc, CivicPrecedents.CivicOrganization, dx);
                     }
 
@@ -852,9 +896,23 @@ namespace Anthropocene.Simulation
                         bool eligible3A = hasPottery || (c.Inventory != null && c.Inventory.Pots > 1e-6) || HasLocalClay(w, c) || w.Resources == null;
                         if (eligible3A)
                         {
-                            double fYr = Math.Max(1, c.Population) * foodPerPersonYear;
+                            double pop = Math.Max(1, c.Population);
+                            double fYr = pop * foodPerPersonYear;
+                            double fYr20 = fYr * 20.0;
+                            double totalFood = NonNegativeFinite(NonNegativeFinite(c.PlantFood) + NonNegativeFinite(c.AnimalFood) + NonNegativeFinite(c.AquaticFood));
+                            double storeYears;
+                            if (!double.IsInfinity(fYr20))
+                                storeYears = totalFood / fYr20;
+                            else if (totalFood <= 0)
+                                storeYears = 0;
+                            else
+                            {
+                                double logSY = Math.Log(totalFood) - Math.Log(pop) - Math.Log(foodPerPersonYear) - Math.Log(20.0);
+                                double sy = logSY >= 709.782712893384 ? double.MaxValue : Math.Exp(logSY);
+                                storeYears = double.IsInfinity(sy) ? double.MaxValue : sy;
+                            }
                             double mPot = hasPottery ? 1.25 : 1.00;
-                            double uStore = Numbers.Clamp((NonNegativeFinite(c.Food) / (fYr * 20.0)) * Numbers.Clamp(c.Population / 1200.0, 0, 1), 0, 1);
+                            double uStore = ClampFinite(storeYears * Numbers.Clamp(c.Population / 1200.0, 0, 1), 0, 1);
                             double tradeVol = NonNegativeFinite(c.RecentTradeVolume);
                             double uTrade = tradeVol / (tradeVol + 0.15 * Math.Max(100, c.Population));
                             double dx = dt * Math.Min(1.0, stewards / 35.0) * mPot * (0.65 * uStore + 0.55 * uTrade);
@@ -865,9 +923,11 @@ namespace Anthropocene.Simulation
                     // Tier 3B: PlannedQuartersAndDrainage (Phase 2)
                     if (sanitationOn && hasT2 && !hasT3B && soc.HasTech(NeolithicTech.Construction))
                     {
+                        double denom20 = denomDt * 20.0;
+                        double bwy20 = double.IsInfinity(denom20) ? (bwy / denomDt) / 20.0 : bwy / denom20;
                         double dx = dt * Numbers.Clamp((c.Population - 1200.0) / 1800.0, 0, 1)
                             * (0.55 * Math.Min(1.0, stewards / 35.0)
-                             + 0.45 * Math.Min(1.0, bwy / (denomDt * 20.0)));
+                             + 0.45 * Math.Min(1.0, bwy20));
                         if (dx > 0) AddExperience(soc, CivicPrecedents.PlannedQuartersAndDrainage, dx);
                     }
                 }
@@ -1041,7 +1101,7 @@ namespace Anthropocene.Simulation
             private readonly SimulationConfig cfg;
             private readonly Dictionary<int, double> canalSegmentsByOp = new Dictionary<int, double>();
             private readonly Dictionary<int, List<IrrigatedField>> irrigatedByOp = new Dictionary<int, List<IrrigatedField>>();
-            private readonly Dictionary<int, int> animalsByCamp = new Dictionary<int, int>();
+            private readonly Dictionary<int, long> animalsByCamp = new Dictionary<int, long>();
             private readonly Dictionary<int, Camp> campsByTile = new Dictionary<int, Camp>();
             private readonly Dictionary<int, double> tileProductivity = new Dictionary<int, double>();
             private readonly Dictionary<int, double> ringProductivity = new Dictionary<int, double>();
@@ -1077,11 +1137,12 @@ namespace Anthropocene.Simulation
                     foreach (var herd in world.Herds)
                     {
                         if (herd == null || herd.DomesticCamp < 0 || herd.Animals <= 0) continue;
-                        animalsByCamp[herd.DomesticCamp] = (animalsByCamp.TryGetValue(herd.DomesticCamp, out int prior) ? prior : 0) + herd.Animals;
+                        animalsByCamp[herd.DomesticCamp] = (animalsByCamp.TryGetValue(herd.DomesticCamp, out long prior) ? prior : 0L) + herd.Animals;
                     }
                 }
-                foreach (var camp in world.Camps)
-                    if (camp != null && camp.Population > 0) campsByTile[camp.Tile] = camp;
+                if (world.Camps != null)
+                    foreach (var camp in world.Camps)
+                        if (camp != null && camp.Population > 0) campsByTile[camp.Tile] = camp;
                 matIndex = world.Resources != null ? MaterialAccessIndex.For(world) : null;
             }
 
@@ -1099,13 +1160,13 @@ namespace Anthropocene.Simulation
                     {
                         if (tile.CultivationCapital > 1e-9) nOwn++;
                         sumQ += CultivationEconomy.Intensity(cfg, NonNegativeFinite(tile.CultivationCapital));
-                        sumE += NonNegativeFinite(tile.CultivationCapital);
+                        sumE = NonNegativeFinite(sumE + NonNegativeFinite(tile.CultivationCapital));
                     }
                 }
 
                 irrigatedByOp.TryGetValue(c.Id, out var campIrrigated);
                 canalSegmentsByOp.TryGetValue(c.Id, out double canalSegments);
-                animalsByCamp.TryGetValue(c.Id, out int animals);
+                animalsByCamp.TryGetValue(c.Id, out long animals);
 
                 // Driver 1: Land-Limited vs. Labor-Limited Capital Intensity
                 double irrWeightSum = 0;
@@ -1137,11 +1198,11 @@ namespace Anthropocene.Simulation
                 if (nOwn == 0) fCrop = 0;
                 else
                 {
-                    int farmers = c.Workforce != null ? CultivationEconomy.Workers(c, WorkforceRoles.Farmer) : 0;
-                    int herders = c.Workforce != null ? CultivationEconomy.Workers(c, WorkforceRoles.Herder) : 0;
-                    int fishers = c.Workforce != null ? CultivationEconomy.Workers(c, WorkforceRoles.Fisher) : 0;
-                    int gatherers = c.GathererPopulation;
-                    double wFood = farmers + herders + fishers + gatherers;
+                    int farmers = c.Workforce != null ? Math.Max(0, CultivationEconomy.Workers(c, WorkforceRoles.Farmer)) : 0;
+                    int herders = c.Workforce != null ? Math.Max(0, CultivationEconomy.Workers(c, WorkforceRoles.Herder)) : 0;
+                    int fishers = c.Workforce != null ? Math.Max(0, CultivationEconomy.Workers(c, WorkforceRoles.Fisher)) : 0;
+                    int gatherers = Math.Max(0, c.GathererPopulation);
+                    double wFood = (double)farmers + herders + fishers + gatherers;
                     double fWorker = farmers / Math.Max(1.0, wFood);
                     double fStock = fTot > 1e-9 ? plantShare : fWorker;
                     fCrop = 0.60 * fWorker + 0.40 * fStock;
@@ -1150,12 +1211,21 @@ namespace Anthropocene.Simulation
 
                 // Driver 2: Circumscription & Exit Cost
                 int rExit = Math.Max(1, cfg.FissionRadius);
-                int dMin = rExit >= cfg.MinimumCampSpacing ? cfg.MinimumCampSpacing : 1;
-                int blockSearchRadius = rExit + Math.Max(0, cfg.MinimumCampSpacing - 1);
+                int dMin = rExit >= cfg.MinimumCampSpacing ? Math.Max(1, cfg.MinimumCampSpacing) : 1;
+                long searchRadius = (long)rExit + Math.Max(0L, (long)cfg.MinimumCampSpacing - 1L);
+                int maxMapDist = world.Map.Width / 2 + world.Map.Height;
                 var nearbyOtherTiles = new List<int>();
-                foreach (int t in world.Map.Radius(c.Tile, blockSearchRadius))
-                    if (campsByTile.TryGetValue(t, out var other) && other.Id != c.Id)
-                        nearbyOtherTiles.Add(t);
+                if (searchRadius >= maxMapDist)
+                {
+                    foreach (var pair in campsByTile)
+                        if (pair.Value.Id != c.Id) nearbyOtherTiles.Add(pair.Key);
+                }
+                else
+                {
+                    foreach (int t in world.Map.Radius(c.Tile, (int)searchRadius))
+                        if (campsByTile.TryGetValue(t, out var other) && other.Id != c.Id)
+                            nearbyOtherTiles.Add(t);
+                }
 
                 double piHome = 0;
                 foreach (int n in f1)
@@ -1168,14 +1238,22 @@ namespace Anthropocene.Simulation
                             if (campIrrigated[i].Tile == n) { field = campIrrigated[i]; break; }
                         if (field != null)
                         {
-                            var seasons = world.Tiles[n].Seasons;
-                            double mBar = 0.25 * ((double)seasons[0].Moisture + seasons[1].Moisture + seasons[2].Moisture + seasons[3].Moisture);
-                            double boost = Math.Max(1.0, cfg.Agriculture.TargetMoisture / Math.Max(0.05, mBar))
-                                * (1 + cfg.Agriculture.SoilCapacityGain * NonNegativeFinite(field.Soil)) - 1;
-                            pn *= 1 + ClampFinite(field.WaterService, 0, 1) * boost;
+                            double ws = ClampFinite(field.WaterService, 0, 1);
+                            if (ws > 0 && pn > 0)
+                            {
+                                var seasons = world.Tiles[n].Seasons;
+                                double mBar = 0.25 * (FiniteSeason(seasons[0].Moisture) + FiniteSeason(seasons[1].Moisture)
+                                    + FiniteSeason(seasons[2].Moisture) + FiniteSeason(seasons[3].Moisture));
+                                double moistureScale = Math.Max(1.0, NonNegativeFinite(cfg.Agriculture.TargetMoisture) / Math.Max(0.05, mBar));
+                                if (double.IsInfinity(moistureScale)) moistureScale = double.MaxValue;
+                                double soilTerm = 1.0 + NonNegativeFinite(cfg.Agriculture.SoilCapacityGain) * NonNegativeFinite(field.Soil);
+                                double boost = double.IsInfinity(soilTerm) ? double.MaxValue : NonNegativeFinite(moistureScale * soilTerm - 1.0);
+                                double mult = 1.0 + ws * boost;
+                                pn = double.IsInfinity(mult) ? double.MaxValue : NonNegativeFinite(pn * mult);
+                            }
                         }
                     }
-                    piHome += pn;
+                    piHome = NonNegativeFinite(piHome + pn);
                 }
 
                 int ringCount = 0;
@@ -1191,28 +1269,60 @@ namespace Anthropocene.Simulation
                         if (world.Map.Distance(t, nearbyOtherTiles[i]) < cfg.MinimumCampSpacing) { blocked = true; break; }
                     if (blocked || !StaticFreshwaterViable(t)) continue;
                     double piT = RingProductivity(t);
-                    vSum += Numbers.Clamp(piT / piHomeDenom, 0, 1);
+                    vSum += ClampFinite(piT / piHomeDenom, 0, 1);
                 }
                 double vEff = vSum / Math.Max(1, ringCount);
                 double cRing = Math.Exp(-vEff / 0.18);
 
                 double fixedPeople = NonNegativeFinite(NeolithicProduction.FixedHousingAt(world, c, world.Days) * cfg.Neolithic.HousingPeoplePerUnit);
                 double lightPeople = NonNegativeFinite((c.Inventory?.LightHousingUnits ?? 0) * cfg.Neolithic.LightHousingPeoplePerUnit);
-                double hDenom = Math.Max(1e-9, fixedPeople + lightPeople + 2.0 * animals + 0.50 * Math.Max(1, c.Population));
-                double hFixed = ClampFinite(fixedPeople / hDenom, 0, 1);
+                double hDenom = fixedPeople + lightPeople + 2.0 * animals + 0.50 * Math.Max(1, c.Population);
+                double hFixed;
+                if (double.IsInfinity(hDenom))
+                {
+                    double qDenom = 0.25 * fixedPeople + 0.25 * lightPeople + 0.50 * animals + 0.125 * Math.Max(1, c.Population);
+                    hFixed = qDenom > 0 ? ClampFinite((0.25 * fixedPeople) / qDenom, 0, 1) : 0;
+                }
+                else
+                    hFixed = ClampFinite(fixedPeople / Math.Max(1e-9, hDenom), 0, 1);
                 double cInfra = Numbers.Clamp((canalSegments + 0.20 * sumE) / 4.0, 0, 1);
                 double cSunk = 0.45 * hFixed + 0.55 * cInfra;
                 double d2 = Numbers.Clamp(0.72 * cRing + 0.28 * cSunk, 0, 1);
 
                 // Driver 3: Surplus Appropriability & Chokepoints
-                double fYr = Math.Max(1, c.Population) * Math.Max(Epsilon, PhysicalDemography.FoodPerPersonYear(cfg));
+                double foodPerPersonYear = SafeFoodPerPersonYear(cfg);
+                double pop = Math.Max(1, c.Population);
+                double fYr = pop * foodPerPersonYear;
                 double sPlant = plantShare;
-                double grainYears = plant / fYr;
-                double potYears = NonNegativeFinite(c.Inventory?.Pots ?? 0) * cfg.Neolithic.PotStorageFoodPerUnit / fYr;
+                double grainYears;
+                if (!double.IsInfinity(fYr))
+                    grainYears = plant / fYr;
+                else if (plant <= 0)
+                    grainYears = 0;
+                else
+                {
+                    double logGY = Math.Log(plant) - Math.Log(pop) - Math.Log(foodPerPersonYear);
+                    double gy = logGY >= 709.782712893384 ? double.MaxValue : Math.Exp(logGY);
+                    grainYears = double.IsInfinity(gy) ? double.MaxValue : gy;
+                }
+                double pots = NonNegativeFinite(c.Inventory?.Pots ?? 0);
+                double potStorage = NonNegativeFinite(cfg.Neolithic.PotStorageFoodPerUnit);
+                double potFood = pots * potStorage;
+                double potYears;
+                if (!double.IsInfinity(potFood) && !double.IsInfinity(fYr))
+                    potYears = potFood / fYr;
+                else if (pots <= 0 || potStorage <= 0)
+                    potYears = 0;
+                else
+                {
+                    double logPY = Math.Log(pots) + Math.Log(potStorage) - Math.Log(pop) - Math.Log(foodPerPersonYear);
+                    double py = logPY >= 709.782712893384 ? double.MaxValue : Math.Exp(logPY);
+                    potYears = double.IsInfinity(py) ? double.MaxValue : py;
+                }
                 bool hasPottery = c.People != null && c.People.HasTech(NeolithicTech.Pottery);
-                double aGrain = Numbers.Clamp(
-                    0.75 * Numbers.Clamp((grainYears - 10.0) / 35.0, 0, 1) * (0.35 + 0.65 * sPlant)
-                    + 0.25 * Numbers.Clamp(potYears / 15.0 + (hasPottery ? 0.25 : 0.0), 0, 1) * sPlant,
+                double aGrain = ClampFinite(
+                    0.75 * ClampFinite((grainYears - 10.0) / 35.0, 0, 1) * (0.35 + 0.65 * sPlant)
+                    + 0.25 * ClampFinite(potYears / 15.0 + (hasPottery ? 0.25 : 0.0), 0, 1) * sPlant,
                     0, 1);
 
                 int partners = 0, nNbr = 0;
@@ -1289,14 +1399,16 @@ namespace Anthropocene.Simulation
                     if (!tile.TraversableLand) continue;
                     traversableCount++;
                     var seasons = tile.Seasons;
-                    double minM = seasons[0].Moisture, maxM = seasons[0].Moisture;
-                    double minF = seasons[0].MaxPotentialFood, maxF = seasons[0].MaxPotentialFood, sumF = seasons[0].MaxPotentialFood;
+                    double m0 = FiniteSeason(seasons[0].Moisture);
+                    double minM = m0, maxM = m0;
+                    double f0 = FiniteSeason(seasons[0].MaxPotentialFood);
+                    double minF = f0, maxF = f0, sumF = f0;
                     for (int s = 1; s < 4; s++)
                     {
-                        double m = seasons[s].Moisture;
+                        double m = FiniteSeason(seasons[s].Moisture);
                         if (m < minM) minM = m;
                         if (m > maxM) maxM = m;
-                        double f = seasons[s].MaxPotentialFood;
+                        double f = FiniteSeason(seasons[s].MaxPotentialFood);
                         if (f < minF) minF = f;
                         if (f > maxF) maxF = f;
                         sumF += f;
@@ -1307,19 +1419,16 @@ namespace Anthropocene.Simulation
                 }
                 double mAmpBar = traversableCount > 0 ? sumMAmp / traversableCount : 0.0;
                 double fAmpBar = traversableCount > 0 ? sumFAmp / traversableCount : 0.0;
-                double vSeason = Numbers.Clamp(0.55 * (mAmpBar / 0.40) + 0.45 * (fAmpBar / 1.20), 0, 1);
-                double vCanal = Numbers.Clamp(canalSegments / 4.0, 0, 1);
-                double vNbr = Numbers.Clamp(nNbr / 5.0, 0, 1);
-                double d4 = Numbers.Clamp(0.35 * vSeason + 0.40 * vCanal + 0.25 * vNbr, 0, 1);
+                double vSeason = ClampFinite(0.55 * (mAmpBar / 0.40) + 0.45 * (fAmpBar / 1.20), 0, 1);
+                double vCanal = ClampFinite(canalSegments / 4.0, 0, 1);
+                double vNbr = ClampFinite(nNbr / 5.0, 0, 1);
+                double d4 = ClampFinite(0.35 * vSeason + 0.40 * vCanal + 0.25 * vNbr, 0, 1);
 
                 // Combined Attractors (C_env, P_env)
                 double sP = 0.36 * d1 + 0.36 * d2 + 0.18 * d3 + 0.10 * d4;
-                double pEnv = Numbers.Clamp((sP - 0.42) / 0.42, -1, 1);
+                double pEnv = ClampFinite((sP - 0.42) / 0.42, -1, 1);
 
-                var shelter = NeolithicProduction.HousingCapacity(world, c, world.Days);
-                double hCamp = NeolithicProduction.HousingShare(cfg.Neolithic, shelter, c.Population);
-                double ns0 = NeolithicProduction.CohesionScale(cfg.Neolithic, hCamp);
-                double rhoCrowd = Math.Max(0, c.Population) / Math.Max(1.0, ns0);
+                double rhoCrowd = BaseCohesionCrowding(world, c);
                 double gN = Numbers.Clamp((c.Population - 150.0) / 350.0, 0, 1);
                 double crowdScale = cfg.Civic != null && cfg.Civic.ComplexityCrowdingScale > 0 && !double.IsInfinity(cfg.Civic.ComplexityCrowdingScale)
                     ? cfg.Civic.ComplexityCrowdingScale : 0.64;
@@ -1336,13 +1445,13 @@ namespace Anthropocene.Simulation
                 if (tile.TraversableLand)
                 {
                     for (int s = 0; s < 4; s++)
-                        sum += tile.Seasons[s].MaxFood + 0.10 * tile.Seasons[s].MaxPotentialFood;
+                        sum += NonNegativeFiniteSeason(tile.Seasons[s].MaxFood) + 0.10 * NonNegativeFiniteSeason(tile.Seasons[s].MaxPotentialFood);
                     sum *= 0.25;
                 }
                 else if (tile.Aquatic && tile.ElevationLevel < 10)
                 {
                     for (int s = 0; s < 4; s++)
-                        sum += 2.0 * tile.Seasons[s].MaxFood;
+                        sum += 2.0 * NonNegativeFiniteSeason(tile.Seasons[s].MaxFood);
                     sum *= 0.25;
                 }
                 tileProductivity[n] = sum;
@@ -1369,12 +1478,12 @@ namespace Anthropocene.Simulation
                     if (tile.Environment == EnvironmentKind.Ocean || tile.ElevationLevel >= 10 ||
                         tile.WaterBody == WaterKind.Saltwater || tile.FreshwaterSource == FreshwaterSource.None)
                         continue;
-                    w0 += tile.Seasons[0].MaxFreshwater;
-                    w1 += tile.Seasons[1].MaxFreshwater;
-                    w2 += tile.Seasons[2].MaxFreshwater;
-                    w3 += tile.Seasons[3].MaxFreshwater;
+                    w0 += NonNegativeFiniteSeason(tile.Seasons[0].MaxFreshwater);
+                    w1 += NonNegativeFiniteSeason(tile.Seasons[1].MaxFreshwater);
+                    w2 += NonNegativeFiniteSeason(tile.Seasons[2].MaxFreshwater);
+                    w3 += NonNegativeFiniteSeason(tile.Seasons[3].MaxFreshwater);
                     for (int s = 0; s < 4; s++)
-                        annualWater += (double)tile.Seasons[s].MaxFreshwater * tile.Seasons[s].WaterRecoveryPerDay * cfg.BaseDays;
+                        annualWater += NonNegativeFiniteSeason(tile.Seasons[s].MaxFreshwater) * NonNegativeFiniteSeason(tile.Seasons[s].WaterRecoveryPerDay) * cfg.BaseDays;
                 }
                 double minWater = cfg.StartFreshwaterMinimum;
                 bool viable = annualWater / 4.0 >= minWater && w0 >= minWater && w1 >= minWater && w2 >= minWater && w3 >= minWater;
