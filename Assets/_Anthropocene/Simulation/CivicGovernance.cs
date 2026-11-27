@@ -315,21 +315,33 @@ namespace Anthropocene.Simulation
         public static bool IsCivicGood(CraftGood good)
             => good == CraftGood.CivicConstruction || good == CraftGood.CivicMaintenance;
 
+        public static bool IsSanitationGood(CraftGood good)
+            => good == CraftGood.SanitationConstruction || good == CraftGood.SanitationMaintenance;
+
         public static bool IsPublicWorksGood(CraftGood good)
             => NeolithicProduction.IsInfrastructureGood(good);
 
         internal static double Demand(ProductionOrder order, CraftGood good)
-            => order?.Civic == null ? 0
-                : good == CraftGood.CivicConstruction ? NonNegativeFinite(order.Civic.Construction)
-                : good == CraftGood.CivicMaintenance ? NonNegativeFinite(order.Civic.Upkeep) : 0;
+        {
+            if (order == null) return 0;
+            if (good == CraftGood.CivicConstruction) return order.Civic == null ? 0 : NonNegativeFinite(order.Civic.Construction);
+            if (good == CraftGood.CivicMaintenance) return order.Civic == null ? 0 : NonNegativeFinite(order.Civic.Upkeep);
+            if (good == CraftGood.SanitationConstruction) return order.Sanitation == null ? 0 : NonNegativeFinite(order.Sanitation.Construction);
+            if (good == CraftGood.SanitationMaintenance) return order.Sanitation == null ? 0 : NonNegativeFinite(order.Sanitation.Upkeep);
+            return 0;
+        }
 
         internal static double InfrastructureHousingMaterials(SimulationConfig cfg, ProductionOrder order)
         {
-            if (!Enabled(cfg) || order?.Civic == null) return 0;
+            if (!Enabled(cfg) || (order?.Civic == null && order?.Sanitation == null)) return 0;
             var s = cfg.Civic;
             double build = Demand(order, CraftGood.CivicConstruction) * NonNegativeFinite(s.CivicBuildHousingMaterials);
             double maint = Demand(order, CraftGood.CivicMaintenance) * NonNegativeFinite(s.CivicMaintainHousingMaterials);
-            return NonNegativeFinite(build + maint);
+            double sanit = 0;
+            if (SanitationEnabled(cfg) && order.Sanitation != null)
+                sanit = Demand(order, CraftGood.SanitationConstruction) * NonNegativeFinite(s.SanitationBuildHousingMaterials)
+                    + Demand(order, CraftGood.SanitationMaintenance) * NonNegativeFinite(s.SanitationMaintainHousingMaterials);
+            return NonNegativeFinite(build + maint + sanit);
         }
 
         public static double EffectiveCivicDecayRate(WorldState w, Camp c)
@@ -395,12 +407,196 @@ namespace Anthropocene.Simulation
             return NonNegativeFinite(Math.Max(lower, Math.Min(kOpen, retained)));
         }
 
-        // Phase 1B atomic post-Layer-1 commit for CivicCapital only (SanitationCapital commit deferred to Phase 2).
+        public static double SanitationDecayRate(SimulationConfig cfg)
+            => SanitationEnabled(cfg) ? NonNegativeFinite(cfg.Civic.SanitationCapitalDecayPerYear) : 0;
+
+        // Continuity upkeep target u = delta_sanit * min(K_open, ReqSanitCap(N)) * dt (abandoned surplus drains decay).
+        public static double SanitationMaintenanceTarget(WorldState w, Camp c, double years, double? populationOverride = null)
+        {
+            if (w == null || c == null || !SanitationEnabled(w.Config) || !(years > 0) || double.IsNaN(years)) return 0;
+            double kOpen = NonNegativeFinite(c.SanitationCapital);
+            if (!(kOpen > Epsilon)) return 0;
+            double capped = Math.Min(kOpen, RequiredSanitationCapital(w.Config, populationOverride ?? c.Population));
+            double rate = SanitationDecayRate(w.Config);
+            if (!(capped > 0) || !(rate > 0)) return 0;
+            if (double.IsInfinity(years)) return double.MaxValue;
+            return NonNegativeFinite(rate * capped * years);
+        }
+
+        // Atomic post-Layer-1 commit (Docs/CivicGovernance.md §5 Choice #3.3). CivicCapital is immediately active;
+        // newly built sanitation becomes active at the next boundary once Tier-2 water has been allocated to it,
+        // while neglected upkeep reduces the current turn's coverage through ActiveSanitationCapital.
         public static void CommitCapitals(WorldState w, Camp c, double years, double civicMaintPaid, double civicBuilt)
+            => CommitCapitals(w, c, years, civicMaintPaid, civicBuilt, 0, 0);
+
+        public static void CommitCapitals(WorldState w, Camp c, double years, double civicMaintPaid, double civicBuilt,
+            double sanitMaintPaid, double sanitBuilt)
         {
             if (w == null || c == null || !Enabled(w.Config)) return;
             double retained = RetainCapital(c.CivicCapital, EffectiveCivicDecayRate(w, c), years, civicMaintPaid);
             c.CivicCapital = NonNegativeFinite(retained + NonNegativeFinite(civicBuilt));
+            if (!SanitationEnabled(w.Config))
+            {
+                c.UseActiveSanitationCapital = false;
+                return;
+            }
+            double sanitRetained = RetainCapital(c.SanitationCapital, SanitationDecayRate(w.Config), years, sanitMaintPaid);
+            c.ActiveSanitationCapital = NonNegativeFinite(sanitRetained);
+            c.UseActiveSanitationCapital = true;
+            c.SanitationCapital = NonNegativeFinite(sanitRetained + NonNegativeFinite(sanitBuilt));
+        }
+
+        // ---- Phase 2 Tier-2 sanitation water (Docs/CivicGovernance.md §5 Choice #10) ----
+        // Cost is O(sanitized villages x 7 local tiles); envelopes are pure projections cached per tile.
+        private static double DrinkingPerPersonYear(SimulationConfig cfg)
+            => cfg.Agriculture != null ? Math.Max(0, cfg.Agriculture.AnnualDrinkingPerPerson) : 0.10;
+
+        private static bool SanitationSourceTile(Tile t)
+            => t != null && t.WaterBody != WaterKind.Saltwater && t.FreshwaterSource != FreshwaterSource.None;
+
+        // Delivered water need over the horizon for the capital the camp already has (opening capital, current N).
+        public static double SanitationWaterNeed(WorldState w, Camp c, double years, double? capitalOverride = null)
+        {
+            if (w == null || c == null || !SanitationEnabled(w.Config) || c.Population <= 0 || !c.IsVillage) return 0;
+            if (!(years > 0) || double.IsNaN(years) || double.IsInfinity(years)) return 0;
+            double req = RequiredSanitationCapital(w.Config, c.Population);
+            double k = NonNegativeFinite(capitalOverride ?? c.SanitationCapital);
+            if (!(req > Epsilon) || !(k > Epsilon)) return 0;
+            double share = Math.Min(1.0, k / req);
+            return NonNegativeFinite(c.Population * share * w.Config.Civic.SanitationWaterPerPersonYear * years);
+        }
+
+        private static Dictionary<int, double> HumanDrinkingReservations(WorldState w, double years)
+        {
+            var reserved = new Dictionary<int, double>();
+            double rate = DrinkingPerPersonYear(w.Config);
+            foreach (var c in w.Camps)
+            {
+                if (c.Population <= 0) continue;
+                int src = FreshwaterAccess.Source(w, c.Tile);
+                reserved[src] = (reserved.TryGetValue(src, out double r) ? r : 0) + c.Population * rate * years;
+            }
+            return reserved;
+        }
+
+        internal static void AllocateSanitationWater(WorldState w, List<Demand> claims, double start, double days,
+            TurnRecord record, Action<int> activate)
+        {
+            if (w == null || !SanitationEnabled(w.Config)) return;
+            foreach (var c in w.Camps) { c.SanitationWaterDelivered = 0; c.SanitationWaterRatio = 0; }
+            if (!(days > 0) || claims == null) return;
+            double years = days / w.Config.DaysPerYear;
+            var users = new List<(Camp Camp, double Need)>();
+            foreach (var c in w.Camps.OrderBy(c => c.Id))
+            {
+                double need = SanitationWaterNeed(w, c, years);
+                if (need > Epsilon) users.Add((c, need));
+            }
+            if (users.Count == 0) return;
+
+            // Tier 1 protection: every biological freshwater claim already on the tile, plus human drinking when the
+            // agriculture block (which emits Drinking claims) is absent.
+            var reserved = new Dictionary<int, double>();
+            foreach (var d in claims)
+                if (d.Freshwater > 0 && d.Kind != "Irrigation" && d.Kind != "SanitationWater")
+                    reserved[d.Tile] = (reserved.TryGetValue(d.Tile, out double r) ? r : 0) + d.Freshwater;
+            if (w.Config.Agriculture == null)
+                foreach (var p in HumanDrinkingReservations(w, years))
+                    reserved[p.Key] = (reserved.TryGetValue(p.Key, out double r) ? r : 0) + p.Value;
+
+            var residual = new Dictionary<int, double>();
+            double Residual(int tile)
+            {
+                if (residual.TryGetValue(tile, out double v)) return v;
+                double env = IrrigationEconomy.WaterEnvelope(w, tile, start, days);
+                v = Math.Max(0, env - (reserved.TryGetValue(tile, out double r) ? r : 0));
+                residual[tile] = v;
+                return v;
+            }
+
+            var proposals = new List<(Camp Camp, int Tile, double Amount, double Need)>();
+            var proposedByTile = new Dictionary<int, double>();
+            foreach (var (camp, need) in users)
+            {
+                var tiles = w.Map.Radius(camp.Tile, 1).Where(t => SanitationSourceTile(w.Tiles[t])).OrderBy(t => t).ToArray();
+                double total = 0;
+                foreach (int t in tiles) total += Residual(t);
+                if (!(total > Epsilon)) continue;
+                foreach (int t in tiles)
+                {
+                    double rs = Residual(t);
+                    if (!(rs > Epsilon)) continue;
+                    double p = Math.Min(rs, need * rs / total);
+                    if (!(p > Epsilon)) continue;
+                    proposals.Add((camp, t, p, need));
+                    proposedByTile[t] = (proposedByTile.TryGetValue(t, out double q) ? q : 0) + p;
+                }
+            }
+            if (proposals.Count == 0) return;
+
+            var receipts = new List<SanitationWaterReceipt>();
+            var receiptCamps = new List<Camp>();
+            foreach (var p in proposals.OrderBy(x => x.Tile).ThenBy(x => x.Camp.Id))
+            {
+                double rs = Residual(p.Tile);
+                double sum = proposedByTile[p.Tile];
+                double scale = sum > rs ? rs / sum : 1.0;
+                double withdrawal = p.Amount * scale * (1 - 1e-12);
+                if (!(withdrawal > 0)) continue;
+                claims.Add(new Demand { Tile = p.Tile, Entity = p.Camp.Id, Kind = "SanitationWater", Freshwater = withdrawal });
+                activate?.Invoke(p.Tile);
+                p.Camp.SanitationWaterDelivered += withdrawal;
+                receipts.Add(new SanitationWaterReceipt { Source = p.Tile, Camp = p.Camp.Id, Withdrawal = withdrawal, Need = p.Need });
+                receiptCamps.Add(p.Camp);
+            }
+            foreach (var (camp, need) in users)
+                camp.SanitationWaterRatio = ClampFinite(camp.SanitationWaterDelivered / need, 0, 1);
+            for (int i = 0; i < receipts.Count; i++)
+                receipts[i].Ratio = receiptCamps[i].SanitationWaterRatio;
+            if (record != null) record.SanitationWater = receipts;
+        }
+
+        // Pure planner forecast: the share of a full-coverage sanitation water need the camp's local freshwater could
+        // carry after human drinking. Dry oases forecast ~0 so DemandControl never builds unusable drains.
+        public static double ForecastSanitationWaterFraction(WorldState w, Camp c, double years, double? population = null)
+        {
+            if (w == null || c == null || !SanitationEnabled(w.Config) || !(years > 0) || double.IsNaN(years) || double.IsInfinity(years)) return 0;
+            double n = population ?? c.Population;
+            if (!(n > 0)) return 0;
+            double need = n * w.Config.Civic.SanitationWaterPerPersonYear * years;
+            if (!(need > Epsilon)) return 0;
+            double days = years * w.Config.DaysPerYear;
+            int src = FreshwaterAccess.Source(w, c.Tile);
+            double drinking = n * DrinkingPerPersonYear(w.Config) * years;
+            double available = 0;
+            foreach (int t in w.Map.Radius(c.Tile, 1))
+            {
+                if (!SanitationSourceTile(w.Tiles[t])) continue;
+                double env = IrrigationEconomy.WaterEnvelope(w, t, w.Days, days);
+                available += Math.Max(0, env - (t == src ? drinking : 0));
+            }
+            return ClampFinite(available / need, 0, 1);
+        }
+
+        // Forecast parity for irrigation planning: the same proportional local split, unscaled by competition.
+        internal static IEnumerable<Demand> ForecastSanitationWaterClaims(WorldState w, double years, Func<int, bool> tileKnown = null)
+        {
+            if (w == null || !SanitationEnabled(w.Config) || !(years > 0)) yield break;
+            double days = years * w.Config.DaysPerYear;
+            foreach (var c in w.Camps.OrderBy(c => c.Id))
+            {
+                if (tileKnown != null && !tileKnown(c.Tile)) continue;
+                double need = SanitationWaterNeed(w, c, years);
+                if (!(need > Epsilon)) continue;
+                var tiles = w.Map.Radius(c.Tile, 1).Where(t => SanitationSourceTile(w.Tiles[t]) && (tileKnown == null || tileKnown(t)))
+                    .OrderBy(t => t).Select(t => (Tile: t, Env: IrrigationEconomy.WaterEnvelope(w, t, w.Days, days))).ToArray();
+                double total = tiles.Sum(x => x.Env);
+                if (!(total > Epsilon)) continue;
+                foreach (var x in tiles)
+                    if (x.Env > Epsilon)
+                        yield return new Demand { Tile = x.Tile, Entity = c.Id, Kind = "SanitationWater",
+                            Freshwater = Math.Min(x.Env, need * x.Env / total) };
+            }
         }
 
         // Tier 3A trade helpers (pure & thread-safe for Trade.Plan parallel workers).

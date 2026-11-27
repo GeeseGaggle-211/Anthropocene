@@ -519,6 +519,8 @@ namespace Anthropocene.Simulation
                 // Remote provisions may have been refunded after person-year closure.
                 Supply.Finish(w, record);
             }
+            // Phase 2: retained-opening sanitation capital only gates this turn's demography (Docs/CivicGovernance.md §5 Choice #3.3).
+            foreach (var camp in w.Camps) camp.UseActiveSanitationCapital = false;
             ApplyStorage(w, record, intervals);
 
             // Physical service and goods settle against the locked cohort. Gross natural events become authoritative

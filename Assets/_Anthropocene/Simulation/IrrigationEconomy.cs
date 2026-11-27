@@ -408,6 +408,8 @@ namespace Anthropocene.Simulation
                             Freshwater = h.Population * w.Config.Agriculture.AnnualDrinkingPerPerson * years });
                 }
             }
+            foreach (var d in CivicGovernance.ForecastSanitationWaterClaims(w, years, tileKnown))
+                if (sourceSet.Contains(d.Tile)) claims.Add(d);
             claims.Sort((a, b) =>
             {
                 int cmp = a.Tile.CompareTo(b.Tile);
@@ -431,6 +433,7 @@ namespace Anthropocene.Simulation
                     herd.Id, 0, herd.Animals * w.Config.GetSpecies(herd.Species).FreshwaterConsumption * intervals,
                     years * w.Config.DaysPerYear, claims, null, claims);
             claims.AddRange(DrinkingClaims(w, years));
+            claims.AddRange(CivicGovernance.ForecastSanitationWaterClaims(w, years));
             return claims;
         }
         internal static IEnumerable<Demand> DrinkingClaims(WorldState w, double years)

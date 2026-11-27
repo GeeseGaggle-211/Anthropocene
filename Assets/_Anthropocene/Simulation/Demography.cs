@@ -80,7 +80,11 @@ namespace Anthropocene.Simulation
                 : world != null && CivicGovernance.Enabled(world.Config) && camp != null && camp.Population > 0
                     ? CivicGovernance.CrowdingMitigation(world, camp)
                     : 1;
-        public static double DiseaseMitigation(WorldState world, Camp camp) => DiseaseMitigationOverride != null ? DiseaseMitigationOverride(world, camp) : 1;
+        public static double DiseaseMitigation(WorldState world, Camp camp)
+            => DiseaseMitigationOverride != null ? DiseaseMitigationOverride(world, camp)
+                : world != null && CivicGovernance.SanitationEnabled(world.Config) && camp != null && camp.Population > 0
+                    ? CivicGovernance.DiseaseMitigation(world, camp)
+                    : 1;
         public static double AdditionalMortality(WorldState world, Camp camp) => AdditionalMortalityOverride != null ? AdditionalMortalityOverride(world, camp) : 0;
 
         // Read-only settlement projection used only by migration/fission diagnostics. It consumes explicit physical
@@ -107,6 +111,13 @@ namespace Anthropocene.Simulation
         {
             if (config == null || !(population > 0) || !Finite(population)) return 0;
             return config.CrowdingMortalityRateAt1000 * ExponentialExcess(population, config.CrowdingExponent);
+        }
+
+        // Unmitigated disease mortality rate d_disease(N) = d_1000 * Phi(N; k_d) for the Phase-2 sanitation PriorityScore.
+        internal static double DiseaseMortalityRate(SimulationConfig config, double population)
+        {
+            if (config == null || !(population > 0) || !Finite(population)) return 0;
+            return config.DiseaseMortalityRateAt1000 * ExponentialExcess(population, config.DiseaseExponent);
         }
 
         public static DemographicRates Rates(SimulationConfig config, double population, double nutrition,

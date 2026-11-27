@@ -1004,7 +1004,8 @@ namespace Anthropocene.Simulation
         internal double ProtectedClothingUnits = -1;
         internal IrrigationOrder Irrigation;
         internal CivicOrder Civic;
-        internal bool HasInfrastructure => Irrigation != null || Civic != null;
+        internal CivicOrder Sanitation;
+        internal bool HasInfrastructure => Irrigation != null || Civic != null || Sanitation != null;
         internal ProductionOrder CopyForPreparation()
         {
             var copy = ceilings == null
@@ -1015,6 +1016,8 @@ namespace Anthropocene.Simulation
                 Project = Irrigation.Project, Construction = Irrigation.Construction, Upkeep = Irrigation.Upkeep };
             if (Civic != null) copy.Civic = new CivicOrder {
                 Construction = Civic.Construction, Upkeep = Civic.Upkeep };
+            if (Sanitation != null) copy.Sanitation = new CivicOrder {
+                Construction = Sanitation.Construction, Upkeep = Sanitation.Upkeep };
             return copy;
         }
         // An explicit access order with output ceilings (DemandControl).

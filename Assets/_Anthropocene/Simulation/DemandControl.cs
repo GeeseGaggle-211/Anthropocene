@@ -996,6 +996,7 @@ namespace Anthropocene.Simulation
                 }
             }
             Request civicUpkeep = null, civicBuild = null, civicStewards = null;
+            Request sanitUpkeep = null, sanitBuild = null;
             double coreStewards = 0, civicReqCapNow = 0, civicReqStewardsNow = 0;
             bool civicActive = CivicGovernance.Enabled(cfg) && c.IsVillage;
             double civicTAmort = 0, civicCPlan = 0, civicDeltaEff = 0, civicReqCapPlan = 0;
@@ -1046,6 +1047,14 @@ namespace Anthropocene.Simulation
                     if (coreStewards > Epsilon)
                         LabourRequest("core stewards", ServiceClass.Continuity, WorkforceRoles.Steward, coreStewards);
                 }
+
+                // Continuity 3 (Phase 2): sanitation maintenance, capped to ReqSanitCap(N).
+                if (CivicGovernance.SanitationEnabled(cfg) && c.SanitationCapital > Epsilon && CivicGovernance.SanitationRecipesAvailable(w, c))
+                {
+                    double upkeep = CivicGovernance.SanitationMaintenanceTarget(w, c, years, residents);
+                    if (upkeep > Epsilon)
+                        sanitUpkeep = Request("sanitation maintenance", ServiceClass.Continuity, CraftGood.SanitationMaintenance, upkeep);
+                }
             }
             void AddCivicDevelopment()
             {
@@ -1094,6 +1103,36 @@ namespace Anthropocene.Simulation
                                     WorkforceRoles.Steward, devStewards);
                                 if (civicStewards != null)
                                     civicStewards.PriorityScore = civicBuild.PriorityScore;
+                            }
+                        }
+                    }
+                }
+
+                // Development 3 (Phase 2): sanitation development, only where local freshwater can carry the drains.
+                if (CivicGovernance.SanitationEnabled(cfg) && CivicGovernance.SanitationRecipesAvailable(w, c) &&
+                    residents >= cs.SanitationDevelopmentMinPopulation)
+                {
+                    double reqSanit = CivicGovernance.RequiredSanitationCapital(cfg, residents);
+                    double wAvail = reqSanit > 1e-12 ? CivicGovernance.ForecastSanitationWaterFraction(w, c, years, residents) : 0;
+                    if (wAvail > 0.05)
+                    {
+                        double deltaKs = Math.Max(0, reqSanit * wAvail - c.SanitationCapital);
+                        if (deltaKs > Epsilon)
+                        {
+                            sanitBuild = Request("sanitation development", ServiceClass.Development, CraftGood.SanitationConstruction, deltaKs);
+                            if (sanitBuild != null && sanitBuild.Bundle != null)
+                            {
+                                double deltaIs = deltaKs / reqSanit;
+                                double buildRoleYears = sanitBuild.Bundle.RoleYears.Values.Sum();
+                                double maintRoleYears = RecurringBundleRoleYears(CraftGood.SanitationMaintenance);
+                                double wSanitYr = buildRoleYears * deltaKs / Math.Max(Epsilon, civicTAmort)
+                                    + maintRoleYears * deltaKs * CivicGovernance.SanitationDecayRate(cfg);
+                                double dDisease = PhysicalDemography.DiseaseMortalityRate(cfg, residents);
+                                double alphaD = 1 - CivicGovernance.DiseaseMitigationFor(cfg, civicCPlan, c.CivicStratification, 1.0);
+                                double foodPerDeath = cs.SanitationDeathFoodYears * PhysicalDemography.FoodPerPersonYear(cfg);
+                                double numerator = residents * dDisease * alphaD * deltaIs * foodPerDeath;
+                                sanitBuild.PriorityScore = wSanitYr > Epsilon && !double.IsInfinity(wSanitYr)
+                                    ? Math.Max(0, numerator / wSanitYr) : 0;
                             }
                         }
                     }
@@ -2059,6 +2098,9 @@ namespace Anthropocene.Simulation
             if ((civicBuild?.Granted ?? 0) > Epsilon || (civicUpkeep?.Granted ?? 0) > Epsilon)
                 production.Civic = new CivicOrder {
                     Construction = civicBuild?.Granted ?? 0, Upkeep = civicUpkeep?.Granted ?? 0 };
+            if ((sanitBuild?.Granted ?? 0) > Epsilon || (sanitUpkeep?.Granted ?? 0) > Epsilon)
+                production.Sanitation = new CivicOrder {
+                    Construction = sanitBuild?.Granted ?? 0, Upkeep = sanitUpkeep?.Granted ?? 0 };
             if (protectedSplit && protectedClothingUnits >= 0)
                 production.ProtectedClothingUnits = alloc.Requests.Where(q => q.Service == "clothing" && q.Class == ServiceClass.Protected).Sum(q => q.Granted);
             foreach (var request in alloc.Requests) request.GrantedBeforeProduction = request.Granted;

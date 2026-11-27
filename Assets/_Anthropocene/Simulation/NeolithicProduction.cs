@@ -53,7 +53,7 @@ namespace Anthropocene.Simulation
         public static readonly string[] Convergence = { WheelAndAxle, CopperWorking };
     }
     // Append new values so existing saved/history enum ordinals remain stable.
-    public enum CraftGood { HandTools, Pots, Cloth, FarmTools, Housing, Tools, AnimalFabric, LightHousing, HerdingTools, HousingMaterial, FishingTools, CanalConstruction, CanalMaintenance, CivicConstruction, CivicMaintenance }
+    public enum CraftGood { HandTools, Pots, Cloth, FarmTools, Housing, Tools, AnimalFabric, LightHousing, HerdingTools, HousingMaterial, FishingTools, CanalConstruction, CanalMaintenance, CivicConstruction, CivicMaintenance, SanitationConstruction, SanitationMaintenance }
     public sealed class CraftRecipe
     {
         public CraftGood Good;
@@ -294,13 +294,14 @@ namespace Anthropocene.Simulation
         public static readonly CraftGood[] InfrastructureGoods =
         {
             CraftGood.CanalConstruction, CraftGood.CanalMaintenance,
-            CraftGood.CivicConstruction, CraftGood.CivicMaintenance
+            CraftGood.CivicConstruction, CraftGood.CivicMaintenance,
+            CraftGood.SanitationConstruction, CraftGood.SanitationMaintenance
         };
         public static bool IsInfrastructureGood(CraftGood good)
-            => IrrigationEconomy.InfrastructureGood(good) || CivicGovernance.IsCivicGood(good);
+            => IrrigationEconomy.InfrastructureGood(good) || CivicGovernance.IsCivicGood(good) || CivicGovernance.IsSanitationGood(good);
         internal static double InfrastructureDemand(ProductionOrder order, CraftGood good)
             => IrrigationEconomy.InfrastructureGood(good) ? IrrigationEconomy.Demand(order, good)
-                : CivicGovernance.IsCivicGood(good) ? CivicGovernance.Demand(order, good) : 0;
+                : CivicGovernance.IsCivicGood(good) || CivicGovernance.IsSanitationGood(good) ? CivicGovernance.Demand(order, good) : 0;
         internal static void SetInfrastructureDemand(ProductionOrder order, CraftGood good, double amount)
         {
             if (order == null) return;
@@ -309,6 +310,8 @@ namespace Anthropocene.Simulation
             else if (good == CraftGood.CanalMaintenance && order.Irrigation != null) order.Irrigation.Upkeep = value;
             else if (good == CraftGood.CivicConstruction && order.Civic != null) order.Civic.Construction = value;
             else if (good == CraftGood.CivicMaintenance && order.Civic != null) order.Civic.Upkeep = value;
+            else if (good == CraftGood.SanitationConstruction && order.Sanitation != null) order.Sanitation.Construction = value;
+            else if (good == CraftGood.SanitationMaintenance && order.Sanitation != null) order.Sanitation.Upkeep = value;
         }
         // A new segment includes its first operating period. Manufacturing demand
         // and the assembly recipe must price that same commissioning bundle.
@@ -358,6 +361,14 @@ namespace Anthropocene.Simulation
                     new CraftRecipe { Good = CraftGood.CivicMaintenance, Specialist = WorkforceRoles.Builder, Track = NeolithicTech.Construction,
                         Rate = intervalYears / cv.CivicMaintainBuilderYears, HousingMaterial = cv.CivicMaintainHousingMaterials, Equipment = true, SpecialistOnly = false, AgricultureOrFishing = true }
                 }).ToArray();
+                // Phase 2 (Docs/CivicGovernance.md §5 Choice #3.4): drains and planned quarters need trained Builders.
+                if (CivicGovernance.SanitationEnabled(config))
+                    recipes = recipes.Concat(new[] {
+                        new CraftRecipe { Good = CraftGood.SanitationConstruction, Specialist = WorkforceRoles.Builder, Track = NeolithicTech.Construction,
+                            Rate = intervalYears / cv.SanitationBuildBuilderYears, HousingMaterial = cv.SanitationBuildHousingMaterials, Equipment = true, SpecialistOnly = true, AgricultureOrFishing = true },
+                        new CraftRecipe { Good = CraftGood.SanitationMaintenance, Specialist = WorkforceRoles.Builder, Track = NeolithicTech.Construction,
+                            Rate = intervalYears / cv.SanitationMaintainBuilderYears, HousingMaterial = cv.SanitationMaintainHousingMaterials, Equipment = true, SpecialistOnly = true, AgricultureOrFishing = true }
+                    }).ToArray();
             }
             return recipes;
         }
@@ -377,7 +388,8 @@ namespace Anthropocene.Simulation
                 case CraftGood.HousingMaterial: return c.Inventory.HousingMaterial;
                 case CraftGood.FishingTools: return c.Inventory.FishingTools;
                 case CraftGood.CanalConstruction: case CraftGood.CanalMaintenance:
-                case CraftGood.CivicConstruction: case CraftGood.CivicMaintenance: return 0;
+                case CraftGood.CivicConstruction: case CraftGood.CivicMaintenance:
+                case CraftGood.SanitationConstruction: case CraftGood.SanitationMaintenance: return 0;
                 default: throw new ArgumentOutOfRangeException(nameof(good), good, "Unknown craft good.");
             }
         }
@@ -397,7 +409,8 @@ namespace Anthropocene.Simulation
                 case CraftGood.HousingMaterial: return c.CraftingPriorities.Housing;
                 case CraftGood.FishingTools: return c.CraftingPriorities.FishingTools;
                 case CraftGood.CanalConstruction: case CraftGood.CanalMaintenance:
-                case CraftGood.CivicConstruction: case CraftGood.CivicMaintenance: return 1;
+                case CraftGood.CivicConstruction: case CraftGood.CivicMaintenance:
+                case CraftGood.SanitationConstruction: case CraftGood.SanitationMaintenance: return 1;
                 default: throw new ArgumentOutOfRangeException(nameof(good), good, "Unknown craft good.");
             }
         }
@@ -406,6 +419,7 @@ namespace Anthropocene.Simulation
             if (recipe == null) return false;
             if (IrrigationEconomy.InfrastructureGood(recipe.Good) && (!IrrigationEconomy.Enabled(w) || !c.People.HasTech(NeolithicTech.Irrigation))) return false;
             if (CivicGovernance.IsCivicGood(recipe.Good) && !CivicGovernance.CivicRecipesAvailable(w, c)) return false;
+            if (CivicGovernance.IsSanitationGood(recipe.Good) && !CivicGovernance.SanitationRecipesAvailable(w, c)) return false;
             if (recipe.AgricultureOnly && !CultivationEconomy.Enabled(c)) return false;
             if (recipe.HusbandryOnly && !CultivationEconomy.HusbandryEnabled(c)) return false;
             if (recipe.AgricultureOrFishing && !CultivationEconomy.Enabled(c) &&
@@ -1097,7 +1111,7 @@ namespace Anthropocene.Simulation
             inv.HandTools -= consumedHand; inv.Tools -= consumedTools;
             inv.Stone -= amount * recipe.Stone; inv.Wood -= wood; inv.Clay -= clay; c.PlantFood -= amount * recipe.PlantFood; c.AnimalFood -= amount * recipe.AnimalFood; inv.AnimalFabric -= amount * recipe.AnimalFabric; inv.HousingMaterial -= amount * recipe.HousingMaterial;
             if (housing != null) housing.CompleteDirect(recipe, amount);
-            switch (recipe.Good) { case CraftGood.HandTools: inv.HandTools += amount; break; case CraftGood.Pots: inv.Pots += amount; break; case CraftGood.Cloth: inv.Cloth += amount; break; case CraftGood.FarmTools: inv.FarmTools += amount; break; case CraftGood.Housing: AddFixedHousing(w, c, amount, record.Duration > 0 ? record.StartDays + record.Duration : w.Days + intervals * w.Config.BaseDays); break; case CraftGood.Tools: inv.Tools += amount; break; case CraftGood.AnimalFabric: inv.AnimalFabric += amount; break; case CraftGood.LightHousing: inv.LightHousingUnits += amount; break; case CraftGood.HerdingTools: inv.HerdingTools += amount; break; case CraftGood.HousingMaterial: inv.HousingMaterial += amount; break; case CraftGood.FishingTools: inv.FishingTools += amount; break; case CraftGood.CanalConstruction: case CraftGood.CanalMaintenance: IrrigationEconomy.Produce(w, c, recipe.Good, amount, order, record.StartDays + record.Duration); break; case CraftGood.CivicConstruction: case CraftGood.CivicMaintenance: break; default: throw new ArgumentOutOfRangeException(nameof(recipe.Good), recipe.Good, "Unknown craft good."); }
+            switch (recipe.Good) { case CraftGood.HandTools: inv.HandTools += amount; break; case CraftGood.Pots: inv.Pots += amount; break; case CraftGood.Cloth: inv.Cloth += amount; break; case CraftGood.FarmTools: inv.FarmTools += amount; break; case CraftGood.Housing: AddFixedHousing(w, c, amount, record.Duration > 0 ? record.StartDays + record.Duration : w.Days + intervals * w.Config.BaseDays); break; case CraftGood.Tools: inv.Tools += amount; break; case CraftGood.AnimalFabric: inv.AnimalFabric += amount; break; case CraftGood.LightHousing: inv.LightHousingUnits += amount; break; case CraftGood.HerdingTools: inv.HerdingTools += amount; break; case CraftGood.HousingMaterial: inv.HousingMaterial += amount; break; case CraftGood.FishingTools: inv.FishingTools += amount; break; case CraftGood.CanalConstruction: case CraftGood.CanalMaintenance: IrrigationEconomy.Produce(w, c, recipe.Good, amount, order, record.StartDays + record.Duration); break; case CraftGood.CivicConstruction: case CraftGood.CivicMaintenance: case CraftGood.SanitationConstruction: case CraftGood.SanitationMaintenance: break; default: throw new ArgumentOutOfRangeException(nameof(recipe.Good), recipe.Good, "Unknown craft good."); }
             // Output first fills what this camp still owes for export; Hand Tools made for export are not this turn's coverage.
             double forExport = c.TradeOwed == null ? 0 : Math.Min(amount, Math.Max(0, c.TradeOwed[(int)recipe.Good]));
             if (forExport > 0) c.TradeOwed[(int)recipe.Good] -= forExport;
@@ -1135,7 +1149,7 @@ namespace Anthropocene.Simulation
             c.TradeExports = (double[])needs?.Exports?.Clone(); c.TradeOwed = (double[])c.TradeExports?.Clone();
             DepreciateHousing(w, c, years, residents);
             DepreciatePots(w, c, years);
-            double civicMaintPaid = 0, civicBuilt = 0;
+            double civicMaintPaid = 0, civicBuilt = 0, sanitMaintPaid = 0, sanitBuilt = 0;
             if (CultivationEconomy.EconomyEnabled(w, c))
             {
                 var recipes = Recipes(w.Config);
@@ -1197,9 +1211,11 @@ namespace Anthropocene.Simulation
                 }
                 produced.TryGetValue(CraftGood.CivicMaintenance, out civicMaintPaid);
                 produced.TryGetValue(CraftGood.CivicConstruction, out civicBuilt);
+                produced.TryGetValue(CraftGood.SanitationMaintenance, out sanitMaintPaid);
+                produced.TryGetValue(CraftGood.SanitationConstruction, out sanitBuilt);
             }
             // Atomic post-Layer-1 commit outside EconomyEnabled so existing CivicCapital still decays analytically.
-            CivicGovernance.CommitCapitals(w, c, years, civicMaintPaid, civicBuilt);
+            CivicGovernance.CommitCapitals(w, c, years, civicMaintPaid, civicBuilt, sanitMaintPaid, sanitBuilt);
             c.TradeExports = null; c.TradeOwed = null;
             if (resolveNeeds) ResolveNeeds(w, c, years, residents);
         }

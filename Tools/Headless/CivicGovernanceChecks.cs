@@ -47,6 +47,8 @@ internal static class CivicGovernanceChecks
         FamineShockCollapseDivergenceGate();
         DemandControlProtectedAndQoLRegressionGates();
         Phase1BFeatureContractsAndZeroRegression();
+        Phase2SanitationContracts();
+        Phase2OrganicWallBreakGate();
         Console.WriteLine("PASS: " + checks + " civic governance assertions");
         return checks;
     }
@@ -4070,6 +4072,189 @@ internal static class CivicGovernanceChecks
             Check(lastA.CivicReports == null && lastA.SanitationWater == null, "Civic==null leaves CivicReports and SanitationWater null");
             Check(SaveCodec.Fingerprint(wZeroA) == SaveCodec.Fingerprint(wZeroB), "Civic==null multi-turn save/reload fingerprint matches bit-for-bit");
         }
+    }
+
+    // ---- M4 Phase 2 sanitation contracts (Docs/CivicGovernance.md §5 Choice #10) ----
+    private static void Phase2SanitationContracts()
+    {
+        // Recipes 15/16 exist only with SanitationEnabled and are usable only after Tier 3B.
+        var off = Phase1VillageFixture(enableCivic: true, sanitation: false, population: 3000);
+        Check(!NeolithicProduction.Recipes(off.Config).Any(r => CivicGovernance.IsSanitationGood(r.Good)),
+            "Sanitation recipes are absent when SanitationEnabled=false");
+        Check(PhysicalDemography.DiseaseMitigation(off, off.Camps[0]) == 1.0, "SanitationEnabled=false keeps DiseaseMitigation == 1");
+        var w = Phase1VillageFixture(enableCivic: true, sanitation: true, population: 3000);
+        var c = w.Camps[0];
+        var sanitRecipes = NeolithicProduction.Recipes(w.Config).Where(r => CivicGovernance.IsSanitationGood(r.Good)).ToArray();
+        Check(sanitRecipes.Length == 2 && sanitRecipes.All(r => r.Specialist == WorkforceRoles.Builder && r.SpecialistOnly && r.Rate > 0),
+            "SanitationConstruction/Maintenance are Builder-only recipes when SanitationEnabled");
+        Check((int)CraftGood.SanitationConstruction == 15 && (int)CraftGood.SanitationMaintenance == 16, "CraftGood sanitation IDs are append-only (15/16)");
+        Check(sanitRecipes.All(r => !NeolithicProduction.RecipeAvailable(w, c, r)), "Sanitation recipes unavailable before Tier 3B");
+        c.People.CivicPrecedents.Add(CivicPrecedents.CeremonialIntegration);
+        c.People.CivicPrecedents.Add(CivicPrecedents.CivicOrganization);
+        c.People.CivicPrecedents.Add(CivicPrecedents.PlannedQuartersAndDrainage);
+        Check(sanitRecipes.All(r => NeolithicProduction.RecipeAvailable(w, c, r)), "Sanitation recipes available after Tier 3B");
+
+        // M_d floor and monotonicity.
+        var cfg = w.Config;
+        double mdFull = CivicGovernance.DiseaseMitigationFor(cfg, 1, 1, 1);
+        Check(mdFull >= cfg.Civic.MinDiseaseMitigation - 1e-15 && Math.Abs(cfg.Civic.MinDiseaseMitigation - 0.15) < 1e-15,
+            "Disease mitigation respects the 0.15 floor (" + mdFull + ")");
+        Check(CivicGovernance.DiseaseMitigationFor(cfg, 1, 0, 0) == 1.0 && CivicGovernance.DiseaseMitigationFor(cfg, 0, 0, 1) == 1.0,
+            "Zero coverage or zero complexity gives M_d == 1");
+        Check(CivicGovernance.DiseaseMitigationFor(cfg, 0.8, 0, 0.5) > CivicGovernance.DiseaseMitigationFor(cfg, 0.8, 0, 1.0),
+            "More sanitation coverage lowers M_d");
+
+        // dt-invariant retention: two 10-year halves equal one 20-year turn (unpaid and proportionally paid).
+        double d = CivicGovernance.SanitationDecayRate(cfg);
+        double k0 = 480;
+        NearRelative(CivicGovernance.RetainCapital(CivicGovernance.RetainCapital(k0, d, 10, 0), d, 10, 0),
+            CivicGovernance.RetainCapital(k0, d, 20, 0), "Unpaid sanitation decay is dt-invariant", 1e-12);
+        double half = 0.5 * d * k0;
+        NearRelative(CivicGovernance.RetainCapital(CivicGovernance.RetainCapital(k0, d, 10, half * 10), d, 10, half * 10),
+            CivicGovernance.RetainCapital(k0, d, 20, half * 20), "Partially paid sanitation retention is dt-invariant", 1e-12);
+        c.SanitationCapital = CivicGovernance.RequiredSanitationCapital(cfg, c.Population);
+        double target = CivicGovernance.SanitationMaintenanceTarget(w, c, 20);
+        Near(CivicGovernance.RetainCapital(c.SanitationCapital, d, 20, target), c.SanitationCapital,
+            "Full sanitation upkeep retains the stock exactly", 1e-9);
+
+        // Tier-2 water: conserved per tile, after biological claims, works with and without the agriculture block.
+        foreach (bool withAgriculture in new[] { true, false })
+        {
+            var ww = Phase1VillageFixture(enableCivic: true, sanitation: true, population: 3000);
+            if (!withAgriculture) ww.Config.Agriculture = null;
+            var wc = ww.Camps[0];
+            wc.People.CivicPrecedents.Add(CivicPrecedents.CeremonialIntegration);
+            wc.People.CivicPrecedents.Add(CivicPrecedents.CivicOrganization);
+            wc.People.CivicPrecedents.Add(CivicPrecedents.PlannedQuartersAndDrainage);
+            wc.SanitationCapital = CivicGovernance.RequiredSanitationCapital(ww.Config, wc.Population);
+            double days = 20 * ww.Config.DaysPerYear;
+            double need = CivicGovernance.SanitationWaterNeed(ww, wc, 20);
+            Check(need > 0, "Sanitation water need is positive for a capitalised Tier-3B village");
+            var claims = new List<Demand>();
+            var record = new TurnRecord();
+            var touched = new HashSet<int>();
+            CivicGovernance.AllocateSanitationWater(ww, claims, ww.Days, days, record, t => touched.Add(t));
+            string tag = withAgriculture ? " (agriculture)" : " (Agriculture == null)";
+            Check(claims.Count > 0 && claims.All(x => x.Kind == "SanitationWater" && x.Entity == wc.Id && x.Freshwater > 0),
+                "Sanitation water emits positive SanitationWater claims" + tag);
+            Check(claims.All(x => touched.Contains(x.Tile)), "Every sanitation source tile is activated" + tag);
+            double reservePerTile = withAgriculture ? 0 : wc.Population * 0.10 * 20;
+            int src = FreshwaterAccess.Source(ww, wc.Tile);
+            foreach (var g in claims.GroupBy(x => x.Tile))
+            {
+                double env = IrrigationEconomy.WaterEnvelope(ww, g.Key, ww.Days, days);
+                double reserve = g.Key == src ? reservePerTile : 0;
+                Check(g.Sum(x => x.Freshwater) <= Math.Max(0, env - reserve) * (1 + 1e-9) + 1e-9,
+                    "Sanitation withdrawals stay within the tile envelope after drinking" + tag);
+            }
+            double delivered = claims.Sum(x => x.Freshwater);
+            Check(delivered <= need * (1 + 1e-9) && wc.SanitationWaterRatio > 0 && wc.SanitationWaterRatio <= 1,
+                "Sanitation delivery is bounded by need and sets a ratio in (0,1]" + tag);
+            Near(wc.SanitationWaterRatio, Math.Min(1, delivered / need), "Sanitation ratio equals delivered/need" + tag, 1e-9);
+            Check(record.SanitationWater != null && Math.Abs(record.SanitationWater.Sum(r => r.Withdrawal) - delivered) < 1e-9,
+                "Sanitation receipts reconcile with claims" + tag);
+
+            // Biological claims saturating every local source leave nothing for sanitation.
+            var saturated = new List<Demand>();
+            foreach (int t in ww.Map.Radius(wc.Tile, 1))
+                saturated.Add(new Demand { Tile = t, Entity = -1, Kind = "Drinking", Freshwater = IrrigationEconomy.WaterEnvelope(ww, t, ww.Days, days) + 1 });
+            int before = saturated.Count;
+            CivicGovernance.AllocateSanitationWater(ww, saturated, ww.Days, days, null, null);
+            Check(saturated.Count == before && wc.SanitationWaterRatio == 0,
+                "Drinking/biological water ranks before sanitation" + tag);
+        }
+
+        // Dry oasis: no local freshwater means wAvail ~ 0 and DemandControl never builds drains.
+        var dry = Phase1VillageFixture(enableCivic: true, sanitation: true, population: 3000);
+        var dc = dry.Camps[0];
+        dc.People.CivicPrecedents.Add(CivicPrecedents.CeremonialIntegration);
+        dc.People.CivicPrecedents.Add(CivicPrecedents.CivicOrganization);
+        dc.People.CivicPrecedents.Add(CivicPrecedents.PlannedQuartersAndDrainage);
+        dc.CivicComplexity = 0.8;
+        Check(CivicGovernance.ForecastSanitationWaterFraction(dry, dc, 20) > 0.5, "Wet village forecasts usable sanitation water");
+        foreach (int t in dry.Map.Radius(dc.Tile, 1)) dry.Tiles[t].FreshwaterSource = FreshwaterSource.None;
+        Check(CivicGovernance.ForecastSanitationWaterFraction(dry, dc, 20) < 0.05, "Dry oasis forecasts wAvail ~ 0");
+        new TurnResolver().Resolve(dry, new Dictionary<int, List<Order>>());
+        Check(dc.SanitationCapital == 0 && dc.SanitationWaterRatio == 0 && CivicGovernance.SanitationCoverage(dry, dc) == 0,
+            "Dry oasis builds no sanitation capital and has zero coverage");
+
+        // Fission daughters start with zero sanitation state.
+        var daughter = new Camp { SanitationCapital = 99, SanitationWaterRatio = 0.7 };
+        c.SanitationWaterRatio = 0.8;
+        CivicGovernance.InitializeDaughterView(w, c, daughter);
+        Check(daughter.SanitationCapital == 0 && daughter.SanitationWaterRatio == 0 && CivicGovernance.ActiveSanitationCapital(daughter) == 0,
+            "Fission daughter starts with zero sanitation capital, water and active stock");
+
+        // The ~3,400 disease wall: physical equilibrium with best crowding mitigation and no sanitation vs full sanitation.
+        double Equilibrium(double md)
+        {
+            double lo = 500, hi = 60000;
+            double mc = cfg.Civic.MinCrowdingMitigation;
+            for (int i = 0; i < 200; i++)
+            {
+                double mid = 0.5 * (lo + hi);
+                double net = PhysicalDemography.Rates(cfg, mid, 1, 1, mid, false, 0, mc, md).Net;
+                if (net > 0) lo = mid; else hi = mid;
+            }
+            return 0.5 * (lo + hi);
+        }
+        double wall = Equilibrium(1.0);
+        double sanitised = Equilibrium(CivicGovernance.DiseaseMitigationFor(cfg, 1, 0, 1));
+        Check(wall >= 2800 && wall <= 4000, "Unsanitised disease wall sits near ~3,400 (" + wall.ToString("F0") + ")");
+        Check(sanitised >= 5000 && sanitised <= 12000, "Full sanitation lifts the equilibrium into 5k-10k (" + sanitised.ToString("F0") + ")");
+    }
+
+    // Phase-2 gate: from the Phase-1 ceiling, a well-watered, well-fed village with sanitation climbs past the ~3,400
+    // disease wall while the matched SanitationEnabled=false arm stays at it. Land is widened to radius 2 so food
+    // capacity is not the binding limit; civic state is seeded at the Phase-1 endpoint, Tier 3B accrues organically.
+    private static WorldState Phase2Fixture(bool sanitation)
+    {
+        var w = Phase1VillageFixture(enableCivic: true, sanitation: sanitation, population: 3000);
+        w.Config.TurnDays = 5.0 * w.Config.DaysPerYear;
+        var c = w.Camps[0];
+        foreach (int id in w.Map.Radius(c.Tile, 2))
+        {
+            var t = w.Tiles[id];
+            t.CultivationCapital = 1.0;
+            t.Cultivation = (float)CultivationEconomy.Intensity(w.Config, 1.0);
+            t.Cultivated = true;
+            t.CultivationOperator = c.Id;
+            t.CultivationOperatingFraction = 0;
+        }
+        c.People.CivicPrecedents.Add(CivicPrecedents.CeremonialIntegration);
+        c.People.CivicPrecedents.Add(CivicPrecedents.CivicOrganization);
+        c.CivicComplexity = CivicGovernance.MaxComplexity(w, c);
+        c.CivicCapital = CivicGovernance.RequiredCivicCapital(w, c);
+        c.Workforce.Assign(WorkforceRoles.Steward, (int)Math.Ceiling(CivicGovernance.RequiredStewards(w, c)), c.Population);
+        c.PlantFood = c.Population * 60.0;
+        return w;
+    }
+
+    private static void Phase2OrganicWallBreakGate()
+    {
+        var san = Phase2Fixture(true);
+        var ctl = Phase2Fixture(false);
+        var sc = san.Camps[0];
+        var cc = ctl.Camps[0];
+        var resolver = new TurnResolver();
+        int peakS = sc.Population, peakC = cc.Population;
+        var trace = new System.Text.StringBuilder();
+        for (int turn = 0; turn < 120; turn++)
+        {
+            resolver.Resolve(san, new Dictionary<int, List<Order>>());
+            resolver.Resolve(ctl, new Dictionary<int, List<Order>>());
+            peakS = Math.Max(peakS, sc.Population);
+            peakC = Math.Max(peakC, cc.Population);
+            if ((turn + 1) % 20 == 0)
+                trace.Append($"[t={turn + 1}:N={sc.Population},ctl={cc.Population},3B={sc.People.HasCivicPrecedent(CivicPrecedents.PlannedQuartersAndDrainage)},KS={sc.SanitationCapital:F0},w={sc.SanitationWaterRatio:F2},cov={CivicGovernance.SanitationCoverage(san, sc):F2},Md={PhysicalDemography.DiseaseMitigation(san, sc):F3},Mc={PhysicalDemography.CrowdingMitigation(san, sc):F3},food={sc.Food:F0}] ");
+        }
+        Console.WriteLine("PHASE2_GATE peakSanitation=" + peakS + " endSanitation=" + sc.Population + " peakControl=" + peakC + " endControl=" + cc.Population + " " + trace);
+        TurnResolver.Invariants(san);
+        CivicGovernance.ValidateInvariants(san);
+        Check(sc.People.HasCivicPrecedent(CivicPrecedents.PlannedQuartersAndDrainage), "Phase-2 village organically unlocks Tier 3B " + trace);
+        Check(sc.SanitationCapital > 0 && CivicGovernance.SanitationCoverage(san, sc) > 0.5, "Phase-2 village builds watered sanitation " + trace);
+        Check(peakC <= 3700, "SanitationEnabled=false arm stays at the ~3,400 wall (peak=" + peakC + ")");
+        Check(peakS >= 5000, "Sanitation arm breaks the wall to >= 5,000 (peak=" + peakS + ") " + trace);
     }
 
     private static byte[] Unzip(byte[] bytes)
