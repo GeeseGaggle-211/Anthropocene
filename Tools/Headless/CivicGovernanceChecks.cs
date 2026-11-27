@@ -33,6 +33,7 @@ internal static class CivicGovernanceChecks
         OrdersMultiPolicyAndPlanningDraft();
         ObservationsAndPolicy();
         PersistenceAndLegacyCompatibility();
+        NumericalAndNonFiniteSafety();
         Console.WriteLine("PASS: " + checks + " civic governance assertions");
         return checks;
     }
@@ -1298,6 +1299,424 @@ internal static class CivicGovernanceChecks
             "disabled world keeps TurnRecord.CivicReports and SanitationWater null");
         Check(SaveCodec.ConfigurationHash(offW.Config) != SaveCodec.ConfigurationHash(loaded.Config),
             "SaveCodec.ConfigurationHash distinguishes Civic == null vs enabled");
+    }
+
+    private static void NumericalAndNonFiniteSafety()
+    {
+        static bool IsFinite(double v) => !double.IsNaN(v) && !double.IsInfinity(v);
+
+        // =========================================================================
+        // Regression (Iter 4 Bug #1): Convex interpolation eliminates catastrophic
+        // cancellation on asymmetric StewardExponent, StewardRate & CapitalPerPerson.
+        // =========================================================================
+        double r10k = 10000.0 / 3500.0;
+        double logBase10k = 0.5 * Math.Log(1.0 + r10k * r10k);
+        var asymExpCases = new (double BetaE, double BetaS, double P, bool Has3A, double Rate, string Label)[]
+        {
+            (1e10,            1.15,   1.0, false, 0.105, "betaE=1e10, betaS=1.15 at P=+1"),
+            (1e17,            1.15,   1.0, false, 0.105, "betaE=1e17, betaS=1.15 at P=+1"),
+            (1e17,            2.60,   1.0, false, 0.105, "betaE=1e17, betaS=2.60 at P=+1"),
+            (1e100,          100.0,   1.0, false, 0.105, "betaE=1e100, betaS=100 at P=+1"),
+            (double.MaxValue, 100.0,  1.0, false, 0.105, "betaE=MaxValue, betaS=100 at P=+1"),
+            (1e100,           2.60,   1.0, true,  0.105, "betaE=1e100, betaS=2.60 at P=+1 has3A"),
+            (1.15,           1e100,  -1.0, false, 0.045, "betaE=1.15, betaS=1e100 at P=-1"),
+            (1.15, double.MaxValue,  -1.0, false, 0.045, "betaE=1.15, betaS=MaxValue at P=-1"),
+            (2.60,           1e100,  -1.0, true,  0.045, "betaE=2.60, betaS=1e100 at P=-1 has3A")
+        };
+        foreach (var tc in asymExpCases)
+        {
+            var cfgExp = new SimulationConfig
+            {
+                Civic = new CivicGovernanceSettings
+                {
+                    Enabled = true,
+                    EgalitarianStewardExponent = tc.BetaE,
+                    StratifiedStewardExponent = tc.BetaS
+                }
+            };
+            cfgExp.Validate();
+            double actual = CivicGovernance.RequiredStewards(cfgExp, 10000.0, 1.0, tc.P, tc.Has3A, tc.P);
+            double activeBeta = tc.P > 0 ? tc.BetaS : tc.BetaE;
+            double excess = (activeBeta - 1.0) * (tc.Has3A ? cfgExp.Civic.AccountingExponentRetention : 1.0);
+            double expected = Math.Exp(Math.Log(10000.0) + Math.Log(tc.Rate) + excess * logBase10k);
+            Check(IsFinite(actual), "RequiredStewards finite for " + tc.Label);
+            Near(actual, expected, "convex RequiredStewards matches exact analytical value for " + tc.Label, 1e-12);
+        }
+
+        // Exact chal_iter3_1 Bug #1 numeric spot values
+        var spotCfg1 = new SimulationConfig { Civic = new CivicGovernanceSettings { Enabled = true, EgalitarianStewardExponent = 1e17, StratifiedStewardExponent = 1.15 } };
+        Near(CivicGovernance.RequiredStewards(spotCfg1, 10000.0, 1.0, 1.0, false, 1.0), 1239.7755539961836, "Bug #1 spot 1e17/1.15 -> 1239.7755539961836", 1e-12);
+        var spotCfg2 = new SimulationConfig { Civic = new CivicGovernanceSettings { Enabled = true, EgalitarianStewardExponent = 1e17, StratifiedStewardExponent = 2.60 } };
+        Near(CivicGovernance.RequiredStewards(spotCfg2, 10000.0, 1.0, 1.0, false, 1.0), 6177.738313977794, "Bug #1 spot 1e17/2.60 -> 6177.738313977794", 1e-12);
+        var spotCfg3 = new SimulationConfig { Civic = new CivicGovernanceSettings { Enabled = true, EgalitarianStewardExponent = 1e100, StratifiedStewardExponent = 100.0 } };
+        Near(CivicGovernance.RequiredStewards(spotCfg3, 10000.0, 1.0, 1.0, false, 1.0), 4.392150542805956e+50, "Bug #1 spot 1e100/100 -> 4.392150542805956e+50", 1e-12);
+
+        // Symmetric endpoint checks for StewardRate and CapitalPerPerson across 40 orders of magnitude
+        var asymRateCfg = new SimulationConfig
+        {
+            Civic = new CivicGovernanceSettings
+            {
+                Enabled = true,
+                EgalitarianStewardRate = 1e-20,
+                StratifiedStewardRate = 1e20,
+                EgalitarianStewardExponent = 1.0,
+                StratifiedStewardExponent = 1.0,
+                EgalitarianCapitalPerPerson = 1e-20,
+                StratifiedCapitalPerPerson = 1e20
+            }
+        };
+        asymRateCfg.Validate();
+        Near(CivicGovernance.RequiredStewards(asymRateCfg, 1000.0, 1.0, -1.0, false, -1.0), 1000.0 * 1e-20, "StewardRate exact egalitarian endpoint at P=-1", 1e-12);
+        Near(CivicGovernance.RequiredStewards(asymRateCfg, 1000.0, 1.0,  1.0, false,  1.0), 1000.0 * 1e20,  "StewardRate exact stratified endpoint at P=+1", 1e-12);
+        Near(CivicGovernance.RequiredCivicCapital(asymRateCfg, 1000.0, 1.0, -1.0), 1000.0 * 1e-20, "CapitalPerPerson exact egalitarian endpoint at P=-1", 1e-12);
+        Near(CivicGovernance.RequiredCivicCapital(asymRateCfg, 1000.0, 1.0,  1.0), 1000.0 * 1e20,  "CapitalPerPerson exact stratified endpoint at P=+1", 1e-12);
+
+        // Subnormal midpoint convex rate must not underflow 0.5*double.Epsilon + 0.5*double.Epsilon to 0
+        var epsRateCfg = new SimulationConfig
+        {
+            Civic = new CivicGovernanceSettings
+            {
+                Enabled = true,
+                EgalitarianStewardRate = double.Epsilon,
+                StratifiedStewardRate = double.Epsilon,
+                EgalitarianStewardExponent = 1.0,
+                StratifiedStewardExponent = 1.0,
+                EgalitarianCapitalPerPerson = double.Epsilon,
+                StratifiedCapitalPerPerson = double.Epsilon
+            }
+        };
+        epsRateCfg.Validate();
+        double expectedEpsMid = Math.Exp(Math.Log(1.0) + Math.Log(1e308) + Math.Log(double.Epsilon));
+        Near(CivicGovernance.RequiredStewards(epsRateCfg, 1e308, 1.0, 0.0, false, 0.0), expectedEpsMid, "RequiredStewards midpoint at double.Epsilon does not underflow to 0", 1e-12);
+        Near(CivicGovernance.RequiredCivicCapital(epsRateCfg, 1e308, 1.0, 0.0), expectedEpsMid, "RequiredCivicCapital midpoint at double.Epsilon does not underflow to 0", 1e-12);
+
+        // =========================================================================
+        // Regression (Iter 4 Bug #2): Subnormal quantization guard on direct fast paths
+        // =========================================================================
+        // Reproducer #1: human-scale CivicCoverage must stay 1.0 (not collapse to 0.508)
+        var subW1 = CivicFixture(sanitation: true);
+        subW1.Config.Civic = new CivicGovernanceSettings
+        {
+            Enabled = true,
+            SanitationEnabled = true,
+            StewardScalingKnee = 1e-188,
+            EgalitarianStewardRate = 2.5e-316,
+            StratifiedStewardRate = 2.5e-316,
+            EgalitarianStewardExponent = 2.60,
+            StratifiedStewardExponent = 2.60,
+            AlignmentFrictionRate = 1e20
+        };
+        subW1.Config.Validate();
+        var subC1 = subW1.Camps[0];
+        subC1.Population = 1000;
+        subC1.CivicComplexity = 1e-11;
+        subC1.CivicStratification = -1.0;
+        subC1.LastEnvironmentalStratification = 1.0;
+        subC1.CivicCapital = 1000.0;
+        subC1.Workforce = new PopulationLedger();
+        subC1.Workforce.Assign(WorkforceRoles.Steward, 200, 1000);
+        double subReq1 = CivicGovernance.RequiredStewards(subW1, subC1);
+        double subCov1 = CivicGovernance.CivicCoverage(subW1, subC1);
+        Near(subReq1, 199.05358399107098, "Bug #2 reproducer #1 RequiredStewards matches exact 199.05358399107098", 1e-12);
+        Near(subCov1, 1.0, "Bug #2 reproducer #1 CivicCoverage remains 1.0 (no subnormal collapse)", 1e-12);
+
+        // Reproducer #2: strict monotonicity and < 1e-12 precision across subnormal rates with default AlignmentFrictionRate=0.35
+        double EvalSubRate(double rate)
+        {
+            var cRate = new SimulationConfig
+            {
+                Civic = new CivicGovernanceSettings
+                {
+                    Enabled = true,
+                    StewardScalingKnee = 1e-188,
+                    EgalitarianStewardRate = rate,
+                    StratifiedStewardRate = rate,
+                    EgalitarianStewardExponent = 2.60,
+                    StratifiedStewardExponent = 2.60
+                }
+            };
+            cRate.Validate();
+            return CivicGovernance.RequiredStewards(cRate, 1000.0, 1e-11, -1.0, false, -1.0);
+        }
+        double r25 = EvalSubRate(2.5e-316);
+        double r74 = EvalSubRate(7.4e-316);
+        double r305 = EvalSubRate(1e-305);
+        Near(r25, 9.952679199553523e-19, "Bug #2 reproducer #2 rate=2.5e-316 exact to < 1e-12", 1e-12);
+        Near(r74, 2.9459930532956414e-18, "Bug #2 reproducer #2 rate=7.4e-316 exact to < 1e-12", 1e-12);
+        Check(r74 > r25, "Bug #2 reproducer #2 RequiredStewards strictly monotone across subnormal rates (7.4e-316 > 2.5e-316)");
+        Near(r305, 3.9810717055348015e-8, "Bug #2 reproducer #2 rate=1e-305 exact to < 1e-12", 1e-12);
+
+        // Reproducer #3: default StewardScalingKnee=3500, C=0.75, rate=double.Epsilon, AlignmentFrictionRate=1e100
+        var subCfg3 = new SimulationConfig
+        {
+            Civic = new CivicGovernanceSettings
+            {
+                Enabled = true,
+                EgalitarianStewardRate = double.Epsilon,
+                AlignmentFrictionRate = 1e100
+            }
+        };
+        subCfg3.Validate();
+        Near(CivicGovernance.RequiredStewards(subCfg3, 1000.0, 0.75, -1.0, false, 1.0), 7.89113998452051e-221,
+            "Bug #2 reproducer #3 default knee + double.Epsilon rate matches exact 7.89113998452051e-221", 1e-12);
+
+        // Subnormal cp = c * population intermediate guard in both RequiredStewards and RequiredCivicCapital
+        var subCpCfg = new SimulationConfig
+        {
+            Civic = new CivicGovernanceSettings
+            {
+                Enabled = true,
+                EgalitarianStewardRate = 1e305,
+                StratifiedStewardRate = 1e305,
+                EgalitarianStewardExponent = 1.0,
+                StratifiedStewardExponent = 1.0,
+                EgalitarianCapitalPerPerson = 1e305,
+                StratifiedCapitalPerPerson = 1e305
+            }
+        };
+        subCpCfg.Validate();
+        Near(CivicGovernance.RequiredStewards(subCpCfg, 1e-300, 1e-11, 0.0, false, 0.0), 1e-6,
+            "RequiredStewards guards subnormal cp = c * population via log-space fallback", 1e-12);
+        Near(CivicGovernance.RequiredCivicCapital(subCpCfg, 1e-300, 1e-11, 0.0), 1e-6,
+            "RequiredCivicCapital guards subnormal cp = c * population via log-space fallback", 1e-12);
+
+        var subCapRateCfg = new SimulationConfig
+        {
+            Civic = new CivicGovernanceSettings
+            {
+                Enabled = true,
+                EgalitarianCapitalPerPerson = 2.5e-316,
+                StratifiedCapitalPerPerson = 2.5e-316
+            }
+        };
+        subCapRateCfg.Validate();
+        double expectedSubCap = Math.Exp(Math.Log(1e-11) + Math.Log(1e308) + Math.Log(2.5e-316));
+        Near(CivicGovernance.RequiredCivicCapital(subCapRateCfg, 1e308, 1e-11, 0.0), expectedSubCap,
+            "RequiredCivicCapital guards subnormal rate via log-space fallback", 1e-12);
+
+        // =========================================================================
+        // Regression (Iter 4 Bug #3): Comprehensive non-finite (NaN / ±Infinity)
+        // safety matrix across EVERY public pure helper in CivicGovernance.cs.
+        // =========================================================================
+        var w = CivicFixture(sanitation: true);
+        var cfg = w.Config;
+        double[] badDoubles = { double.NaN, double.PositiveInfinity, double.NegativeInfinity, 0.0, -0.0, double.Epsilon, -double.Epsilon, 0.5, -0.5, 1.0, -1.0, double.MaxValue, -double.MaxValue };
+        double[] rateYearVals = { double.NaN, double.PositiveInfinity, double.NegativeInfinity, 0.0, -0.0, -1.0, double.Epsilon, 0.025, 100.0, double.MaxValue };
+
+        // 3a. Relax: exact chal_iter3_1 reproducers + exhaustive 4D non-finite matrix
+        Near(CivicGovernance.Relax(0.5, double.PositiveInfinity, double.Epsilon, double.Epsilon), 0.5, "Relax(0.5, +Inf, eps, eps) finite == 0.5", 1e-12);
+        Near(CivicGovernance.Relax(double.PositiveInfinity, 0.5, 100.0, 20.0), 0.5, "Relax(+Inf, 0.5, 100, 20) finite == 0.5", 1e-12);
+        Check(CivicGovernance.Relax(double.PositiveInfinity, double.PositiveInfinity, 0.025, 20.0) == double.MaxValue, "Relax(+Inf, +Inf, 0.025, 20) saturates to double.MaxValue");
+        Check(IsFinite(CivicGovernance.Relax(double.NegativeInfinity, double.PositiveInfinity, 0.025, 20.0)), "Relax(-Inf, +Inf, 0.025, 20) is finite");
+        Check(CivicGovernance.Relax(double.PositiveInfinity, 0.5, 0.0, 20.0) == double.MaxValue, "Relax(+Inf, 0.5, 0, 20) saturates to double.MaxValue");
+        Near(CivicGovernance.Relax(0.5, double.NaN, 0.025, 20.0), 0.5, "Relax(0.5, NaN, 0.025, 20) returns current 0.5", 1e-12);
+        Check(IsFinite(CivicGovernance.Relax(double.NaN, 0.5, 0.025, 20.0)), "Relax(NaN, 0.5, 0.025, 20) is finite");
+        string relaxFail = null;
+        foreach (double cur in badDoubles)
+            foreach (double tgt in badDoubles)
+                foreach (double r in rateYearVals)
+                    foreach (double y in rateYearVals)
+                    {
+                        double v = CivicGovernance.Relax(cur, tgt, r, y);
+                        if (!IsFinite(v)) { relaxFail = $"Relax({cur},{tgt},{r},{y})={v}"; break; }
+                    }
+        Check(relaxFail == null, "Relax returns finite across entire 4D non-finite matrix" + (relaxFail == null ? "" : " (" + relaxFail + ")"));
+
+        // 3b. AlignmentFriction: exact NaN/±Inf checks + full 2D matrix
+        Near(CivicGovernance.AlignmentFriction(cfg, double.NaN, 0.0), 1.0, "AlignmentFriction(NaN, 0) == 1", 1e-12);
+        Near(CivicGovernance.AlignmentFriction(cfg, 0.0, double.NaN), 1.0, "AlignmentFriction(0, NaN) == 1", 1e-12);
+        Near(CivicGovernance.AlignmentFriction(cfg, double.PositiveInfinity, double.NegativeInfinity), 1.0 + 2.0 * cfg.Civic.AlignmentFrictionRate,
+            "AlignmentFriction(+Inf, -Inf) clamps to ±1", 1e-12);
+        string afFail = null;
+        foreach (double p in badDoubles)
+            foreach (double pe in badDoubles)
+            {
+                double v = CivicGovernance.AlignmentFriction(cfg, p, pe);
+                if (!IsFinite(v) || v < 1.0) { afFail = $"AlignmentFriction({p},{pe})={v}"; break; }
+            }
+        Check(afFail == null, "AlignmentFriction finite >= 1 across 2D non-finite matrix" + (afFail == null ? "" : " (" + afFail + ")"));
+
+        // 3c. Four *For helpers: exact NaN spot checks + full 3D matrix
+        Near(CivicGovernance.CrowdingMitigationFor(cfg, double.NaN, 0, 0.5), 1.0, "CrowdingMitigationFor(NaN,0,0.5) == 1", 1e-12);
+        Near(CivicGovernance.CrowdingMitigationFor(cfg, 0.5, double.NaN, 0.5), 1.0, "CrowdingMitigationFor(0.5,NaN,0.5) == 1", 1e-12);
+        Near(CivicGovernance.CrowdingMitigationFor(cfg, 0.5, 0, double.NaN), 1.0, "CrowdingMitigationFor(0.5,0,NaN) == 1", 1e-12);
+        Near(CivicGovernance.DiseaseMitigationFor(cfg, double.NaN, 0, 0.5), 1.0, "DiseaseMitigationFor(NaN,0,0.5) == 1", 1e-12);
+        Near(CivicGovernance.DiseaseMitigationFor(cfg, 0.5, double.NaN, 0.5), 1.0, "DiseaseMitigationFor(0.5,NaN,0.5) == 1", 1e-12);
+        Near(CivicGovernance.DiseaseMitigationFor(cfg, 0.5, 0, double.NaN), 1.0, "DiseaseMitigationFor(0.5,0,NaN) == 1", 1e-12);
+        Near(CivicGovernance.CohesionMultiplierFor(cfg, double.NaN, 0, 0.5), 1.0, "CohesionMultiplierFor(NaN,0,0.5) == 1", 1e-12);
+        Near(CivicGovernance.CohesionMultiplierFor(cfg, 0.5, double.NaN, 0.5), 1.0, "CohesionMultiplierFor(0.5,NaN,0.5) == 1", 1e-12);
+        Near(CivicGovernance.CohesionMultiplierFor(cfg, 0.5, 0, double.NaN), 1.0, "CohesionMultiplierFor(0.5,0,NaN) == 1", 1e-12);
+        Near(CivicGovernance.QoLEqualityMultiplierFor(cfg, double.NaN, 0, 0.5), 1.0, "QoLEqualityMultiplierFor(NaN,0,0.5) == 1", 1e-12);
+        Near(CivicGovernance.QoLEqualityMultiplierFor(cfg, 0.5, double.NaN, 0.5), 1.0, "QoLEqualityMultiplierFor(0.5,NaN,0.5) == 1", 1e-12);
+        Near(CivicGovernance.QoLEqualityMultiplierFor(cfg, 0.5, 0, double.NaN), 1.0, "QoLEqualityMultiplierFor(0.5,0,NaN) == 1", 1e-12);
+        string forFail = null;
+        foreach (double cv in badDoubles)
+            foreach (double pv in badDoubles)
+                foreach (double cov in badDoubles)
+                {
+                    double mc = CivicGovernance.CrowdingMitigationFor(cfg, cv, pv, cov);
+                    double md = CivicGovernance.DiseaseMitigationFor(cfg, cv, pv, cov);
+                    double coh = CivicGovernance.CohesionMultiplierFor(cfg, cv, pv, cov);
+                    double qol = CivicGovernance.QoLEqualityMultiplierFor(cfg, cv, pv, cov);
+                    if (!IsFinite(mc) || mc < cfg.Civic.MinCrowdingMitigation || mc > 1.0) { forFail = $"Mc({cv},{pv},{cov})={mc}"; break; }
+                    if (!IsFinite(md) || md < cfg.Civic.MinDiseaseMitigation || md > 1.0) { forFail = $"Md({cv},{pv},{cov})={md}"; break; }
+                    if (!IsFinite(coh) || coh < 1.0) { forFail = $"Coh({cv},{pv},{cov})={coh}"; break; }
+                    if (!IsFinite(qol) || qol < 0.0) { forFail = $"QoL({cv},{pv},{cov})={qol}"; break; }
+                }
+        Check(forFail == null, "All four *For helpers finite and bounded across 3D non-finite matrix" + (forFail == null ? "" : " (" + forFail + ")"));
+
+        // 3d. RequiredStewards, RequiredCivicCapital, RequiredSanitationCapital non-finite matrix
+        Check(CivicGovernance.RequiredStewards(cfg, double.PositiveInfinity, 0.5, 0.0, false, 0.0) == double.MaxValue, "RequiredStewards(+Inf pop) == double.MaxValue");
+        Check(CivicGovernance.RequiredCivicCapital(cfg, double.PositiveInfinity, 0.5, 0.0) == double.MaxValue, "RequiredCivicCapital(+Inf pop) == double.MaxValue");
+        Check(CivicGovernance.RequiredSanitationCapital(cfg, double.PositiveInfinity) == double.MaxValue, "RequiredSanitationCapital(+Inf pop) == double.MaxValue");
+        Check(CivicGovernance.RequiredSanitationCapital(cfg, double.NaN) == 0.0 && CivicGovernance.RequiredSanitationCapital(cfg, double.NegativeInfinity) == 0.0,
+            "RequiredSanitationCapital(NaN / -Inf) == 0");
+        double[] reqVals = { double.NaN, double.PositiveInfinity, double.NegativeInfinity, 0.0, -0.0, double.Epsilon, 1000.0, double.MaxValue };
+        string reqFail = null;
+        foreach (double pop in reqVals)
+        {
+            double rs = CivicGovernance.RequiredSanitationCapital(cfg, pop);
+            if (!IsFinite(rs) || rs < 0.0) { reqFail = $"ReqSanit({pop})={rs}"; break; }
+            foreach (double comp in reqVals)
+                foreach (double strat in reqVals)
+                {
+                    double rcap = CivicGovernance.RequiredCivicCapital(cfg, pop, comp, strat);
+                    if (!IsFinite(rcap) || rcap < 0.0) { reqFail = $"ReqCap({pop},{comp},{strat})={rcap}"; break; }
+                    foreach (double envS in new[] { double.NaN, double.PositiveInfinity, double.NegativeInfinity, 0.0 })
+                        foreach (bool has3A in new[] { false, true })
+                        {
+                            double rst = CivicGovernance.RequiredStewards(cfg, pop, comp, strat, has3A, envS);
+                            if (!IsFinite(rst) || rst < 0.0) { reqFail = $"ReqStew({pop},{comp},{strat},{has3A},{envS})={rst}"; break; }
+                        }
+                }
+        }
+        Check(reqFail == null, "RequiredStewards/RequiredCivicCapital/RequiredSanitationCapital finite >= 0 across non-finite matrix" + (reqFail == null ? "" : " (" + reqFail + ")"));
+
+        // 3e. TargetStratification & SteeringOffset non-finite matrix
+        string steerFail = null;
+        foreach (FissionPolicy fp in new[] { FissionPolicy.Neutral, FissionPolicy.Encourage, FissionPolicy.Discourage, (FissionPolicy)99 })
+            foreach (ImmigrationPolicy ip in new[] { ImmigrationPolicy.Neutral, ImmigrationPolicy.Open, ImmigrationPolicy.Restricted, (ImmigrationPolicy)99 })
+                foreach (CivicFocus cf in new[] { CivicFocus.Auto, CivicFocus.Communal, CivicFocus.Centralized, (CivicFocus)99 })
+                {
+                    double off = CivicGovernance.SteeringOffset(cfg, fp, ip, cf);
+                    if (!IsFinite(off)) { steerFail = $"SteeringOffset({fp},{ip},{cf})={off}"; break; }
+                    foreach (double envS in badDoubles)
+                    {
+                        double ts = CivicGovernance.TargetStratification(cfg, envS, fp, ip, cf);
+                        if (!IsFinite(ts) || ts < -1.0 || ts > 1.0) { steerFail = $"TargetStratification({envS},{fp},{ip},{cf})={ts}"; break; }
+                    }
+                }
+        Check(steerFail == null, "SteeringOffset and TargetStratification finite and bounded across non-finite matrix" + (steerFail == null ? "" : " (" + steerFail + ")"));
+
+        // 3f. All Camp-based public pure helpers under corrupted/non-finite Camp fields (including 0 * +Inf in DaughterCoordinates)
+        var campW = CivicFixture(sanitation: true);
+        var cc = campW.Camps[0];
+        cc.Population = 1000;
+        cc.People.CivicPrecedents.Add(CivicPrecedents.CeremonialIntegration);
+        cc.People.CivicPrecedents.Add(CivicPrecedents.CivicOrganization);
+        cc.People.CivicPrecedents.Add(CivicPrecedents.TokensAndAccounting);
+        cc.People.CivicPrecedents.Add(CivicPrecedents.PlannedQuartersAndDrainage);
+        cc.Workforce = new PopulationLedger();
+        cc.Workforce.Assign(WorkforceRoles.Steward, 200, 1000);
+
+        var zeroRetW = CivicFixture(sanitation: true);
+        zeroRetW.Config.Civic.DaughterComplexityRetention = 0.0;
+        zeroRetW.Config.Civic.DaughterStratificationRetention = 0.0;
+        zeroRetW.Config.Validate();
+
+        double[] campBad = { double.NaN, double.PositiveInfinity, double.NegativeInfinity, 0.0, 0.5, double.MaxValue, -double.MaxValue };
+        string campFail = null;
+        foreach (double v in campBad)
+        {
+            cc.CivicComplexity = v;
+            cc.CivicStratification = v;
+            cc.LastEnvironmentalComplexity = v;
+            cc.LastEnvironmentalStratification = v;
+            cc.LastCircumscription = v;
+            cc.CivicCapital = v;
+            cc.SanitationCapital = v;
+            cc.ActiveSanitationCapital = v;
+            cc.UseActiveSanitationCapital = false;
+            cc.SanitationWaterRatio = v;
+            cc.RecentTradeVolume = v;
+
+            double cov = CivicGovernance.CivicCoverage(campW, cc);
+            double scov = CivicGovernance.SanitationCoverage(campW, cc);
+            double acap = CivicGovernance.ActiveSanitationCapital(cc);
+            double mc = CivicGovernance.CrowdingMitigation(campW, cc);
+            double md = CivicGovernance.DiseaseMitigation(campW, cc);
+            double coh = CivicGovernance.CohesionMultiplier(campW, cc);
+            double qol = CivicGovernance.QoLEqualityMultiplier(campW, cc);
+            double pw = CivicGovernance.PublicWorksMobilizationMultiplier(campW, cc);
+            double gr = CivicGovernance.GranaryStorageMultiplier(campW, cc);
+            double grOv = CivicGovernance.GranaryStorageMultiplier(campW, cc, v);
+            double em = CivicGovernance.ExitMismatch(cc);
+            double nc = CivicGovernance.NextComplexity(campW, cc, v);
+            var dc1 = CivicGovernance.DaughterCoordinates(campW, cc);
+            var dcZero = CivicGovernance.DaughterCoordinates(zeroRetW, cc);
+            double af = CivicGovernance.AlignmentFriction(campW, cc);
+            double rs = CivicGovernance.RequiredStewards(campW, cc, v);
+            double rc = CivicGovernance.RequiredCivicCapital(campW, cc, v);
+            string lbl = CivicGovernance.EffectiveFocusLabel(cc);
+
+            if (!IsFinite(cov) || cov < 0 || cov > 1 ||
+                !IsFinite(scov) || scov < 0 || scov > 1 ||
+                !IsFinite(acap) || acap < 0 ||
+                !IsFinite(mc) || mc < campW.Config.Civic.MinCrowdingMitigation || mc > 1 ||
+                !IsFinite(md) || md < campW.Config.Civic.MinDiseaseMitigation || md > 1 ||
+                !IsFinite(coh) || coh < 1 ||
+                !IsFinite(qol) || qol < 0 ||
+                !IsFinite(pw) || pw < 1 ||
+                !IsFinite(gr) || gr < 1 ||
+                !IsFinite(grOv) || grOv < 1 ||
+                !IsFinite(em) || em < 0 ||
+                !IsFinite(nc) || nc < 0 || nc > 1 ||
+                !IsFinite(dc1.Complexity) || dc1.Complexity < 0 || dc1.Complexity > 1 ||
+                !IsFinite(dc1.Stratification) || dc1.Stratification < -1 || dc1.Stratification > 1 ||
+                !IsFinite(dcZero.Complexity) || dcZero.Complexity < 0 || dcZero.Complexity > 1 ||
+                !IsFinite(dcZero.Stratification) || dcZero.Stratification < -1 || dcZero.Stratification > 1 ||
+                !IsFinite(af) || af < 1 ||
+                !IsFinite(rs) || rs < 0 ||
+                !IsFinite(rc) || rc < 0 ||
+                string.IsNullOrEmpty(lbl))
+            {
+                campFail = $"v={v} cov={cov} scov={scov} acap={acap} em={em} nc={nc} dc=({dc1.Complexity},{dc1.Stratification}) dc0=({dcZero.Complexity},{dcZero.Stratification})";
+                break;
+            }
+        }
+        Check(campFail == null, "All camp-based public pure helpers stay finite & bounded on non-finite Camp fields" + (campFail == null ? "" : " (" + campFail + ")"));
+
+        // Single-field NaN isolation checks on Camp helpers that previously leaked NaN
+        cc.CivicComplexity = 0.5; cc.CivicStratification = 0.3; cc.LastEnvironmentalComplexity = 0.5;
+        cc.LastEnvironmentalStratification = -0.2; cc.LastCircumscription = 0.2;
+        cc.CivicCapital = 100; cc.SanitationCapital = 100; cc.SanitationWaterRatio = 0.8; cc.RecentTradeVolume = 10;
+        cc.CivicCapital = double.NaN;
+        Check(CivicGovernance.CivicCoverage(campW, cc) == 0.0, "CivicCoverage with NaN CivicCapital returns 0 (no NaN)");
+        cc.CivicCapital = 100;
+        cc.SanitationWaterRatio = double.NaN;
+        Check(CivicGovernance.SanitationCoverage(campW, cc) == 0.0, "SanitationCoverage with NaN SanitationWaterRatio returns 0 (no NaN)");
+        cc.SanitationWaterRatio = 0.8;
+        cc.LastCircumscription = double.NaN;
+        Check(CivicGovernance.ExitMismatch(cc) == 0.0, "ExitMismatch with NaN LastCircumscription returns 0 (no NaN)");
+        cc.LastCircumscription = 0.2;
+        cc.LastEnvironmentalComplexity = double.NaN;
+        Check(IsFinite(CivicGovernance.NextComplexity(campW, cc, 20.0)), "NextComplexity with NaN LastEnvironmentalComplexity stays finite");
+        cc.LastEnvironmentalComplexity = 0.5;
+        cc.RecentTradeVolume = double.PositiveInfinity;
+        var envInfTrade = CivicGovernance.EvaluateEnvironment(campW, cc);
+        Check(IsFinite(envInfTrade.D1) && IsFinite(envInfTrade.D2) && IsFinite(envInfTrade.D3) && IsFinite(envInfTrade.D4) &&
+              IsFinite(envInfTrade.EnvironmentalComplexity) && IsFinite(envInfTrade.EnvironmentalStratification),
+            "EvaluateEnvironment stays finite with +Infinity RecentTradeVolume");
+
+        // TradeRecordVolumePersonYears non-finite quantities across all TradeGoods
+        string tradeFail = null;
+        foreach (TradeGood good in Enum.GetValues(typeof(TradeGood)))
+            foreach (double qty in badDoubles)
+            {
+                double tv = CivicGovernance.TradeRecordVolumePersonYears(cfg, new TradeRecord { Want = good, WantQuantity = qty, Give = good, GiveQuantity = qty });
+                if (!IsFinite(tv) || tv < 0) { tradeFail = $"TradeVol({good},{qty})={tv}"; break; }
+            }
+        Check(tradeFail == null, "TradeRecordVolumePersonYears finite >= 0 across all TradeGoods and non-finite quantities" + (tradeFail == null ? "" : " (" + tradeFail + ")"));
     }
 
     private static byte[] Unzip(byte[] bytes)
