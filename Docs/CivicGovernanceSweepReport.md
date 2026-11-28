@@ -5,6 +5,8 @@
 **Tool:** `Tools/CivicGovernanceSweep` (`Program.cs`, `Summarize.py`)
 **Spec:** [CivicGovernance.md](CivicGovernance.md) §5 Choice #11.E (M5 gate) and §6
 
+> **Follow-up:** [The 2,000-year irrigation and trajectory audit](CivicIrrigationTrajectoryAudit.md) supersedes the permanent land-ceiling diagnosis and R1-first priority below. All five full arms pass 5,000 under the normal calendar; none does when turn duration is frozen after year 1,000. The harvest/recovery boundary is a demonstrated source of the calendar dependence. The original 1,000-year measurements below remain valid.
+
 ## 1. Question
 
 PR #49 (Plough and irrigation) left Neolithic villages capped at about 1,000 residents by crowding and disease mortality. The civic governance system is designed to lift that cap in two stages:
@@ -117,7 +119,7 @@ On every seed, crowding relief takes the ~1,000 cap to 3,000–3,850. In the `fu
 
 Tier 3B appears in 7–21 villages per world, and sanitation is fully watered wherever it is built (water ratio 1.0). The ~3,400 disease wall is broken, but no village reaches 5,000 within 1,000 years. Two factors are involved.
 
-**(a) Tier 3A almost never unlocks organically (2 of 112 villages).** Its two practice drivers are almost zero in this profile:
+**(a) Tier 3A almost never unlocks organically (2 of 118 villages).** Its two practice drivers are almost zero in this profile:
 
 | Seed | Tier-2 villages without 3A | Mean stored-food term | Mean trade term | Mean / max 3A experience (threshold 120) |
 | --- | --- | --- | --- | --- |
@@ -159,7 +161,7 @@ Because every large village is land-limited, the stratification bonus to `M_d` n
 | --- | --- | --- | --- |
 | R1 | Hinterland or tribute food: let Tier 2+ (or 3A) centres draw food from satellite villages or expanded fields beyond radius 1 | New design (follows `Docs/HerdValuationHandoff.md` hinterland items) | Historically grounded: redistribution, temple and elite storage, Uruk-period hinterlands. Scales with active villages if kept as sparse claims. |
 | R2 | Investigate why the AI builds almost no irrigated fields even with knowledge granted | PR #49 (`IrrigationEconomy`, DemandControl canal requests) | Irrigation should raise food per tile, which is exactly the binding factor. |
-| R3 | Recalibrate Tier 3A drivers to the profile's defaults: storage off, little trade | `CivicGovernance.Close` Tier 3A accrual; `Tier3APracticeThreshold` | For example, add a Steward-years or redistribution term, so 3A is reachable without large reserves or trade. Low priority until R1 or R2 lifts the food limit. |
+| R3 | Recalibrate Tier 3A drivers to the profile's observed low reserves and trade (trade enabled; optional goods storage off) | `CivicGovernance.Close` Tier 3A accrual; `Tier3APracticeThreshold` | For example, add a Steward-years or redistribution term, so 3A is reachable without large reserves or trade. Low priority until R1 or R2 lifts the food limit. |
 | R4 | Re-run this sweep after R1/R2, adding a matched Egalitarian vs Stratified policy arm (`CivicFocus` orders) | `Tools/CivicGovernanceSweep` | Tests the spec's Phase-2 Stratified-peaks-higher claim. |
 | R5 | Finish the rest of M5: the 80-tribe long run and the 1/16/80/320-tribe scaling benchmark | `Tools/CivicGovernanceSweep` | Turn-cost evidence beyond four players. |
 

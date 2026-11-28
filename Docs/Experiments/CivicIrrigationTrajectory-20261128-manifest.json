@@ -1,0 +1,905 @@
+{
+  "baselineHead": "319d03b1719ee49bc7573fd119cb174c920dd074",
+  "sdk": "8.0.428",
+  "runtime": "8.0.34",
+  "baselineExecutableSha256": "16a4095eef197f29cf66931ccdeca7653bdbce5f2fd4f0f90cd034e5d1ec9bf6",
+  "profileSha256": "77e2f6a72e85be17451b5e3198f9cd3d778014a1c2c9f5b4e6c0211ca23d9df3",
+  "validation": {
+    "focusedAssertions": 1656,
+    "baselineParityRuns": 35,
+    "saveContinuationRuns": 37,
+    "baselineReproductionRuns": 20,
+    "fixedClaimConservationCases": 15
+  },
+  "sourceFiles": [
+    {
+      "path": "Assets/_Anthropocene/Simulation/DemandControl.cs",
+      "sha256": "1c52e509683620c3dc3386e96064c09ce523102cea4df5be8dc59c3bf34c17ef"
+    },
+    {
+      "path": "Assets/_Anthropocene/Simulation/IrrigationEconomy.cs",
+      "sha256": "09206131dd38f9fdc468e3a9ef4e3b72684a840e1dea7b51e9a357b172f7ae2f"
+    },
+    {
+      "path": "Tools/CivicGovernanceSweep/Audit.cs",
+      "sha256": "2701b21db8fba2fb5d3f0596de829d16de8bcf9519470c10a6ecb728945b89e7"
+    },
+    {
+      "path": "Tools/CivicGovernanceSweep/Program.cs",
+      "sha256": "dbe7de65996f748c2f1f7e34a9516757a9183264dc4ae7f5728322e724ce77f5"
+    },
+    {
+      "path": "Tools/CivicGovernanceSweep/SummarizeAudit.py",
+      "sha256": "c6d2b6bf5d19f661b4471a95ec265798d0c41d2bd0dfeee1caa8a80337d7e32e"
+    },
+    {
+      "path": "Tools/CivicGovernanceSweep/Anthropocene.CivicGovernanceSweep.csproj",
+      "sha256": "601217c6ad8447fb5f7a61f34720f5ce9a9d3008e385a415cf03c7a24b7e93f8"
+    }
+  ],
+  "auditManifests": [
+    {
+      "sourceHead": "319d03b1719ee49bc7573fd119cb174c920dd074",
+      "simulationSourceHash": "f915a445d707bbf74430773619fd96e7357576324eabdbf0d7f9da6dca9e39a3",
+      "binarySha256": "25e09fa8209ab64c66b59f312ec31a57527c575d5b1023293f8d295f3cefe220",
+      "profileSha256": "77e2f6a72e85be17451b5e3198f9cd3d778014a1c2c9f5b4e6c0211ca23d9df3",
+      "years": 2000,
+      "seeds": [
+        11,
+        23,
+        47,
+        101,
+        1729
+      ],
+      "arms": [
+        "full-fixed-horizon"
+      ],
+      "baseline": "TestResults/CivicAudit/baseline",
+      "sdk": "8.0.34",
+      "interventionYear": 1000,
+      "createdUtc": "2026-11-28T18:55:07.3878064Z"
+    },
+    {
+      "sourceHead": "319d03b1719ee49bc7573fd119cb174c920dd074",
+      "simulationSourceHash": "6a63d943ca266304b5d325bc2d022c3c110c3f544a5b9658db27b4b230a16c39",
+      "binarySha256": "0a383a25ad3f8199a47545396155fb84caebf7a7205744853a37f4cd3a1d20fc",
+      "profileSha256": "77e2f6a72e85be17451b5e3198f9cd3d778014a1c2c9f5b4e6c0211ca23d9df3",
+      "years": 2000,
+      "seeds": [
+        101,
+        1729
+      ],
+      "arms": [
+        "full-early-gate-off"
+      ],
+      "baseline": "TestResults/CivicAudit/baseline",
+      "sdk": "8.0.34",
+      "interventionYear": 1000,
+      "createdUtc": "2026-11-28T19:02:19.6116306Z"
+    },
+    {
+      "sourceHead": "319d03b1719ee49bc7573fd119cb174c920dd074",
+      "simulationSourceHash": "f915a445d707bbf74430773619fd96e7357576324eabdbf0d7f9da6dca9e39a3",
+      "binarySha256": "72494c3162e257fc083d4bb325cb4a36c8d683cba4a8d8b7bcb82e84e203b160",
+      "profileSha256": "77e2f6a72e85be17451b5e3198f9cd3d778014a1c2c9f5b4e6c0211ca23d9df3",
+      "years": 2000,
+      "seeds": [
+        11,
+        23,
+        47
+      ],
+      "arms": [
+        "off",
+        "phase1",
+        "full",
+        "full-gate-off",
+        "full-prebuilt"
+      ],
+      "baseline": "TestResults/CivicAudit/baseline",
+      "sdk": "8.0.34",
+      "interventionYear": 1000,
+      "createdUtc": "2026-11-28T18:52:29.5767337Z"
+    },
+    {
+      "sourceHead": "319d03b1719ee49bc7573fd119cb174c920dd074",
+      "simulationSourceHash": "f915a445d707bbf74430773619fd96e7357576324eabdbf0d7f9da6dca9e39a3",
+      "binarySha256": "72494c3162e257fc083d4bb325cb4a36c8d683cba4a8d8b7bcb82e84e203b160",
+      "profileSha256": "77e2f6a72e85be17451b5e3198f9cd3d778014a1c2c9f5b4e6c0211ca23d9df3",
+      "years": 2000,
+      "seeds": [
+        101,
+        1729
+      ],
+      "arms": [
+        "off",
+        "phase1",
+        "full",
+        "full-gate-off",
+        "full-prebuilt"
+      ],
+      "baseline": "TestResults/CivicAudit/baseline",
+      "sdk": "8.0.34",
+      "interventionYear": 1000,
+      "createdUtc": "2026-11-28T18:53:59.1706215Z"
+    },
+    {
+      "sourceHead": "319d03b1719ee49bc7573fd119cb174c920dd074",
+      "simulationSourceHash": "6a63d943ca266304b5d325bc2d022c3c110c3f544a5b9658db27b4b230a16c39",
+      "binarySha256": "41ea2171de050abaddae963854f7eac6138ee976fdf7c60e1dbfb274db652659",
+      "profileSha256": "77e2f6a72e85be17451b5e3198f9cd3d778014a1c2c9f5b4e6c0211ca23d9df3",
+      "years": 2000,
+      "seeds": [
+        11,
+        23,
+        47,
+        101,
+        1729
+      ],
+      "arms": [
+        "full-physical-prebuilt"
+      ],
+      "baseline": "TestResults/CivicAudit/baseline",
+      "sdk": "8.0.34",
+      "interventionYear": 1000,
+      "createdUtc": "2026-11-28T19:00:17.5501848Z"
+    }
+  ],
+  "rawArtifacts": [
+    {
+      "path": "TestResults/CivicAudit/baseline/seed-101-full-3a.json",
+      "sha256": "291adf335f160e73e8340f29684d585bfabf675201ff66ed80bd059b1af348ca",
+      "bytes": 577547
+    },
+    {
+      "path": "TestResults/CivicAudit/baseline/seed-101-full.json",
+      "sha256": "b0709aa8d3b2b9afa8e949636f66e3dccea687cb88d05a9a5e65c15d4a7c0db3",
+      "bytes": 594283
+    },
+    {
+      "path": "TestResults/CivicAudit/baseline/seed-101-off.json",
+      "sha256": "8445a52cebcfc6a6af22eaa9edd6cba700fe89f721f31e47ba2e71c94f233a05",
+      "bytes": 550882
+    },
+    {
+      "path": "TestResults/CivicAudit/baseline/seed-101-phase1.json",
+      "sha256": "043f1b7fff51634b8b82439d2bd0a1f96b423cae8c4fefd36487e9b11719045f",
+      "bytes": 590748
+    },
+    {
+      "path": "TestResults/CivicAudit/baseline/seed-11-full-3a.json",
+      "sha256": "cbf6e3066502806d8f12cb145852e124baeaccb7e533b19e98c67af648fe9773",
+      "bytes": 576600
+    },
+    {
+      "path": "TestResults/CivicAudit/baseline/seed-11-full.json",
+      "sha256": "9ddddbd969ff30dde3715ee60b0f7f07618fbeace4c26cca4378482ae1e41687",
+      "bytes": 593046
+    },
+    {
+      "path": "TestResults/CivicAudit/baseline/seed-11-off.json",
+      "sha256": "eece61e995ad578f87fae0599ec5419ba21a74a9847ca4c4dd0388426e9340d3",
+      "bytes": 550922
+    },
+    {
+      "path": "TestResults/CivicAudit/baseline/seed-11-phase1.json",
+      "sha256": "14852a9e163a2bc7264670ac4a0254253eadb2da48f4ceaa4abb0ef065798b54",
+      "bytes": 589951
+    },
+    {
+      "path": "TestResults/CivicAudit/baseline/seed-1729-full-3a.json",
+      "sha256": "285d7bec9eb94a86ff32ce6beed7018f66df2b1f57137ec544e8bf16ca118a3d",
+      "bytes": 573493
+    },
+    {
+      "path": "TestResults/CivicAudit/baseline/seed-1729-full.json",
+      "sha256": "8c28302af615eb25e7b91333e8806fa404b5879a96619dc8299f676969bace92",
+      "bytes": 590738
+    },
+    {
+      "path": "TestResults/CivicAudit/baseline/seed-1729-off.json",
+      "sha256": "fe2209ee68acea5e8026255aa1854e1152d8bf114b310f16bcf5a163fee49fa9",
+      "bytes": 550603
+    },
+    {
+      "path": "TestResults/CivicAudit/baseline/seed-1729-phase1.json",
+      "sha256": "5024e8f97ee53439fce10a65407addd7d533fd7684a88a45c04411c2657a31a7",
+      "bytes": 586720
+    },
+    {
+      "path": "TestResults/CivicAudit/baseline/seed-23-full-3a.json",
+      "sha256": "c1712359d090874cd00a50bb7704ee3ec9e78a58cf6c5cf6fb841a25d8e16f9e",
+      "bytes": 575473
+    },
+    {
+      "path": "TestResults/CivicAudit/baseline/seed-23-full.json",
+      "sha256": "3e79ec58f0e01dd4010dcef21208473f53a8382b2c295a869c4954c266717e7b",
+      "bytes": 591765
+    },
+    {
+      "path": "TestResults/CivicAudit/baseline/seed-23-off.json",
+      "sha256": "f785c7d5bd8b331dd65fa116c51689e3a3ea29ac2b566a7f9e08d6be5dc9d1e6",
+      "bytes": 550966
+    },
+    {
+      "path": "TestResults/CivicAudit/baseline/seed-23-phase1.json",
+      "sha256": "8cf379a9d171e8dc1ac63125a841a36701110efefe992d98a92647226b012aa8",
+      "bytes": 588450
+    },
+    {
+      "path": "TestResults/CivicAudit/baseline/seed-47-full-3a.json",
+      "sha256": "6dad0ae30f8efda40f2e55fb0ce1dfbc70e64e00aee13bedaef174bc42146435",
+      "bytes": 576118
+    },
+    {
+      "path": "TestResults/CivicAudit/baseline/seed-47-full.json",
+      "sha256": "c722b0f36b28d5d48721ccb7dd3dfb5b787a35111670d2af284fc77cd79f204e",
+      "bytes": 592628
+    },
+    {
+      "path": "TestResults/CivicAudit/baseline/seed-47-off.json",
+      "sha256": "de8672f3f108238b0a3707490effeacb45f2f94b18ba3c904515a1a4f3f5167c",
+      "bytes": 551030
+    },
+    {
+      "path": "TestResults/CivicAudit/baseline/seed-47-phase1.json",
+      "sha256": "14fddf3d9154734bb2d6bfc055225f3722e0377f26bb79cc1709b1f7d66fc84a",
+      "bytes": 589736
+    },
+    {
+      "path": "TestResults/CivicAudit/calendar-control/manifest.json",
+      "sha256": "875e440870d123e7720532387efb77ffb620e2196cf36776a80ecd030035c06a",
+      "bytes": 511
+    },
+    {
+      "path": "TestResults/CivicAudit/calendar-control/seed-101-full-fixed-horizon-irrigation.jsonl",
+      "sha256": "68efd0ee3d8a67ca861e5692ef46afb9a32aad4c6000d3c1c57b8f335f8f2027",
+      "bytes": 7393402
+    },
+    {
+      "path": "TestResults/CivicAudit/calendar-control/seed-101-full-fixed-horizon-result.json",
+      "sha256": "d63a6964eb391155df9d7c59f6ef0f683020ac9c81e8d78958e767f481dab75c",
+      "bytes": 387
+    },
+    {
+      "path": "TestResults/CivicAudit/calendar-control/seed-101-full-fixed-horizon-trajectory.jsonl",
+      "sha256": "560f8a3ec1ad93ff1042826768bd1b1057d470892efbc7e249f4797ee0e0a881",
+      "bytes": 6349685
+    },
+    {
+      "path": "TestResults/CivicAudit/calendar-control/seed-11-full-fixed-horizon-irrigation.jsonl",
+      "sha256": "aa3ca5194225c976b1002175e89cef504fa9a23c4c84af71a544d41fe61b13d8",
+      "bytes": 4046013
+    },
+    {
+      "path": "TestResults/CivicAudit/calendar-control/seed-11-full-fixed-horizon-result.json",
+      "sha256": "470fef0be5241657cd63dc7bb01f1da7e30ff185a20fc55f5d0dbf0637984e60",
+      "bytes": 386
+    },
+    {
+      "path": "TestResults/CivicAudit/calendar-control/seed-11-full-fixed-horizon-trajectory.jsonl",
+      "sha256": "d7bbdcd5811a2a6904fc58d4ec08051cc87103eccee69f913e7ea743370620be",
+      "bytes": 3619675
+    },
+    {
+      "path": "TestResults/CivicAudit/calendar-control/seed-1729-full-fixed-horizon-irrigation.jsonl",
+      "sha256": "7f091eb0548455ac6afd52932f3be21d19a7cd871299c1279c93028a538fd3e9",
+      "bytes": 2235270
+    },
+    {
+      "path": "TestResults/CivicAudit/calendar-control/seed-1729-full-fixed-horizon-result.json",
+      "sha256": "ce79da6036af1fb4cc6dcb5eb6022839c13e52e208c150a8cf3924b50823898a",
+      "bytes": 387
+    },
+    {
+      "path": "TestResults/CivicAudit/calendar-control/seed-1729-full-fixed-horizon-trajectory.jsonl",
+      "sha256": "4edad76e92f62efe06bab09fffb60ca8b882dd1b5df8c060d3298e4e03bd4c4b",
+      "bytes": 1778156
+    },
+    {
+      "path": "TestResults/CivicAudit/calendar-control/seed-23-full-fixed-horizon-irrigation.jsonl",
+      "sha256": "4f6516a06a2492fa690e1742b78c8b047f7786c4108f311189aaebd3c759999c",
+      "bytes": 2551749
+    },
+    {
+      "path": "TestResults/CivicAudit/calendar-control/seed-23-full-fixed-horizon-result.json",
+      "sha256": "4bc6db23f6a49265a500110a9780114cf7237013b54005f9e94530a171422917",
+      "bytes": 386
+    },
+    {
+      "path": "TestResults/CivicAudit/calendar-control/seed-23-full-fixed-horizon-trajectory.jsonl",
+      "sha256": "d024840ae8a892bfe05cf51495f9da478a89e6c432be9cced0424cc2e2c35b39",
+      "bytes": 2182475
+    },
+    {
+      "path": "TestResults/CivicAudit/calendar-control/seed-47-full-fixed-horizon-irrigation.jsonl",
+      "sha256": "c83fe690648d85096e87ecd23acc4ad8848dce9f22179a473f1e591ada0a6f06",
+      "bytes": 3784557
+    },
+    {
+      "path": "TestResults/CivicAudit/calendar-control/seed-47-full-fixed-horizon-result.json",
+      "sha256": "6e28ad1d4f078777f33059623f3de0c7b052daf281766a778f884dd079acf014",
+      "bytes": 386
+    },
+    {
+      "path": "TestResults/CivicAudit/calendar-control/seed-47-full-fixed-horizon-trajectory.jsonl",
+      "sha256": "664c4467b74c9461c957a485e71d3f0b739f4d2991dce29578764ef68dbe1b5c",
+      "bytes": 3086180
+    },
+    {
+      "path": "TestResults/CivicAudit/early-gate/manifest.json",
+      "sha256": "8d4b44eb5968de4d8813328419e0fd28af44d15c1b24ae97a30c0903abd7197e",
+      "bytes": 503
+    },
+    {
+      "path": "TestResults/CivicAudit/early-gate/seed-101-full-early-gate-off-irrigation.jsonl",
+      "sha256": "d3b4bbfb8e48bb121d947e464c2bda2926e8d5e2774dcf23a2ae540923dd8531",
+      "bytes": 9645737
+    },
+    {
+      "path": "TestResults/CivicAudit/early-gate/seed-101-full-early-gate-off-result.json",
+      "sha256": "d7263b35bb5aae1ba34546d9e1e8ee94245ec54b845be292a0df925d756870b0",
+      "bytes": 390
+    },
+    {
+      "path": "TestResults/CivicAudit/early-gate/seed-101-full-early-gate-off-trajectory.jsonl",
+      "sha256": "580377d7fe68088d5bb5d4f944e32fe69d17f8dd30d36b1be5a76fe3ac54220c",
+      "bytes": 7647993
+    },
+    {
+      "path": "TestResults/CivicAudit/early-gate/seed-1729-full-early-gate-off-irrigation.jsonl",
+      "sha256": "988f9906df05bd18e095f97a3e0c686ca71ead9ff80ace6ce745870f0239ce80",
+      "bytes": 2928125
+    },
+    {
+      "path": "TestResults/CivicAudit/early-gate/seed-1729-full-early-gate-off-result.json",
+      "sha256": "f08caac3b6942abc50bccbaf0fe64b823144feccdeba8863b2cbfade53112902",
+      "bytes": 392
+    },
+    {
+      "path": "TestResults/CivicAudit/early-gate/seed-1729-full-early-gate-off-trajectory.jsonl",
+      "sha256": "e38d90e46465227f1ff67a407c6e8faca29c8d5e381b5bcb78f65af0ce8f5091",
+      "bytes": 2132379
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/manifest.json",
+      "sha256": "e9798dce1269428d858fc2fb5c882c82e20eb383d7885eba09bece1c710cec84",
+      "bytes": 535
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-11-full-1000.anthro.duration-probe.json",
+      "sha256": "38a8a21842039e44a578b4227d586b39895ddb840c22d9f5f9bdd0b4875677d6",
+      "bytes": 1661
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-11-full-1000.anthro.inspection.json",
+      "sha256": "1b579c0ca3d2f79ca7b23e76f5e22f2314d7c1a7c063def39b17dfed0d0f65a1",
+      "bytes": 98436
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-11-full-final.anthro.inspection.json",
+      "sha256": "d9d4509801b3a66086c5f89b1adb308e713764e34a1ee3517f94b58e7da48818",
+      "bytes": 98793
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-11-full-gate-off-irrigation.jsonl",
+      "sha256": "c96a50a4a0bbbf68027211d1e455351ef9173c44e6215480ea8938b4d68e300e",
+      "bytes": 5188778
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-11-full-gate-off-result.json",
+      "sha256": "8c56634cbd95c5e7d0bac0c332465b16d8c0cc3e6f58d2a66f6fd1e439d122ed",
+      "bytes": 377
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-11-full-gate-off-trajectory.jsonl",
+      "sha256": "8d6a0610b8b76f9c632eb642fab4f3cafd795af131711648a3b1406bdb4ea1c2",
+      "bytes": 4357984
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-11-full-irrigation.jsonl",
+      "sha256": "c96a50a4a0bbbf68027211d1e455351ef9173c44e6215480ea8938b4d68e300e",
+      "bytes": 5188778
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-11-full-prebuilt-irrigation.jsonl",
+      "sha256": "c96a50a4a0bbbf68027211d1e455351ef9173c44e6215480ea8938b4d68e300e",
+      "bytes": 5188778
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-11-full-prebuilt-result.json",
+      "sha256": "70dedcd592d4367f6ec4cdc17d13761f64cfd8223f222e46db149c0070aff16b",
+      "bytes": 386
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-11-full-prebuilt-trajectory.jsonl",
+      "sha256": "8d6a0610b8b76f9c632eb642fab4f3cafd795af131711648a3b1406bdb4ea1c2",
+      "bytes": 4357984
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-11-full-result.json",
+      "sha256": "d9683a3e66957f1c3cd107fc36e8cf8e989b32fe30cea68faefb10594c5a1223",
+      "bytes": 354
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-11-full-trajectory.jsonl",
+      "sha256": "8d6a0610b8b76f9c632eb642fab4f3cafd795af131711648a3b1406bdb4ea1c2",
+      "bytes": 4357984
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-11-off-irrigation.jsonl",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-11-off-result.json",
+      "sha256": "e6470e835146f457fbf1bc1009f82483c4bba0bc691fb094ca995c7ca6e30a0e",
+      "bytes": 339
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-11-off-trajectory.jsonl",
+      "sha256": "2c60bcec6c26bc20f6479f6fc36f8a89e933680ad75c444f89187fe84ab0110d",
+      "bytes": 3480179
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-11-phase1-irrigation.jsonl",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-11-phase1-result.json",
+      "sha256": "2de59f2f98d412ba26f3adfe3c0acf41fa597022f8d1a120e5c803c112fef6a5",
+      "bytes": 342
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-11-phase1-trajectory.jsonl",
+      "sha256": "15db9033598a57a520def47c9060d0880b5878e0bd22bbaaa685d79ee57cd648",
+      "bytes": 4259062
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-23-full-1000.anthro.duration-probe.json",
+      "sha256": "1fad4894fedfbeef176a9657b6d4091b0e8d197ea16590f2a8d2e94418c3fcab",
+      "bytes": 1690
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-23-full-1000.anthro.inspection.json",
+      "sha256": "44646e1492f0970d110352519212481ca300ccdf4305837d2ba41d1a54ee8195",
+      "bytes": 53518
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-23-full-final.anthro.inspection.json",
+      "sha256": "eec1bf06748c3f43450d1b9202363de2b5b7cde3b85769e3f88a3f5ef3e65bd2",
+      "bytes": 53603
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-23-full-gate-off-irrigation.jsonl",
+      "sha256": "c5d5c17c31f8fb10b075451deb2bda18ab0ea35a699c5bc6d1baccfed2ab7159",
+      "bytes": 3197563
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-23-full-gate-off-result.json",
+      "sha256": "a1e2d72d8be636f274868ce108eb5f344f26a4642553fab14c19d2d46603602b",
+      "bytes": 377
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-23-full-gate-off-trajectory.jsonl",
+      "sha256": "41f86c4917e9f3718d3ed1881a8e4785cf2543098cbaf2817b3b250b48fff904",
+      "bytes": 2625154
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-23-full-irrigation.jsonl",
+      "sha256": "c5d5c17c31f8fb10b075451deb2bda18ab0ea35a699c5bc6d1baccfed2ab7159",
+      "bytes": 3197563
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-23-full-prebuilt-irrigation.jsonl",
+      "sha256": "c5d5c17c31f8fb10b075451deb2bda18ab0ea35a699c5bc6d1baccfed2ab7159",
+      "bytes": 3197563
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-23-full-prebuilt-result.json",
+      "sha256": "03739dcdd3a40b796bafe3bb8ad0f5a4339eccd015ec08850241b63f1cc704a9",
+      "bytes": 385
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-23-full-prebuilt-trajectory.jsonl",
+      "sha256": "41f86c4917e9f3718d3ed1881a8e4785cf2543098cbaf2817b3b250b48fff904",
+      "bytes": 2625154
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-23-full-result.json",
+      "sha256": "f2538de4d0aa0804c494746d280ef7fcb33a4f7af333565f8e07e0faec51710f",
+      "bytes": 354
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-23-full-trajectory.jsonl",
+      "sha256": "41f86c4917e9f3718d3ed1881a8e4785cf2543098cbaf2817b3b250b48fff904",
+      "bytes": 2625154
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-23-off-irrigation.jsonl",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-23-off-result.json",
+      "sha256": "547bf83f30cc1875c521340bd5d6898343920a3ba70c3bb6aa6832ab308eaec3",
+      "bytes": 339
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-23-off-trajectory.jsonl",
+      "sha256": "3201b54bf2df766610ed706edba33b5905b26c3410a379a1eff29c7e58d86322",
+      "bytes": 2387091
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-23-phase1-irrigation.jsonl",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-23-phase1-result.json",
+      "sha256": "23c261d4767ac1e1201c76fbc43a79bf07f1512c58e9c0233af0657a1e1e4b0c",
+      "bytes": 342
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-23-phase1-trajectory.jsonl",
+      "sha256": "0c20bc5fa3396e842ec7aef1a22ee2ea89acc866bcdc7ea64155b622cb5e83ac",
+      "bytes": 2569096
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-47-full-1000.anthro.duration-probe.json",
+      "sha256": "41e46c92ac75597723f0f4ea96a197ba8686d85a0a6c236ffe05a1b6a3a1c1f6",
+      "bytes": 1680
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-47-full-1000.anthro.inspection.json",
+      "sha256": "8f539e83741a9ff58a3c32e20d65e77c61df2e61f66f1ccedf73698304ccaff3",
+      "bytes": 79597
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-47-full-final.anthro.inspection.json",
+      "sha256": "143d1aec50d6d7a86103c51ba3c020ff4cb50aaee319bbe9059443ffbcce3027",
+      "bytes": 79827
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-47-full-gate-off-irrigation.jsonl",
+      "sha256": "d7cad95352dc719b4d163e6fac1562e465c75494e819baa3824aa438425995fe",
+      "bytes": 4740452
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-47-full-gate-off-result.json",
+      "sha256": "6a5a76fe0d160ede74bfe0c8ac86b8a83b737fecad141a152447f8befcc81404",
+      "bytes": 377
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-47-full-gate-off-trajectory.jsonl",
+      "sha256": "76e06d558216e6902a2bd9933d345969265bf3065bb6edc9d633c5519793d764",
+      "bytes": 3705566
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-47-full-irrigation.jsonl",
+      "sha256": "7ecc81ce5e11a7a8d8d71e219910de9ecbc60caf35fbbab34d81e2939643c32b",
+      "bytes": 4740476
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-47-full-prebuilt-irrigation.jsonl",
+      "sha256": "7ecc81ce5e11a7a8d8d71e219910de9ecbc60caf35fbbab34d81e2939643c32b",
+      "bytes": 4740476
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-47-full-prebuilt-result.json",
+      "sha256": "cfece8d314b7d1efe126620ecee2adf63e52e380a4c9455dce4a0b0afe395d69",
+      "bytes": 386
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-47-full-prebuilt-trajectory.jsonl",
+      "sha256": "76e06d558216e6902a2bd9933d345969265bf3065bb6edc9d633c5519793d764",
+      "bytes": 3705566
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-47-full-result.json",
+      "sha256": "b15f26f062d6dd21adcfc258fdf3d918ec0942de05e4e454238f1c2ce0dc4db5",
+      "bytes": 354
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-47-full-trajectory.jsonl",
+      "sha256": "76e06d558216e6902a2bd9933d345969265bf3065bb6edc9d633c5519793d764",
+      "bytes": 3705566
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-47-off-irrigation.jsonl",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-47-off-result.json",
+      "sha256": "9b5dc1d0d65158672674862c0c261dce1d064f4d2e705c6b5d69899d9149fa00",
+      "bytes": 339
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-47-off-trajectory.jsonl",
+      "sha256": "55ac88e616a1b98333040b19034620a9bf725f6342f469f8f1b5e0efe4cfccf0",
+      "bytes": 3378694
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-47-phase1-irrigation.jsonl",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-47-phase1-result.json",
+      "sha256": "84ded0a96453d66c16e3ff2d422c287e4f8e26330f292cb0cef90275c2834581",
+      "bytes": 341
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-a/seed-47-phase1-trajectory.jsonl",
+      "sha256": "0a9c57867e1d4115cc427462928115c4613569064804f3af31e1dcacc04cd152",
+      "bytes": 3649161
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-b/manifest.json",
+      "sha256": "7a39527454a83c909fa1a12793d678246150be1af0d9be8a225e0bedd3ffaefc",
+      "bytes": 535
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-b/seed-101-full-1000.anthro.duration-probe.json",
+      "sha256": "15ddefcc85808ad2008356e320f7476581f9ac47edce9f443d930ebd24f1a11b",
+      "bytes": 1666
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-b/seed-101-full-1000.anthro.inspection.json",
+      "sha256": "abf856d9566f2e337ae187829af0ee921f90b6df07a514d5d64a2f0692ffec33",
+      "bytes": 172671
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-b/seed-101-full-final.anthro.inspection.json",
+      "sha256": "96e1fd82abb0d78a6650a3a6db20f16210818991ae6f62fd3efcc25c5cf02ab4",
+      "bytes": 173371
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-b/seed-101-full-gate-off-irrigation.jsonl",
+      "sha256": "f0a5c555f3fe419c4a0e5c4e83e0aae8ef441323a550f829319913792d58fe9d",
+      "bytes": 9217549
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-b/seed-101-full-gate-off-result.json",
+      "sha256": "0c223d39d5ee44a6e3ad1d220e1f6981ff09def9eb609b86da55c6acf9c17799",
+      "bytes": 378
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-b/seed-101-full-gate-off-trajectory.jsonl",
+      "sha256": "348ec9e6f077ff4f120cb30003cbc1d850156fbeeeed564b486a94c9c3f2faed",
+      "bytes": 7649607
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-b/seed-101-full-irrigation.jsonl",
+      "sha256": "fd986febb388531d8e38079c6f966c4ee372e86a2b4ef0210a9048f056c8ab5b",
+      "bytes": 9217565
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-b/seed-101-full-prebuilt-irrigation.jsonl",
+      "sha256": "fd986febb388531d8e38079c6f966c4ee372e86a2b4ef0210a9048f056c8ab5b",
+      "bytes": 9217565
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-b/seed-101-full-prebuilt-result.json",
+      "sha256": "0976b104f9580b3f1eea04102a07b689578427aec71f5dbfb21312caf53aa40c",
+      "bytes": 387
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-b/seed-101-full-prebuilt-trajectory.jsonl",
+      "sha256": "348ec9e6f077ff4f120cb30003cbc1d850156fbeeeed564b486a94c9c3f2faed",
+      "bytes": 7649607
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-b/seed-101-full-result.json",
+      "sha256": "7c9f2f3b0e6cd553d479be96084f8f7239b22996e89ac756227711ceeeb9386c",
+      "bytes": 355
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-b/seed-101-full-trajectory.jsonl",
+      "sha256": "348ec9e6f077ff4f120cb30003cbc1d850156fbeeeed564b486a94c9c3f2faed",
+      "bytes": 7649607
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-b/seed-101-off-irrigation.jsonl",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-b/seed-101-off-result.json",
+      "sha256": "43a4875d6fea71279026bac128fffad45c84c6e190c4b5c183d5ec0db288f9a7",
+      "bytes": 340
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-b/seed-101-off-trajectory.jsonl",
+      "sha256": "db1d52b533a9200e4c0449982089784d8ecfd637bee528fd9ee10069107143e8",
+      "bytes": 7026069
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-b/seed-101-phase1-irrigation.jsonl",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-b/seed-101-phase1-result.json",
+      "sha256": "17d103baf5abb61250cc39f41d2f252339a45e803af5e4e1d7366897ad8f4110",
+      "bytes": 343
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-b/seed-101-phase1-trajectory.jsonl",
+      "sha256": "d921fb2d9a3866789d2f90e25a6c6c89e933fd4fd291a38973d66a1b0c4a762e",
+      "bytes": 7528752
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-b/seed-1729-full-1000.anthro.duration-probe.json",
+      "sha256": "9107ad8974bf9068a837ec2b0f20c2e48ebe5d1962069de79444165b36164639",
+      "bytes": 1668
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-b/seed-1729-full-1000.anthro.inspection.json",
+      "sha256": "5e5182cb7ffbe5b03847cd1b7ede827a680fb54cfe50ac7b91a9e91ce6ff303e",
+      "bytes": 45301
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-b/seed-1729-full-final.anthro.inspection.json",
+      "sha256": "7ddfeb7a836f839d96f509b1390a89f978c861f25e55e6cab7b5e9fe8dbc6a7a",
+      "bytes": 45652
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-b/seed-1729-full-gate-off-irrigation.jsonl",
+      "sha256": "95d69b5635c0829e8e567d0f07040775268ae53b29593c4d5596591f781685c7",
+      "bytes": 2819707
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-b/seed-1729-full-gate-off-result.json",
+      "sha256": "fdcfb4370c191002d67e363809c2c3cf5ab185bed6d17bb1abde09442a56bf50",
+      "bytes": 379
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-b/seed-1729-full-gate-off-trajectory.jsonl",
+      "sha256": "e30eeff5fcabf78a207823b784042e597dc8a303cbec7f1075e7a468cc53df25",
+      "bytes": 2132314
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-b/seed-1729-full-irrigation.jsonl",
+      "sha256": "95d69b5635c0829e8e567d0f07040775268ae53b29593c4d5596591f781685c7",
+      "bytes": 2819707
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-b/seed-1729-full-prebuilt-irrigation.jsonl",
+      "sha256": "95d69b5635c0829e8e567d0f07040775268ae53b29593c4d5596591f781685c7",
+      "bytes": 2819707
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-b/seed-1729-full-prebuilt-result.json",
+      "sha256": "5d8d3064282364e001140d6188cf6c55cf6cc42ad10f2080a497eca0c730a14d",
+      "bytes": 388
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-b/seed-1729-full-prebuilt-trajectory.jsonl",
+      "sha256": "e30eeff5fcabf78a207823b784042e597dc8a303cbec7f1075e7a468cc53df25",
+      "bytes": 2132314
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-b/seed-1729-full-result.json",
+      "sha256": "dc0ddf7b22091523c99c3d7d06727d517985e40181d0137846ecd0bafbecbc77",
+      "bytes": 356
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-b/seed-1729-full-trajectory.jsonl",
+      "sha256": "e30eeff5fcabf78a207823b784042e597dc8a303cbec7f1075e7a468cc53df25",
+      "bytes": 2132314
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-b/seed-1729-off-irrigation.jsonl",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-b/seed-1729-off-result.json",
+      "sha256": "e304fde095e637a45fcc3787d24311b6d3420da68a7a4f9266b4056d4d86d64c",
+      "bytes": 340
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-b/seed-1729-off-trajectory.jsonl",
+      "sha256": "713c143cfe9064385930af671267893430b85249868efc6b2a2b7c18fe224fac",
+      "bytes": 1803293
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-b/seed-1729-phase1-irrigation.jsonl",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-b/seed-1729-phase1-result.json",
+      "sha256": "d7f1fed399a12dd181209bf3e495042a700794b62b7a14decc6edaf43ec3eddd",
+      "bytes": 344
+    },
+    {
+      "path": "TestResults/CivicAudit/extended-b/seed-1729-phase1-trajectory.jsonl",
+      "sha256": "69cb8704581f69f9ef83f0b24efe26fc82e509e2d8d06462ec4f674a6dff7dd2",
+      "bytes": 1936429
+    },
+    {
+      "path": "TestResults/CivicAudit/physical-prebuilt/manifest.json",
+      "sha256": "44aa722e70acf973b3ff0ee1b46a8b6b2c47b532b9e97bb5f3d5de351a8cf41c",
+      "bytes": 515
+    },
+    {
+      "path": "TestResults/CivicAudit/physical-prebuilt/seed-101-full-physical-prebuilt-irrigation.jsonl",
+      "sha256": "4ba422bc131087632bc5e09e9180fcad496fd5b387eae438260b8011dd8207e9",
+      "bytes": 9685052
+    },
+    {
+      "path": "TestResults/CivicAudit/physical-prebuilt/seed-101-full-physical-prebuilt-result.json",
+      "sha256": "7e408ec30927c98bcff75463b8b3a3ec6f9d7c4639f9530af4161e74cc70ace6",
+      "bytes": 396
+    },
+    {
+      "path": "TestResults/CivicAudit/physical-prebuilt/seed-101-full-physical-prebuilt-trajectory.jsonl",
+      "sha256": "60ff1aa07835b4b170a48aa32c270f7a2f787f2ac1f2624db7684fc6edfff7fa",
+      "bytes": 7648749
+    },
+    {
+      "path": "TestResults/CivicAudit/physical-prebuilt/seed-11-full-physical-prebuilt-irrigation.jsonl",
+      "sha256": "3285a838f6c3e7445fde0f428072b8e73305fb210df7038b72c93ddeeda64143",
+      "bytes": 5382158
+    },
+    {
+      "path": "TestResults/CivicAudit/physical-prebuilt/seed-11-full-physical-prebuilt-result.json",
+      "sha256": "ebb9dc35905c098064e14f63867800672a02076e560093c82beef5132f1bc383",
+      "bytes": 395
+    },
+    {
+      "path": "TestResults/CivicAudit/physical-prebuilt/seed-11-full-physical-prebuilt-trajectory.jsonl",
+      "sha256": "8d6a0610b8b76f9c632eb642fab4f3cafd795af131711648a3b1406bdb4ea1c2",
+      "bytes": 4357984
+    },
+    {
+      "path": "TestResults/CivicAudit/physical-prebuilt/seed-1729-full-physical-prebuilt-irrigation.jsonl",
+      "sha256": "34e1f6b27a474ae01d07ce2970239cc82dafe7749c6bd70c9660b0bb8351ba86",
+      "bytes": 2914735
+    },
+    {
+      "path": "TestResults/CivicAudit/physical-prebuilt/seed-1729-full-physical-prebuilt-result.json",
+      "sha256": "cb8fb109b07e07834ea56309fb3225c90532315536575bb947a9a9bcc265b0d6",
+      "bytes": 397
+    },
+    {
+      "path": "TestResults/CivicAudit/physical-prebuilt/seed-1729-full-physical-prebuilt-trajectory.jsonl",
+      "sha256": "e30eeff5fcabf78a207823b784042e597dc8a303cbec7f1075e7a468cc53df25",
+      "bytes": 2132314
+    },
+    {
+      "path": "TestResults/CivicAudit/physical-prebuilt/seed-23-full-physical-prebuilt-irrigation.jsonl",
+      "sha256": "047af5de2dac79cb8e06c301c447647f0a302f8c2b8a7f95d281f6f756850ada",
+      "bytes": 3458214
+    },
+    {
+      "path": "TestResults/CivicAudit/physical-prebuilt/seed-23-full-physical-prebuilt-result.json",
+      "sha256": "e34d9a063174a4ee0070df0eea1e3500a620a394c968eefc5f15e7679db80c5a",
+      "bytes": 395
+    },
+    {
+      "path": "TestResults/CivicAudit/physical-prebuilt/seed-23-full-physical-prebuilt-trajectory.jsonl",
+      "sha256": "aa8ef3d5448b55fb81b57f7554171660d4f7af32fc30725d91e38e9c9c923c94",
+      "bytes": 2623073
+    },
+    {
+      "path": "TestResults/CivicAudit/physical-prebuilt/seed-47-full-physical-prebuilt-irrigation.jsonl",
+      "sha256": "997477133d75462cd112a648bcf3ea00aa0554d9392110dc8c731be2dd2c917c",
+      "bytes": 5035961
+    },
+    {
+      "path": "TestResults/CivicAudit/physical-prebuilt/seed-47-full-physical-prebuilt-result.json",
+      "sha256": "2e038dc83e3af170e971c28e83fc4ea3afaf4d2d2a3eef02f70ec1b2afe55dee",
+      "bytes": 395
+    },
+    {
+      "path": "TestResults/CivicAudit/physical-prebuilt/seed-47-full-physical-prebuilt-trajectory.jsonl",
+      "sha256": "ebb037976cbe8915ac69d9458e4cf1d685239c97eea7b0a9eefb1f56d0ff3b3e",
+      "bytes": 3705092
+    }
+  ],
+  "finalHarnessExecutableSha256": "e8e90304092426b4437cb391094589a13c920e6e2e63b8df930df21049e297ff"
+}

@@ -151,6 +151,9 @@ internal static class Program
 
     private static void Main(string[] args)
     {
+        if (args.Contains("--audit-inspect")) { CivicAudit.Inspect(args); return; }
+        if (args.Contains("--audit-duration-probe")) { CivicAudit.DurationProbe(args); return; }
+        if (args.Contains("--audit")) { CivicAudit.Run(args); return; }
         string Arg(string name, string fallback) => args.FirstOrDefault(a => a.StartsWith(name + "="))?.Substring(name.Length + 1) ?? fallback;
         var inv = System.Globalization.CultureInfo.InvariantCulture;
         string output = Arg("--output", "TestResults/CivicGovernanceSweep");

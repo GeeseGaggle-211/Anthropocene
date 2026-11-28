@@ -183,6 +183,7 @@ namespace Anthropocene.Simulation
                 MaterialGatherers, ToolsMade;
             public double HCurrent, HSustainable, HAbsolute, HGrown, HRetained;
             public double RetainedFoodSupply, DevelopmentFoodGap;
+            public double IrrigationFoodGapPerYear;
             public double RetainedFarmerPlantService,
                 RetainedFarmerFoodService;
             public double SelectedFieldOperation, SelectedPortfolioValue,
@@ -814,6 +815,7 @@ namespace Anthropocene.Simulation
             double fieldGapPerYear = years > 0
                 ? (strategicDevelopmentFoodGap + plantFeedstockShortfall) /
                     years : 0;
+            alloc.IrrigationFoodGapPerYear = fieldGapPerYear;
             var fieldLadder = CultivationEconomy.Enabled(c) &&
                 d.Footprint.Length > 0 && fieldGapPerYear > Epsilon
                 ? CultivationEconomy.ExpansionLadder(w, c, years,

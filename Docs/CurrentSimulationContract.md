@@ -24,7 +24,14 @@ before irrigation. Composite QoL never enters physical birth or death rates.
 RL layouts are unchanged. Its section 6 records the measured gates.
 [CivicGovernanceSweepReport.md](CivicGovernanceSweepReport.md) is the matched
 5-world sweep. Phase 1 lifts the cap to 3,000-3,850. Phase 2 reaches 3,900-4,700,
-limited by farmland per village rather than governance.
+at the original 1,000-year endpoint. The follow-up
+[CivicIrrigationTrajectoryAudit.md](CivicIrrigationTrajectoryAudit.md) supersedes
+the permanent farmland-ceiling interpretation: normal 2,000-year continuations
+reach 6,937–8,130 in the largest endpoint villages, but freezing turn duration
+after year 1,000 leaves them at 3,982–4,468. Fixed-claim probes identify the
+harvest-first land boundary as a source of this calendar dependence. Irrigation
+requests execute fully; observed local opportunities and early cultivation gates
+explain sparse new adoption. No gameplay tuning accompanies the audit.
 
 ## Opt-in Plough and Elder irrigation (November 2026)
 
