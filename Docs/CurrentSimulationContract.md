@@ -10,6 +10,22 @@ Implementation evidence is not itself a new design approval. The index is a navi
 and conflict-resolution aid. The linked normative documents and accepted issue
 contracts remain the rule sources.
 
+## Opt-in annual land food (November 2026)
+
+[AnnualLandFood.md](AnnualLandFood.md) defines the experimental
+`AnnualLandFoodEnabled` mode and `AnnualLandFoodOpeningConfig.json`. Cultivated
+renewal supplies finite harvest claims during the horizon; unmet demand draws
+from the slower natural reserve, with analytical depletion and same-turn shortage.
+Four annual-mean profiles replace the harvest-first boundary in this mode only.
+Physical demography continues to debit actual person-years. Forecasts, planner
+availability, passive recovery, capacities and invariants share the same model.
+The follow-up [headless civic playthrough](CivicPlaythrough.md) compares both
+models from civic onset, including civic divergence and irrigation eligibility
+versus actual water delivery.
+The saved flag defaults false, including in old saves; observation layouts and
+the shipped opening remain unchanged. Validation: `AnnualLandFoodChecks`
+(`--annual-land-food-only`) and the matched continuation experiment in that document.
+
 ## Opt-in civic governance (November 2026)
 
 [CivicGovernance.md](CivicGovernance.md) implements the opt-in civic and
@@ -24,7 +40,14 @@ before irrigation. Composite QoL never enters physical birth or death rates.
 RL layouts are unchanged. Its section 6 records the measured gates.
 [CivicGovernanceSweepReport.md](CivicGovernanceSweepReport.md) is the matched
 5-world sweep. Phase 1 lifts the cap to 3,000-3,850. Phase 2 reaches 3,900-4,700,
-limited by farmland per village rather than governance.
+at the original 1,000-year endpoint. The follow-up
+[CivicIrrigationTrajectoryAudit.md](CivicIrrigationTrajectoryAudit.md) supersedes
+the permanent farmland-ceiling interpretation: normal 2,000-year continuations
+reach 6,937–8,130 in the largest endpoint villages, but freezing turn duration
+after year 1,000 leaves them at 3,982–4,468. Fixed-claim probes identify the
+harvest-first land boundary as a source of this calendar dependence. Irrigation
+requests execute fully; observed local opportunities and early cultivation gates
+explain sparse new adoption. No gameplay tuning accompanies the audit.
 
 ## Opt-in Plough and Elder irrigation (November 2026)
 

@@ -31,6 +31,18 @@ namespace Anthropocene.Simulation
     public readonly struct EcologyCapacity
     {
         public readonly double Food, WildFood, ManagedFlow, Biomass, Water, FoodRate, BiomassRate, WaterRate;
+        private EcologyCapacity(HorizonEcologyCapacity annual)
+        {
+            Food = annual.Food; WildFood = annual.WildFood; ManagedFlow = annual.ManagedFlow;
+            Biomass = annual.Food + annual.Nonfood; Water = annual.Water;
+            FoodRate = annual.FoodRate; BiomassRate = annual.BiomassRate; WaterRate = annual.WaterRate;
+        }
+        internal static EcologyCapacity Boundary(WorldState w, Tile t, EcologyView view, int season,
+            double? operatingFraction = null, AquaticEcologyOverlay? aquaticOverlay = null)
+            => t.Land && w.Config.AnnualLandFoodEnabled
+                ? new EcologyCapacity(new HorizonEcologyCapacity(w, t, view, view.Days,
+                    w.Config.DaysPerYear, operatingFraction))
+                : new EcologyCapacity(w, t, view, season, operatingFraction, aquaticOverlay);
         public EcologyCapacity(WorldState w, Tile t, EcologyView view, int season,
             double? operatingFraction = null, AquaticEcologyOverlay? aquaticOverlay = null)
         {
@@ -112,28 +124,34 @@ namespace Anthropocene.Simulation
     // climate profiles. EcologyMath.Stock then solves that generator over dt.
     internal readonly struct HorizonEcologyCapacity
     {
-        public readonly double Food, Nonfood, Water, FoodRate, BiomassRate, WaterRate, ManagedFlow, SafeRate;
+        public readonly double Food, WildFood, Nonfood, Water, FoodRate, BiomassRate, WaterRate, ManagedFlow, SafeRate;
         public readonly double FoodCapacityDays, BiomassCapacityDays, WaterCapacityDays;
         public HorizonEcologyCapacity(WorldState world, Tile tile, EcologyView representative,
             double start, double days, double? operatingFraction = null,
-            AquaticEcologyOverlay? aquaticOverlay = null)
+            AquaticEcologyOverlay? aquaticOverlay = null, Action profileEvaluated = null)
         {
             double foodDays = 0, nonfoodDays = 0, waterDays = 0;
             double foodRate = 0, biomassRate = 0, waterRate = 0;
             double foodSource = 0, nonfoodSource = 0, waterSource = 0, managed = 0, safe = 0;
             double biomassDays = 0;
+            double wildDays = 0, wildSource = 0;
             var exposure = new SeasonExposure(start, days, world.Config.BaseDays);
+            bool annual = tile.Land && world.Config.AnnualLandFoodEnabled;
             for (int season = 0; season < 4; season++)
             {
-                double weight = days > 0 ? exposure.At(season) / days : 0;
+                double weight = annual ? .25 : days > 0 ? exposure.At(season) / days : 0;
                 if (weight <= 0) continue;
+                profileEvaluated?.Invoke();
                 var capacity = new EcologyCapacity(world, tile, representative, season,
                     operatingFraction, aquaticOverlay);
                 double nonfood = Math.Max(0, capacity.Biomass - capacity.Food);
-                foodDays += exposure.At(season) * capacity.Food;
-                nonfoodDays += exposure.At(season) * nonfood;
-                biomassDays += exposure.At(season) * capacity.Biomass;
-                waterDays += exposure.At(season) * capacity.Water;
+                double span = annual ? weight * days : exposure.At(season);
+                foodDays += span * capacity.Food;
+                wildDays += span * capacity.WildFood;
+                wildSource += weight * capacity.FoodRate * capacity.WildFood;
+                nonfoodDays += span * nonfood;
+                biomassDays += span * capacity.Biomass;
+                waterDays += span * capacity.Water;
                 foodRate += weight * capacity.FoodRate;
                 biomassRate += weight * capacity.BiomassRate;
                 waterRate += weight * capacity.WaterRate;
@@ -147,6 +165,7 @@ namespace Anthropocene.Simulation
             FoodCapacityDays = foodDays; BiomassCapacityDays = biomassDays; WaterCapacityDays = waterDays;
             FoodRate = foodRate; BiomassRate = biomassRate; WaterRate = waterRate;
             Food = foodRate > 0 ? foodSource / foodRate : days > 0 ? foodDays / days : 0;
+            WildFood = foodRate > 0 ? wildSource / foodRate : days > 0 ? wildDays / days : 0;
             Nonfood = biomassRate > 0 ? nonfoodSource / biomassRate : days > 0 ? nonfoodDays / days : 0;
             Water = waterRate > 0 ? waterSource / waterRate : days > 0 ? waterDays / days : 0;
             ManagedFlow = managed; SafeRate = safe;
@@ -258,7 +277,24 @@ namespace Anthropocene.Simulation
             var before = v;
             if (days > 0)
             {
-                if (t.Land)
+                if (t.Land && w.Config.AnnualLandFoodEnabled)
+                {
+                    // Exact zero-demand specialization of the active kernel.
+                    // Quiet projections need no receipt/pressure lists or ledger.
+                    var mean = MeanView(w, t, before, days);
+                    ReclassifyAnnualLandFood(w, t, ref v, mean.CultivationCapital);
+                    var capacity = new HorizonEcologyCapacity(w, t, mean, before.Days, days);
+                    double nonfood = EcologyMath.Stock(Math.Max(0, v.PotentialFood - v.Food),
+                        capacity.Nonfood, capacity.BiomassRate, 0, days).Stock;
+                    // Unharvested crop yield expires; only natural recovery is retained.
+                    v.Food = EcologyMath.Stock(v.Food, capacity.Food, capacity.FoodRate, 0, days).Stock;
+                    v.PotentialFood = v.Food + nonfood;
+                    v.Freshwater = EcologyMath.Stock(v.Freshwater, capacity.Water, capacity.WaterRate, 0, days).Stock;
+                    RecoverCondition(w, t, ref v, days, 0);
+                    ReclassifyAnnualLandFood(w, t, ref v, CultivationEconomy.Decay(w.Config,
+                        before.CultivationCapital, t.CultivationOperatingFraction, days / w.Config.DaysPerYear));
+                }
+                else if (t.Land)
                 {
                     RecoverCondition(w, t, ref v, days, 0);
                     RecoverLandAfterHarvest(w, t, ref v, before.Days, days,
@@ -526,6 +562,25 @@ namespace Anthropocene.Simulation
                 view.Food *= newShare / oldShare;
             view.Food = Numbers.Clamp(view.Food, 0, view.PotentialFood);
         }
+        // Reclassify access to existing biomass without creating biomass.
+        // Annual means keep changes of field capital independent of calendar phase.
+        internal static void ReclassifyAnnualLandFood(WorldState w, Tile tile,
+            ref EcologyView view, double nextCapital, Action profileEvaluated = null)
+        {
+            if (Math.Abs(view.CultivationCapital - nextCapital) <= 1e-12) return;
+            var before = new HorizonEcologyCapacity(w, tile, view, view.Days, w.Config.DaysPerYear,
+                profileEvaluated: profileEvaluated);
+            view.CultivationCapital = nextCapital;
+            var after = new HorizonEcologyCapacity(w, tile, view, view.Days, w.Config.DaysPerYear,
+                profileEvaluated: profileEvaluated);
+            double oldShare = before.Food / Math.Max(1e-12, before.Food + before.Nonfood);
+            double newShare = after.Food / Math.Max(1e-12, after.Food + after.Nonfood);
+            if (newShare > oldShare && oldShare < 1)
+                view.Food += Math.Max(0, view.PotentialFood - view.Food) * (newShare - oldShare) / (1 - oldShare);
+            else if (newShare < oldShare && oldShare > 0)
+                view.Food *= newShare / oldShare;
+            view.Food = Numbers.Clamp(view.Food, 0, view.PotentialFood);
+        }
         internal static void ReclassifyAquaticFood(WorldState w, Tile tile,
             ref EcologyView view, double fromCapital, double toCapital, int season)
         {
@@ -553,6 +608,14 @@ namespace Anthropocene.Simulation
         internal static void ClampCapacity(WorldState w, Tile t, ref EcologyView v,
             AquaticEcologyOverlay? aquaticOverlay = null)
         {
+            if (t.Land && w.Config.AnnualLandFoodEnabled)
+            {
+                var annual = new HorizonEcologyCapacity(w, t, v, v.Days, w.Config.DaysPerYear);
+                v.PotentialFood = Numbers.Clamp(v.PotentialFood, 0, annual.Food + annual.Nonfood);
+                v.Food = Numbers.Clamp(v.Food, 0, Math.Min(v.PotentialFood, annual.Food));
+                v.Freshwater = Numbers.Clamp(v.Freshwater, 0, annual.Water);
+                return;
+            }
             var k = new EcologyCapacity(w, t, v,
                 (int)Math.Floor(v.Days / w.Config.BaseDays) % 4,
                 aquaticOverlay: aquaticOverlay);
@@ -581,14 +644,14 @@ namespace Anthropocene.Simulation
             view.Commit(w.Tiles[tile]); w.Tiles[tile].Cultivation = (float)CultivationEconomy.Intensity(w.Config, view.CultivationCapital);
             wood?.Commit(); return view;
         }
-        // Land claims can only debit the opening stock; renewal is for the next turn.
-        // Aquatic claims retain the coupled stock-flow envelope.
+        // Legacy land can only debit opening stock. Annual land and aquatic
+        // claims use a stock-plus-flow upper bound, then the finite kernel.
         public static double AccessibleAvailability(WorldState w, int tile, double start, double duration,
             double? operatingFraction = null, double? averageCultivationCapital = null,
             AquaticEcologyOverlay? aquaticOverlay = null)
         {
             var t = w.Tiles[tile]; var view = ProjectEcology(w, tile, start); double available = view.Food;
-            if (t.Land) return Math.Max(0, available);
+            if (t.Land && !w.Config.AnnualLandFoodEnabled) return Math.Max(0, available);
             var overlay = aquaticOverlay ?? ProjectAquaticOverlay(w, tile, start,
                 duration, operatingFraction);
             if (overlay.HasValue)
@@ -596,6 +659,11 @@ namespace Anthropocene.Simulation
                     overlay.Value.AverageCapital,
                     (int)Math.Floor(start / w.Config.BaseDays) % 4);
             var mean = MeanView(w, t, view, duration, 0, averageCultivationCapital, operatingFraction);
+            if (t.Land && w.Config.AnnualLandFoodEnabled)
+            {
+                ReclassifyAnnualLandFood(w, t, ref view, mean.CultivationCapital);
+                available = view.Food;
+            }
             var capacity = new HorizonEcologyCapacity(w, t, mean, start, duration,
                 operatingFraction, overlay);
             available += (capacity.Food * capacity.FoodRate + capacity.ManagedFlow) * duration;

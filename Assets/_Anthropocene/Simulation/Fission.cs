@@ -921,11 +921,19 @@ namespace Anthropocene.Simulation
                     // accessible stock, without borrowing another camp's crops
                     // or assuming primitive fields have already been built.
                     now.CultivationCapital = 0;
-                    var natural = new EcologyCapacity(w, t, now, (int)Math.Floor(w.Days / cfg.BaseDays) % 4);
+                    var natural = EcologyCapacity.Boundary(w, t, now, (int)Math.Floor(w.Days / cfg.BaseDays) % 4);
                     now.Food = Math.Min(now.Food, natural.Food);
                 }
                 var view = now;
                 view.PotentialFood = Math.Max(0, view.PotentialFood - view.Food); view.Food = 0;
+                if (cfg.AnnualLandFoodEnabled)
+                {
+                    var forecast = FoodHorizonForecast.Tile(w, n, w.Days, cfg.TurnDays,
+                        openingEcology: view);
+                    double annual = FoodHorizonForecast.RefillSupply(w, n, forecast);
+                    projections[n] = annual; e.TileProjections++;
+                    return annual;
+                }
                 LazyEcology.RecoverLandAfterHarvest(w, t, ref view, w.Days, cfg.TurnDays, null, null, null);
                 LazyEcology.ClampCapacity(w, t, ref view);
                 double value = Math.Min(now.Food, view.Food); projections[n] = value; e.TileProjections++;

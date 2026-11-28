@@ -713,6 +713,8 @@ Exact copy of `Assets/_Anthropocene/Resources/AgriculturalTechnologyOpeningConfi
 
 ## 6. Implementation Status & Measured Gates (27 November 2026)
 
+> **Updated evidence:** [CivicIrrigationTrajectoryAudit.md](CivicIrrigationTrajectoryAudit.md) extends the matched worlds to 2,000 years and supersedes the permanent farmland-ceiling interpretation in the original 1,000-year findings below. All five full arms pass 5,000 with normal calendar compression; all five fail to do so when duration is frozen after year 1,000. Resolve the land-harvest/calendar interaction before choosing capacity tuning or hinterland expansion.
+
 | Milestone | Commit(s) | Status |
 | --- | --- | --- |
 | M0 spec | `e5d3b3f` | Locked (this document). |
@@ -769,7 +771,7 @@ Per-seed peak village (off / phase1 / full):
 **Findings:**
 1. **Phase 1 meets its gate on every seed.** Crowding relief lifts the PR #49 cap of about 1,000 to 3,000–3,850, and world population rises 2.3x. Civic upkeep costs about 12–19% extra per turn.
 2. **Phase 2 breaks the ~3,400 disease wall, but organic play reaches only 3,900–4,700, not 5,000–10,000.** Tier 3B is reached by 7–21 villages per world. Sanitation is fully watered wherever it is built (water ratio 1.0).
-3. **Tier 3A organically is near zero:** only 2 of 112 villages. With storage and trade off in this profile, its drivers are almost nil: stored-food term u_store ≈ 0.001–0.008 and trade term u_trade ≈ 1e-4. That caps C at the Tier-2 ceiling of 0.75 and leaves M_d ≈ 0.35. Granting 3A (`full-3a`) does raise C to ~0.97, M_c to ~0.08 and M_d to ~0.27, yet peaks do not improve.
+3. **Tier 3A organically is near zero:** only 2 of 118 villages at year 1,000. Trade is enabled and the optional goods-storage rule is off; measured reserves and trade volume are tiny: stored-food term u_store ≈ 0.001–0.008 and trade term u_trade ≈ 1e-4. That caps C at the Tier-2 ceiling of 0.75 and leaves M_d ≈ 0.35. Granting 3A (`full-3a`) does raise C to ~0.97, M_c to ~0.08 and M_d to ~0.27, yet peaks do not improve.
 4. **The binding constraint after Phase 2 is farmland per village, not governance.** The largest villages still operate their 7 footprint tiles with almost no irrigated fields, and 70–80% of residents farm. Food produced is about equal to food required, reserves are near zero, and births are surplus-funded, so the birth rate falls to mortality at about 600 residents per farmed tile. The demographic equilibrium at these mitigation levels (~7,600) is not reached.
 
 **Open decisions:**

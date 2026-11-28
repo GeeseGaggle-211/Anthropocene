@@ -343,7 +343,7 @@ namespace Anthropocene.Simulation
                     var tile = w.Tiles[group.Tile];
                     if (!tile.Land) continue;
                     var opening = LazyEcology.ProjectEcology(w, tile.Id, horizon.StartDays);
-                    var cap = new EcologyCapacity(w, tile, opening, (int)Math.Floor(horizon.StartDays / w.Config.BaseDays) % 4);
+                    var cap = EcologyCapacity.Boundary(w, tile, opening, (int)Math.Floor(horizon.StartDays / w.Config.BaseDays) % 4);
                     cropShares[tile.Id] = cap.Food > 0 ? Numbers.Clamp((cap.Food - cap.WildFood) / cap.Food, 0, 1) : 0;
                 }
             }

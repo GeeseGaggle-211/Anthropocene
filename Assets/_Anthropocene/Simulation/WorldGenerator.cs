@@ -225,6 +225,13 @@ namespace Anthropocene.Simulation
             var view = new EcologyView(t);
             view.PotentialFood = Math.Max(0, view.PotentialFood - view.Food);
             view.Food = 0;
+            if (world.Config.AnnualLandFoodEnabled)
+            {
+                var capacity = new HorizonEcologyCapacity(world, t, view, world.Days, world.Config.TurnDays);
+                double annual = (capacity.Food * capacity.FoodRate + capacity.ManagedFlow) * world.Config.TurnDays;
+                if (cache != null) cache[tile] = annual;
+                return annual;
+            }
             LazyEcology.RecoverLandAfterHarvest(world, t, ref view, world.Days,
                 world.Config.TurnDays, null, null, null);
             LazyEcology.ClampCapacity(world, t, ref view);

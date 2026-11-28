@@ -58,6 +58,7 @@ namespace Anthropocene.Simulation
         {
             if (duration < 0) throw new ArgumentOutOfRangeException(nameof(duration));
             var tile = w.Tiles[tileId];
+            bool annualLand = tile.Land && w.Config.AnnualLandFoodEnabled;
             aquaticOverlay ??= LazyEcology.ProjectAquaticOverlay(w, tileId, start,
                 duration, operatingFraction);
             // Food-only previews use the same stock kernel without initializing
@@ -127,12 +128,21 @@ namespace Anthropocene.Simulation
             double humanRate = duration > 0 ? foodRequest / duration : 0;
             double herdRate = duration > 0 ? herdRequest / duration : 0;
             double waterRate = duration > 0 ? waterRequest / duration : 0;
-            // Land claims debit only the stock present at the resource boundary.
+            // Legacy land claims debit only opening stock. Annual land consumes
+            // recurring crop flow before drawing on the slower reserve.
             // Aquatic food and freshwater retain their coupled horizon flows.
             // Aquatic pressure is evaluated after realized receipts. Land
             // condition is fixed; land-use effects remain finite stock debits.
+            var landOpening = v;
             var representative = LazyEcology.MeanView(w, tile, v, duration, 0,
                 averageCultivationCapital, operatingFraction);
+            double openingCapital = v.CultivationCapital, openingAccessChange = 0;
+            if (annualLand)
+            {
+                double beforeAccess = v.Food;
+                LazyEcology.ReclassifyAnnualLandFood(w, tile, ref v, representative.CultivationCapital, profileEvaluated);
+                openingAccessChange = v.Food - beforeAccess;
+            }
             if (aquaticOverlay.HasValue && !tile.Land)
             {
                 LazyEcology.ReclassifyAquaticFood(w, tile, ref v,
@@ -142,11 +152,11 @@ namespace Anthropocene.Simulation
                 result.Balance.StartingFood = v.Food;
             }
             var capacity = new HorizonEcologyCapacity(w, tile, representative, start,
-                duration, operatingFraction, aquaticOverlay);
+                duration, operatingFraction, aquaticOverlay, annualLand ? profileEvaluated : null);
             // Aquatic ecology uses this representative horizon capacity.
-            // Land recovery instead composes ordered seasonal profiles below;
+            // Legacy land recovery composes ordered seasonal profiles below;
             // the optional diagnostic callback records their exact forcing.
-            if (!tile.Land || !captureGrossForcing)
+            if (!tile.Land || annualLand || !captureGrossForcing)
             {
                 result.GrossNaturalFoodInput = capacity.Food * capacity.FoodRate * duration;
                 result.GrossNaturalNonfoodInput = capacity.Nonfood * capacity.BiomassRate * duration;
@@ -161,9 +171,9 @@ namespace Anthropocene.Simulation
                 result.ManagedRenewalInput = capacity.ManagedFlow * duration;
                 result.OperatingFraction = aquaticOverlay.Value.OperatingFraction;
             }
-            var flow = tile.Land
+            var flow = tile.Land && !annualLand
                 ? ResolveLandOpeningFlow(v, capacity, duration, foodRequest, herdRequest, waterRate)
-                : ResolveHorizonFlow(v, capacity, duration, humanRate, herdRate, waterRate);
+                : ResolveHorizonFlow(v, capacity, duration, humanRate, herdRate, waterRate, annualLand);
             double humans = flow.Humans, herds = flow.Herds, water = flow.Water, spilled = flow.Spilled;
             // Each finite tile pool has one integrated harvest ledger. On a
             // contested tile, claimant IDs debit that ledger in stable order.
@@ -192,12 +202,23 @@ namespace Anthropocene.Simulation
             result.Balance.WaterRecharge = flow.Hydration.Recharge;
             result.Balance.WaterHarvest = water;
             result.Balance.WaterOverflow = flow.Hydration.Overflow;
-            var beforeHorizon = v;
+            var beforeHorizon = annualLand ? landOpening : v;
             v.Food = flow.SecondFood.Stock;
             v.PotentialFood = v.Food + flow.Nonfood.Stock;
             v.Freshwater = flow.Hydration.Stock;
             LazyEcology.RecoverCondition(w, tile, ref v, duration, damagePerDay);
-            if (tile.Land)
+            if (annualLand)
+            {
+                double beforeAccess = v.Food;
+                LazyEcology.ReclassifyAnnualLandFood(w, tile, ref v,
+                    endingCultivationCapital ?? CultivationEconomy.Decay(w.Config,
+                        openingCapital, operatingFraction ?? tile.CultivationOperatingFraction,
+                        duration / w.Config.DaysPerYear), profileEvaluated);
+                double endingAccessChange = v.Food - beforeAccess;
+                result.Balance.FoodRecharge += Math.Max(0, openingAccessChange) + Math.Max(0, endingAccessChange);
+                result.Balance.FoodOverflow += Math.Max(0, -openingAccessChange) + Math.Max(0, -endingAccessChange);
+            }
+            else if (tile.Land)
             {
                 double depletedFood = v.Food, depletedBiomass = v.PotentialFood;
                 // With no drinking claim, use the same ordered zero-withdrawal
@@ -320,17 +341,23 @@ namespace Anthropocene.Simulation
             }
         }
         private static HorizonFlow ResolveHorizonFlow(EcologyView start, HorizonEcologyCapacity capacity,
-            double days, double humanRate, double herdRate, double waterRate)
+            double days, double humanRate, double herdRate, double waterRate, bool annualLand = false)
         {
             var nonfood = EcologyMath.Stock(Math.Max(0, start.PotentialFood - start.Food),
                 capacity.Nonfood, capacity.BiomassRate, herdRate, days);
             double firstDays = Math.Min(days, nonfood.DepletionDays);
-            var firstFood = EcologyMath.ManagedStock(start.Food, capacity.Food, capacity.FoodRate,
-                capacity.ManagedFlow, humanRate, firstDays);
+            var firstFood = annualLand
+                ? EcologyMath.RenewableHarvest(start.Food, capacity.Food, capacity.FoodRate,
+                    capacity.ManagedFlow, humanRate, firstDays)
+                : EcologyMath.ManagedStock(start.Food, capacity.Food, capacity.FoodRate,
+                    capacity.ManagedFlow, humanRate, firstDays);
             double spillRate = Math.Max(0, herdRate - capacity.Nonfood * capacity.BiomassRate);
             double remaining = days - firstDays;
-            var secondFood = EcologyMath.ManagedStock(firstFood.Stock, capacity.Food, capacity.FoodRate,
-                capacity.ManagedFlow, humanRate + spillRate, remaining);
+            var secondFood = annualLand
+                ? EcologyMath.RenewableHarvest(firstFood.Stock, capacity.Food, capacity.FoodRate,
+                    capacity.ManagedFlow, humanRate + spillRate, remaining)
+                : EcologyMath.ManagedStock(firstFood.Stock, capacity.Food, capacity.FoodRate,
+                    capacity.ManagedFlow, humanRate + spillRate, remaining);
             double flowingDays = Math.Min(remaining, secondFood.DepletionDays);
             double humanInSecond = humanRate * flowingDays
                 + Math.Min(humanRate, capacity.Food * capacity.FoodRate + capacity.ManagedFlow)

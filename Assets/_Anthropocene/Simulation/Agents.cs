@@ -43,7 +43,7 @@ namespace Anthropocene.Simulation
         }
         internal TileObservation(WorldState world, Tile tile, IReadOnlyList<RiverEdge> rivers, EcologyView projected)
             : this(tile, tile.Seasons[world.Season], world.Config, rivers, projected,
-                new EcologyCapacity(world, tile, projected, world.Season,
+                EcologyCapacity.Boundary(world, tile, projected, world.Season,
                     aquaticOverlay: LazyEcology.ProjectAquaticOverlay(world, tile.Id, world.Days, 0)))
         {
         }

@@ -608,16 +608,18 @@ namespace Anthropocene.Simulation
                 var aquaticOverlay = LazyEcology.ProjectAquaticOverlay(w, tile.Id, w.Days, 0);
                 var projected = LazyEcology.ProjectEcology(w, tile.Id, w.Days);
                 var ecology = w.Ecology(tile.Id); double multiplier = OpeningTransitions.FoodMultiplier(w, tile);
-                var capacity = new EcologyCapacity(w, tile, projected, w.Season,
+                var capacity = EcologyCapacity.Boundary(w, tile, projected, w.Season,
                     aquaticOverlay: aquaticOverlay);
+                bool annualLand = tile.Land && w.Config.AnnualLandFoodEnabled;
+                double waterCapacity = annualLand ? capacity.Water : ecology.MaxFreshwater;
                 if (tile.WaterBody == WaterKind.Saltwater && (tile.Freshwater > 0 || ecology.MaxFreshwater > 0 || tile.FreshwaterSource != FreshwaterSource.None)) throw new InvalidOperationException("Seawater is not drinkable.");
                 if (tile.Saltwater < 0 || tile.Saltwater > ecology.MaxSaltwater + 1e-6 || tile.FreshwaterSource == FreshwaterSource.None && tile.Freshwater > 1e-8) throw new InvalidOperationException("Water stock lacks a valid source or capacity.");
-                if (double.IsNaN(projected.LandCondition) || double.IsNaN(projected.AquaticCondition) || projected.LandCondition < -1e-8 || projected.LandCondition > 1 + 1e-8 || projected.AquaticCondition < -1e-8 || projected.AquaticCondition > 1 + 1e-8 || double.IsNaN(projected.Food) || double.IsInfinity(projected.Food) || projected.Food < -1e-8 || double.IsNaN(projected.PotentialFood) || double.IsInfinity(projected.PotentialFood) || projected.PotentialFood + 1e-8 < projected.Food || (IrrigationEconomy.Field(w, tile.Id) == null && projected.PotentialFood > ecology.MaxPotentialFood * multiplier + 1e-5) || projected.PotentialFood > capacity.Biomass + 1e-6 || projected.Freshwater < -1e-8 || double.IsNaN(projected.Freshwater) ||
-                    projected.Food > capacity.Food + 1e-6 || projected.Freshwater > ecology.MaxFreshwater + 1e-6)
+                if (double.IsNaN(projected.LandCondition) || double.IsNaN(projected.AquaticCondition) || projected.LandCondition < -1e-8 || projected.LandCondition > 1 + 1e-8 || projected.AquaticCondition < -1e-8 || projected.AquaticCondition > 1 + 1e-8 || double.IsNaN(projected.Food) || double.IsInfinity(projected.Food) || projected.Food < -1e-8 || double.IsNaN(projected.PotentialFood) || double.IsInfinity(projected.PotentialFood) || projected.PotentialFood + 1e-8 < projected.Food || (!annualLand && IrrigationEconomy.Field(w, tile.Id) == null && projected.PotentialFood > ecology.MaxPotentialFood * multiplier + 1e-5) || projected.PotentialFood > capacity.Biomass + 1e-6 || projected.Freshwater < -1e-8 || double.IsNaN(projected.Freshwater) ||
+                    projected.Food > capacity.Food + 1e-6 || projected.Freshwater > waterCapacity + 1e-6)
                     throw new InvalidOperationException("Invalid ecology or capacity overflow at tile " + tile.Id +
                         ": food=" + projected.Food.ToString("R") + "/" + capacity.Food.ToString("R") +
                         ", biomass=" + projected.PotentialFood.ToString("R") + "/" + capacity.Biomass.ToString("R") +
-                        ", freshwater=" + projected.Freshwater.ToString("R") + "/" + ecology.MaxFreshwater.ToString("R") +
+                        ", freshwater=" + projected.Freshwater.ToString("R") + "/" + waterCapacity.ToString("R") +
                         ", landCondition=" + projected.LandCondition.ToString("R") +
                         ", aquaticCondition=" + projected.AquaticCondition.ToString("R") +
                         ", overlay=" + aquaticOverlay.HasValue + ".");

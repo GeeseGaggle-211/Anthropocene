@@ -514,7 +514,9 @@ namespace Anthropocene.Simulation
                         double end = CultivationEconomy.Decay(cfg, start, op, years);
                         double terminal = CultivationEconomy.Decay(cfg, start, op,
                             Math.Max(years, cfg.Neolithic.PlanningHorizonYears));
-                        double request = Math.Max(0, opening.Food);
+                        double request = cfg.AnnualLandFoodEnabled
+                            ? LazyEcology.AccessibleAvailability(world, id, world.Days, cfg.TurnDays, op, Mean(years))
+                            : Math.Max(0, opening.Food);
                         var current = FoodHorizonForecast.Tile(world, id, world.Days,
                             cfg.TurnDays, request > 0 ? new[] { new Demand
                             {
@@ -531,21 +533,22 @@ namespace Anthropocene.Simulation
                         var refill = FoodHorizonForecast.Tile(world, id, world.Days,
                             cfg.TurnDays, null, empty.CultivationCapital,
                             terminal, op, false, empty);
+                        double refillFood = FoodHorizonForecast.RefillSupply(world, id, refill);
                         double harvestWork = 0;
                         if (cropRate && footprint.Contains(id))
                         {
-                            var capacity = new EcologyCapacity(world, tile, empty,
+                            var capacity = EcologyCapacity.Boundary(world, tile, empty,
                                 season);
                             double crop = tile.CultivationOperator >= 0 &&
                                 tile.CultivationOperator != camp.Id ? 0 :
                                 Math.Max(0, capacity.Food - capacity.WildFood);
                             double share = capacity.Food > 0
                                 ? crop / capacity.Food : 0;
-                            harvestWork = refill.ClosingFood * ((1 - share) / futureWildRate +
+                            harvestWork = refillFood * ((1 - share) / futureWildRate +
                                 share / (cfg.FarmerProductivity * ploughHarvest));
                         }
                         forecast = (current.HumanFoodReceipts,
-                            refill.ClosingFood, refill.ClosingFood, harvestWork);
+                            refillFood, refillFood, harvestWork);
                         fixedLand[key] = forecast;
                     }
                     currentLand += forecast.current;

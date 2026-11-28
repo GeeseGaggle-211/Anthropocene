@@ -55,6 +55,12 @@ namespace Anthropocene.Simulation
 
     public static class IrrigationEconomy
     {
+        // Optional caller-owned audit counters; never stored in world state.
+        public sealed class OpportunityAudit
+        {
+            public int Footprint, Sources, Routes, IncompleteRoutes, DryTargets, UnservedTargets, CultivatedTargets, WateredCandidates, PositiveCandidates;
+            public IrrigationProject WateredZeroGainProject;
+        }
         public static bool Enabled(WorldState w) => w.Config.Agriculture?.IrrigationEnabled == true;
         public static bool InfrastructureGood(CraftGood good) => good == CraftGood.CanalConstruction || good == CraftGood.CanalMaintenance;
         internal static IEnumerable<CanalSegment> Owned(WorldState w, Camp c)
@@ -135,7 +141,7 @@ namespace Anthropocene.Simulation
         }
         // Conservative local routing: visible continuous terrain only. The
         // farming footprint bounds targets and paths; intakes may border it.
-        public static IrrigationProject Opportunity(WorldState w, Camp c, bool discoveryOnly = false)
+        public static IrrigationProject Opportunity(WorldState w, Camp c, bool discoveryOnly = false, OpportunityAudit audit = null)
         {
             if (!Enabled(w) || !CultivationEconomy.Enabled(c) || c.Population <= 0) return null;
             bool localAllVisible = w.Config.VisionRadius >= 2;
@@ -143,11 +149,13 @@ namespace Anthropocene.Simulation
             bool IsVisible(int id) => localAllVisible ? w.Map.Distance(c.Tile, id) <= w.Config.VisionRadius : visible.Contains(id);
             var footprint = CultivationEconomy.Footprint(w, c).Where(id => IsVisible(id) &&
                 (w.Tiles[id].CultivationOperator < 0 || w.Tiles[id].CultivationOperator == c.Id)).ToArray();
+            if (audit != null) audit.Footprint = footprint.Length;
             if (footprint.Length == 0) return null;
             var allowed = new HashSet<int>(footprint);
             var sources = footprint.SelectMany(id => w.Map.Radius(id, 1)).Distinct()
                 .Where(id => IsVisible(id) && FreshSource(w.Tiles[id]) && w.Tiles[id].Seasons.Any(s => s.MaxFreshwater > 0 && s.WaterRecoveryPerDay > 0))
                 .OrderBy(id => id).ToArray();
+            if (audit != null) audit.Sources = sources.Length;
             if (sources.Length == 0) return null;
             var ownedBySourceTile = new Dictionary<(int Source, int Tile), CanalSegment>();
             Dictionary<int, List<CanalSegment>> canalsBySource = null;
@@ -216,10 +224,14 @@ namespace Anthropocene.Simulation
                 Dictionary<int, Camp> campLookup = null;
                 foreach (var entry in bestRoutes.OrderBy(p => p.Key))
                 {
+                    if (audit != null) audit.Routes++;
                     int id = entry.Key; double remaining = entry.Value.Remaining; int[] route = entry.Value.Route;
                     if (remaining <= 1e-9) continue;
+                    if (audit != null) audit.IncompleteRoutes++;
                     if (!w.Tiles[id].Seasons.Any(s => s.Moisture < w.Config.Agriculture.TargetMoisture - 1e-9)) continue;
+                    if (audit != null) audit.DryTargets++;
                     if (Field(w, id) != null) continue;
+                    if (audit != null) audit.UnservedTargets++;
                     if (discoveryOnly)
                     {
                         if (best == null || 1 / remaining > best.AnnualFoodGain / best.Remaining + 1e-9)
@@ -227,6 +239,7 @@ namespace Anthropocene.Simulation
                         continue;
                     }
                     if (LazyEcology.ProjectEcology(w, id, w.Days).CultivationCapital <= 0) continue;
+                    if (audit != null) audit.CultivatedTargets++;
                     if (essential == null)
                     {
                         if (essentialBySource == null)
@@ -249,8 +262,16 @@ namespace Anthropocene.Simulation
                         var beforeWorld = w.WithIrrigationNetwork(sourceCanals.ToList(), sourceFields.ToList());
                         beforeWater = Allocate(beforeWorld, essential, w.Days, w.Config.TurnDays, campLookup, operatingFraction: 1);
                     }
-                    double gain = CapacityGain(w, c, source, route, id, years, sourceCanals, sourceFields, essential, beforeWater, campLookup);
-                    if (gain <= 0) continue;
+                    int wateredBefore = audit?.WateredCandidates ?? 0;
+                    double gain = CapacityGain(w, c, source, route, id, years, sourceCanals, sourceFields, essential, beforeWater, campLookup, audit);
+                    if (gain <= 0)
+                    {
+                        if (audit != null && audit.WateredCandidates > wateredBefore &&
+                            (audit.WateredZeroGainProject == null || remaining < audit.WateredZeroGainProject.Remaining))
+                            audit.WateredZeroGainProject = new IrrigationProject { Source = source, Target = id, Route = route, Remaining = remaining, AnnualFoodGain = 0 };
+                        continue;
+                    }
+                    if (audit != null) audit.PositiveCandidates++;
                     if (best == null || gain / remaining > best.AnnualFoodGain / best.Remaining + 1e-9)
                         best = new IrrigationProject { Source = source, Target = id, Route = route, Remaining = remaining, AnnualFoodGain = gain };
                 }
@@ -271,7 +292,7 @@ namespace Anthropocene.Simulation
         }
         private static double CapacityGain(WorldState w, Camp camp, int source, int[] route, int id, double years,
             List<CanalSegment> sourceCanals, List<IrrigatedField> sourceFields, List<Demand> essential,
-            IrrigationAllocation beforeWater, Dictionary<int, Camp> campLookup)
+            IrrigationAllocation beforeWater, Dictionary<int, Camp> campLookup, OpportunityAudit audit = null)
         {
             var canals = new List<CanalSegment>(sourceCanals);
             var fields = new List<IrrigatedField>(sourceFields);
@@ -292,6 +313,7 @@ namespace Anthropocene.Simulation
             fields.Sort((a, b) => a.Tile.CompareTo(b.Tile));
             var prospective = w.WithIrrigationNetwork(canals, fields);
             var afterWater = Allocate(prospective, essential, w.Days, w.Config.TurnDays, campLookup, operatingFraction: 1);
+            if (audit != null && afterWater.Fields.TryGetValue(id, out var targetWater) && targetWater.Water > 0) audit.WateredCandidates++;
             double gain = 0;
             foreach (var field in fields.Where(f => f.Operator == camp.Id))
             {
@@ -299,7 +321,8 @@ namespace Anthropocene.Simulation
                 var supplied = afterWater.Fields[field.Tile];
                 var before = FoodHorizonForecast.Tile(w, field.Tile, w.Days, w.Config.TurnDays, operatingFraction: 1, irrigationOverlay: old);
                 var after = FoodHorizonForecast.Tile(w, field.Tile, w.Days, w.Config.TurnDays, operatingFraction: 1, irrigationOverlay: supplied);
-                gain += after.ClosingFood - before.ClosingFood;
+                gain += FoodHorizonForecast.InvestmentSupply(w, field.Tile, after)
+                    - FoodHorizonForecast.InvestmentSupply(w, field.Tile, before);
             }
             return Math.Max(0, gain) / years;
         }
