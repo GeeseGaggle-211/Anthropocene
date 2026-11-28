@@ -21,7 +21,10 @@ watered sanitation from Tier 3B reduces disease mortality (Phase 2, 5,000-10,000
 Sanitation water is a Tier-2 claim placed after drinking and herd water and
 before irrigation. Composite QoL never enters physical birth or death rates.
 `SimulationConfig.Civic` is null by default, so existing profiles, saves and
-RL layouts are unchanged. Its section 6 records measured gates and open M5 sweep work.
+RL layouts are unchanged. Its section 6 records the measured gates.
+[CivicGovernanceSweepReport.md](CivicGovernanceSweepReport.md) is the matched
+5-world sweep. Phase 1 lifts the cap to 3,000-3,850. Phase 2 reaches 3,900-4,700,
+limited by farmland per village rather than governance.
 
 ## Opt-in Plough and Elder irrigation (November 2026)
 

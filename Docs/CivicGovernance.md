@@ -738,6 +738,8 @@ Exact copy of `Assets/_Anthropocene/Resources/AgriculturalTechnologyOpeningConfi
 
 ### 6.1 Matched 5-world sweep (27 November 2026)
 
+The full report, with trajectories, institutional outcomes, diagnosis and recommendations, is [CivicGovernanceSweepReport.md](CivicGovernanceSweepReport.md).
+
 **Command:** `dotnet run -c Release --project Tools/CivicGovernanceSweep -- --years=1000 --arms=off,phase1,full,full-3a`, then `python Tools/CivicGovernanceSweep/Summarize.py`.
 
 **Setup:**
