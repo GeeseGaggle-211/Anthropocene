@@ -135,3 +135,10 @@ metadata limit and does not solve unbounded history growth by deleting data.
 [regression evidence](Experiments/SavePersistence-20261115-validation.json)
 are retained with the code. After the audit, run
 `python3 Tools/SaveAudit/Summarize.py` to validate and regenerate them.
+
+The optional `CivicGovernanceSettings.StratificationFeedbackStrength` field
+persists bounded civic reinforcement. An absent field loads as zero without a
+migration override, preserving linear civic trajectories in existing saves.
+New experimental opening profiles select 0.20 explicitly. The existing save
+envelope, camp state layout and observation schema are unchanged; missing-field
+and live/loaded continuation checks are in `CivicGovernanceChecks`.

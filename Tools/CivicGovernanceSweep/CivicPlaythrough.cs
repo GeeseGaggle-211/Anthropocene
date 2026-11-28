@@ -74,11 +74,12 @@ internal static class CivicPlaythrough
         var arms = Arg("--arms", "legacy,annual").Split(',');
         if (arms.Any(a => a != "legacy" && a != "annual")) throw new ArgumentException("Unknown arm");
         double years = double.Parse(Arg("--years", "2000"), System.Globalization.CultureInfo.InvariantCulture);
+        double feedback = double.Parse(Arg("--feedback", "0"), System.Globalization.CultureInfo.InvariantCulture);
         Directory.CreateDirectory(output);
         string manifest = Path.Combine(output, "manifest.json");
         if (File.Exists(manifest)) throw new IOException("Use a fresh output directory");
         File.WriteAllText(manifest, JsonSerializer.Serialize(new {
-            seeds, arms, years, createdUtc = DateTime.UtcNow, runtime = Environment.Version.ToString(),
+            seeds, arms, years, feedback, createdUtc = DateTime.UtcNow, runtime = Environment.Version.ToString(),
             binarySha256 = Hash(File.ReadAllBytes(typeof(CivicPlaythrough).Assembly.Location)),
             note = "Matched initial 600-year organic checkpoints; inherited Plough/Irrigation grant. Civic full treatment and food mode begin together at elapsed year zero."
         }, J));
@@ -89,7 +90,8 @@ internal static class CivicPlaythrough
             byte[] bytes = File.ReadAllBytes(Path.Combine(Arg("--baseline", "TestResults/CivicAudit/baseline"), $"seed-{seed}-checkpoint.anthro"));
             var w = SaveCodec.Load(bytes);
             var profile = JsonSerializer.Deserialize<SimulationConfig>(File.ReadAllText("Assets/_Anthropocene/Resources/CivicGovernanceOpeningConfig.json"), J);
-            w.Config.Civic = profile.Civic; w.Config.AnnualLandFoodEnabled = arm == "annual"; w.Config.Validate();
+            w.Config.Civic = profile.Civic; w.Config.Civic.StratificationFeedbackStrength = feedback;
+            w.Config.AnnualLandFoodEnabled = arm == "annual"; w.Config.Validate();
             var originals = w.Camps.Select(c => c.Id).ToHashSet();
             double start = w.Days, next = 0, civic = 0, sanitation = 0;
             int turns = 0; TurnRecord last = null; var first = new Dictionary<string, double>();
@@ -115,19 +117,26 @@ internal static class CivicPlaythrough
             Observe(Prepare(w)); stream.Flush();
             if (beforeCensus != SaveCodec.Fingerprint(w)) throw new Exception("Census mutated authoritative state");
             TurnResolver.Invariants(w); IrrigationEconomy.Validate(w);
-            if (arm == "legacy" && years == 2000)
+            if (arm == "legacy" && years == 2000 && feedback == 0)
             {
                 string dir = seed == 11 || seed == 23 || seed == 47 ? "extended-a" : "extended-b";
                 var reference = SaveCodec.Load(File.ReadAllBytes($"TestResults/CivicAudit/{dir}/seed-{seed}-full-final.anthro"));
                 if (SaveCodec.Fingerprint(reference) != beforeCensus) throw new Exception("Legacy baseline parity failed");
+            }
+            if (arm == "annual" && years == 2000 && feedback == 0)
+            {
+                string dir = seed == 11 || seed == 23 || seed == 47 ? "a" : "b";
+                string path = $"TestResults/CivicPlaythrough/{dir}/seed-{seed}-annual-final.anthro";
+                if (File.Exists(path) && SaveCodec.Fingerprint(SaveCodec.Load(File.ReadAllBytes(path))) != beforeCensus)
+                    throw new Exception("Zero-feedback annual baseline parity failed");
             }
             byte[] final = SaveCodec.Save(w); File.WriteAllBytes(Path.Combine(output, $"seed-{seed}-{arm}-final.anthro"), final);
             var loaded = SaveCodec.Load(final);
             new TurnResolver().Resolve(w, Prepare(w)); new TurnResolver().Resolve(loaded, Prepare(loaded));
             if (SaveCodec.Fingerprint(w) != SaveCodec.Fingerprint(loaded)) throw new Exception("Save continuation mismatch");
             File.WriteAllText(Path.Combine(output, $"seed-{seed}-{arm}-result.json"), JsonSerializer.Serialize(new {
-                seed, arm, turns, checkpointSha256 = Hash(bytes), finalSha256 = Hash(final),
-                legacyParity = arm == "legacy" && years == 2000, censusPure = true, saveContinuation = true,
+                seed, arm, feedback, turns, checkpointSha256 = Hash(bytes), finalSha256 = Hash(final),
+                legacyParity = arm == "legacy" && years == 2000 && feedback == 0, censusPure = true, saveContinuation = true,
                 seconds = timer.Elapsed.TotalSeconds, originalCamps = originals.OrderBy(x => x).ToArray()
             }, J));
             Console.WriteLine($"PASS seed={seed} arm={arm} seconds={timer.Elapsed.TotalSeconds:F1}");

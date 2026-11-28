@@ -568,6 +568,7 @@
     "Tier3ComplexityCeiling": 1.0,
     "ComplexityRelaxationRate": 0.025,
     "StratificationRelaxationRate": 0.02,
+    "StratificationFeedbackStrength": 0.2,
     "TradeVolumeRelaxationRate": 0.025,
     "ComplexityCrowdingScale": 0.64,
     "FissionPolicySteeringShift": 0.15,
