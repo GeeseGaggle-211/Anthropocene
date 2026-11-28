@@ -19,6 +19,9 @@ from the slower natural reserve, with analytical depletion and same-turn shortag
 Four annual-mean profiles replace the harvest-first boundary in this mode only.
 Physical demography continues to debit actual person-years. Forecasts, planner
 availability, passive recovery, capacities and invariants share the same model.
+The follow-up [headless civic playthrough](CivicPlaythrough.md) compares both
+models from civic onset, including civic divergence and irrigation eligibility
+versus actual water delivery.
 The saved flag defaults false, including in old saves; observation layouts and
 the shipped opening remain unchanged. Validation: `AnnualLandFoodChecks`
 (`--annual-land-food-only`) and the matched continuation experiment in that document.

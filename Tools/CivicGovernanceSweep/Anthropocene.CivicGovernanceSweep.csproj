@@ -12,5 +12,6 @@
     <Compile Include="Program.cs" />
     <Compile Include="Audit.cs" />
     <Compile Include="AnnualFoodExperiment.cs" />
+    <Compile Include="CivicPlaythrough.cs" />
   </ItemGroup>
 </Project>

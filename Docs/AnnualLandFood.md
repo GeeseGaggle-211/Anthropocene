@@ -81,3 +81,8 @@ Validation passed:
 Quiet annual projection allocates **zero bytes** in the focused test. An initial implementation allocated 83.9 MB per turn in the 80-founder smoke; the zero-demand specialization reduced this to 73.7 MB, compared with 70.9 MB in legacy mode (about +3.9%). Mean whole-turn times were 567 ms annual versus 618 ms legacy. These are five unwarmed, behaviorally divergent turns on a shared host, **not a throughput certification or a claimed speedup**. The fixed tile-kernel probe uses the same allocation per call from one day to 600 years; no annual loop is hidden inside the solver.
 
 The experiment remains opt-in. It averages seasons and fixed harvest claims; policy/capital/demography replanning can still change outcomes under shorter turns. Full 320-founder/mature-empire RL throughput and Unity interaction have not been validated. No irrigation adoption or population target is enforced.
+
+The subsequent [headless civic playthrough](CivicPlaythrough.md) enables annual
+food at civic onset instead of year 1,000. It records earlier accounting,
+divergent institutional paths, and a village-level irrigation eligibility/use
+funnel. Its different intervention time produces a different population history.
