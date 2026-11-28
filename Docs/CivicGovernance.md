@@ -720,7 +720,7 @@ Exact copy of `Assets/_Anthropocene/Resources/AgriculturalTechnologyOpeningConfi
 | M2 Phase 1A (state, Steward, attractors, precedents, orders, observations, persistence) | `acd9e32`…`31ae46a` | Done. |
 | M3 Phase 1B (civic capital, DemandControl Continuity/Development, cohesion, trade/immigration/fission seams, UI hooks) | `d3941a4`, `efbb3ea` | Done. |
 | M4 Phase 2 sanitation | this PR | Done: `CraftGood.SanitationConstruction` (15) / `SanitationMaintenance` (16) Builder recipes gated on Tier 3B; `ProductionOrder.Sanitation`; dt-invariant retention shared with civic capital; Tier-2 `SanitationWater` pass in `TurnHorizonResources` after biological/drinking claims and before `IrrigationEconomy.Allocate`, with forecast parity in irrigation planning; DemandControl sanitation maintenance (Continuity) and development (gated by residents ≥ `SanitationDevelopmentMinPopulation` and forecast water share > 0.05). |
-| M5 sweep tooling | — | Not done. The E2E suite (`Tools/CivicGovernanceE2E/`) is included; the 3-arm, 5-world sweep and the 1/16/80/320 benchmark remain open. |
+| M5 matched sweep | this PR | Done for the 5-world sweep: `Tools/CivicGovernanceSweep` (results below). The 80-tribe long run, the 1/16/80/320 benchmark and Tier-5 adversarial hardening remain open. |
 
 **Measured gates (headless Release, Linux VM):**
 - `--civic-only`: 1,002 assertions pass, including the M4 contracts: recipe gating, the 0.15 `M_d` floor, dt-invariant retention, conserved per-tile sanitation water with and without the agriculture block, drinking-first ranking, dry-oasis no-build, and zero sanitation state for fission daughters.
@@ -734,4 +734,42 @@ Exact copy of `Assets/_Anthropocene/Resources/AgriculturalTechnologyOpeningConfi
 - Unity `OnGUI` presentation (inspector, hover, legal-action UI) compiles in the shared simulation sources but has not been run interactively in the VM.
 - E2E is opaque-box: it cannot inspect the internal `ElderAction`, so its KernelSplit guard is weak. That regression is covered by the headless checks instead.
 - The organic Phase-2 gate seeds the Phase-1 civic endpoint rather than replaying the full 600→6,000 climb.
-- Egalitarian vs Stratified Phase-2 peak ordering is covered by the analytic `DiseaseMitigationFor` strat bonus, not by a matched organic sweep (M5).
+- The organic sweep (below) does not show Stratified villages peaking above Egalitarian ones. The largest Phase-2 villages are mostly mildly Egalitarian, and all are food/land-limited before the stratification bonus matters.
+
+### 6.1 Matched 5-world sweep (27 November 2026)
+
+**Command:** `dotnet run -c Release --project Tools/CivicGovernanceSweep -- --years=1000 --arms=off,phase1,full,full-3a`, then `python Tools/CivicGovernanceSweep/Summarize.py`.
+
+**Setup:**
+- Native 96x48 four-player worlds, seeds 11, 23, 47, 101 and 1729, using `CivicGovernanceOpeningConfig.json`.
+- Each seed plays the normal AI opening plus 600 organic years with `Civic == null`, then receives Plough and Irrigation knowledge and is checkpointed.
+- Every arm resumes the identical checkpoint for 1,000 years (96 turns). Only `SimulationConfig.Civic` differs:
+  - `off`: Civic null, the PR #49 behaviour.
+  - `phase1`: Civic on, sanitation off.
+  - `full`: Civic on, sanitation on.
+  - `full-3a`: diagnostic counterfactual, not organic play. Same as `full`, but Tier 3A is granted as soon as a society holds Tier 2.
+- No population, staffing or civic overrides. Each arm passes `TurnResolver.Invariants`, `CivicGovernance.ValidateInvariants` and deterministic continuation, and repeated runs reproduce bit-identically.
+
+| Arm | Peak village, median / max | Final total population (5 worlds) | Villages > 2,000 / > 3,500 / > 5,000 at end | Mean civic / sanitation coverage | Mean turn ms |
+| --- | --- | --- | --- | --- | --- |
+| off | 1,114 / 1,150 | 97,508 | 0 / 0 / 0 | 0 / 0 | 94 |
+| phase1 | 3,800 / 3,845 | 221,576 | 60 / 5 / 0 | 0.81 / 0 | 112 |
+| full | 4,363 / 4,683 | 243,611 | 62 / 18 / 0 | 0.79 / 0.52 | 116 |
+| full-3a | 4,234 / 4,423 | 244,639 | 60 / 18 / 0 | 0.79 / 0.50 | 119 |
+
+Per-seed peak village (off / phase1 / full):
+- seed 11: 1,098 / 3,845 / 4,683
+- seed 23: 1,114 / 3,158 / 3,920
+- seed 47: 1,141 / 3,800 / 4,425
+- seed 101: 1,150 / 3,820 / 4,363
+- seed 1729: 1,067 / 3,016 / 3,988
+
+**Findings:**
+1. **Phase 1 meets its gate on every seed.** Crowding relief lifts the PR #49 cap of about 1,000 to 3,000–3,850, and world population rises 2.3x. Civic upkeep costs about 12–19% extra per turn.
+2. **Phase 2 breaks the ~3,400 disease wall, but organic play reaches only 3,900–4,700, not 5,000–10,000.** Tier 3B is reached by 7–21 villages per world. Sanitation is fully watered wherever it is built (water ratio 1.0).
+3. **Tier 3A organically is near zero:** only 2 of 112 villages. With storage and trade off in this profile, its drivers are almost nil: stored-food term u_store ≈ 0.001–0.008 and trade term u_trade ≈ 1e-4. That caps C at the Tier-2 ceiling of 0.75 and leaves M_d ≈ 0.35. Granting 3A (`full-3a`) does raise C to ~0.97, M_c to ~0.08 and M_d to ~0.27, yet peaks do not improve.
+4. **The binding constraint after Phase 2 is farmland per village, not governance.** The largest villages still operate their 7 footprint tiles with almost no irrigated fields, and 70–80% of residents farm. Food produced is about equal to food required, reserves are near zero, and births are surplus-funded, so the birth rate falls to mortality at about 600 residents per farmed tile. The demographic equilibrium at these mitigation levels (~7,600) is not reached.
+
+**Open decisions:**
+- Reaching 5k–10k cities needs a land and food-logistics mechanism beyond the radius-1 footprint: hinterland fields, tribute/redistribution from satellite villages, or irrigation adoption by the AI. This belongs outside this civic PR.
+- Tier 3A calibration depends on the storage and trade defaults.
