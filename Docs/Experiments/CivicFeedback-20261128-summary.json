@@ -1,0 +1,2066 @@
+{
+  "provenance": [
+    {
+      "variant": "linear",
+      "seeds": [
+        11,
+        23,
+        47
+      ],
+      "arms": [
+        "legacy",
+        "annual"
+      ],
+      "years": 2000,
+      "createdUtc": "2026-11-28T20:34:02.6157367Z",
+      "runtime": "8.0.34",
+      "binarySha256": "2e61bdc302d8dcae601a4bbe5c84698fe45699b08ab11a5c16b31aae670b9528",
+      "note": "Matched initial 600-year organic checkpoints; inherited Plough/Irrigation grant. Civic full treatment and food mode begin together at elapsed year zero."
+    },
+    {
+      "variant": "linear",
+      "seeds": [
+        101,
+        1729
+      ],
+      "arms": [
+        "legacy",
+        "annual"
+      ],
+      "years": 2000,
+      "createdUtc": "2026-11-28T20:34:02.6155966Z",
+      "runtime": "8.0.34",
+      "binarySha256": "2e61bdc302d8dcae601a4bbe5c84698fe45699b08ab11a5c16b31aae670b9528",
+      "note": "Matched initial 600-year organic checkpoints; inherited Plough/Irrigation grant. Civic full treatment and food mode begin together at elapsed year zero."
+    },
+    {
+      "variant": "feedback",
+      "seeds": [
+        11,
+        23,
+        47
+      ],
+      "arms": [
+        "annual"
+      ],
+      "years": 2000,
+      "feedback": 0.2,
+      "createdUtc": "2026-11-28T21:12:38.7161238Z",
+      "runtime": "8.0.34",
+      "binarySha256": "71408c2c4ac17a6cbcdcccb36090bc12fbca7797778bedd78f996f4f0c70e191",
+      "note": "Matched initial 600-year organic checkpoints; inherited Plough/Irrigation grant. Civic full treatment and food mode begin together at elapsed year zero."
+    },
+    {
+      "variant": "feedback",
+      "seeds": [
+        101,
+        1729
+      ],
+      "arms": [
+        "annual"
+      ],
+      "years": 2000,
+      "feedback": 0.2,
+      "createdUtc": "2026-11-28T21:12:38.724898Z",
+      "runtime": "8.0.34",
+      "binarySha256": "71408c2c4ac17a6cbcdcccb36090bc12fbca7797778bedd78f996f4f0c70e191",
+      "note": "Matched initial 600-year organic checkpoints; inherited Plough/Irrigation grant. Civic full treatment and food mode begin together at elapsed year zero."
+    }
+  ],
+  "final": {
+    "linear": {
+      "population": 430961,
+      "villages": 105,
+      "meanP": 0.040864894860772626,
+      "meanAbsP": 0.18181160572867489,
+      "populationWeightedC": 0.9479665596561404,
+      "accounting": 64,
+      "irrigationUsers": 22,
+      "groups": {
+        "mixed": 79,
+        "egalitarian": 10,
+        "stratified": 15,
+        "incipient": 1
+      },
+      "quartiles": {
+        "all": {
+          "n": 105,
+          "p25": 1479.0,
+          "median": 3691.0,
+          "p75": 6527.0
+        },
+        "egalitarian": {
+          "n": 10,
+          "p25": 1209.5,
+          "median": 2633.5,
+          "p75": 5324.75
+        },
+        "mixed": {
+          "n": 79,
+          "p25": 1436.5,
+          "median": 3275.0,
+          "p75": 6586.5
+        },
+        "stratified": {
+          "n": 15,
+          "p25": 3825.0,
+          "median": 5200.0,
+          "p75": 7057.5
+        }
+      }
+    },
+    "feedback": {
+      "population": 427940,
+      "villages": 105,
+      "meanP": 0.041972082525726234,
+      "meanAbsP": 0.35891630705590605,
+      "populationWeightedC": 0.9472749305774679,
+      "accounting": 64,
+      "irrigationUsers": 22,
+      "groups": {
+        "egalitarian": 32,
+        "mixed": 14,
+        "stratified": 58,
+        "incipient": 1
+      },
+      "quartiles": {
+        "all": {
+          "n": 105,
+          "p25": 1477.0,
+          "median": 3637.0,
+          "p75": 6325.0
+        },
+        "egalitarian": {
+          "n": 32,
+          "p25": 984.0,
+          "median": 3330.5,
+          "p75": 6102.25
+        },
+        "mixed": {
+          "n": 14,
+          "p25": 1374.25,
+          "median": 2881.0,
+          "p75": 5723.0
+        },
+        "stratified": {
+          "n": 58,
+          "p25": 2430.5,
+          "median": 4550.5,
+          "p75": 6777.25
+        }
+      }
+    }
+  },
+  "series": {
+    "linear": [
+      {
+        "year": 0,
+        "population": 70349,
+        "groups": {
+          "incipient": 89
+        }
+      },
+      {
+        "year": 100,
+        "population": 103857,
+        "groups": {
+          "mixed": 71,
+          "egalitarian": 8,
+          "incipient": 17,
+          "stratified": 4
+        }
+      },
+      {
+        "year": 200,
+        "population": 139212,
+        "groups": {
+          "mixed": 83,
+          "egalitarian": 11,
+          "incipient": 6,
+          "stratified": 4
+        }
+      },
+      {
+        "year": 300,
+        "population": 234922,
+        "groups": {
+          "mixed": 82,
+          "egalitarian": 11,
+          "incipient": 5,
+          "stratified": 6
+        }
+      },
+      {
+        "year": 400,
+        "population": 344228,
+        "groups": {
+          "mixed": 84,
+          "egalitarian": 11,
+          "incipient": 3,
+          "stratified": 6
+        }
+      },
+      {
+        "year": 500,
+        "population": 408088,
+        "groups": {
+          "mixed": 86,
+          "egalitarian": 11,
+          "stratified": 6,
+          "incipient": 1
+        }
+      },
+      {
+        "year": 600,
+        "population": 407788,
+        "groups": {
+          "mixed": 84,
+          "egalitarian": 9,
+          "stratified": 10,
+          "incipient": 1
+        }
+      },
+      {
+        "year": 700,
+        "population": 414211,
+        "groups": {
+          "mixed": 83,
+          "egalitarian": 9,
+          "stratified": 11,
+          "incipient": 1
+        }
+      },
+      {
+        "year": 800,
+        "population": 419844,
+        "groups": {
+          "mixed": 83,
+          "egalitarian": 9,
+          "stratified": 11,
+          "incipient": 1
+        }
+      },
+      {
+        "year": 900,
+        "population": 425669,
+        "groups": {
+          "mixed": 83,
+          "egalitarian": 10,
+          "stratified": 11,
+          "incipient": 1
+        }
+      },
+      {
+        "year": 1000,
+        "population": 429251,
+        "groups": {
+          "mixed": 83,
+          "egalitarian": 10,
+          "stratified": 11,
+          "incipient": 1
+        }
+      },
+      {
+        "year": 1100,
+        "population": 430385,
+        "groups": {
+          "mixed": 83,
+          "egalitarian": 10,
+          "stratified": 11,
+          "incipient": 1
+        }
+      },
+      {
+        "year": 1200,
+        "population": 431317,
+        "groups": {
+          "mixed": 84,
+          "egalitarian": 10,
+          "stratified": 10,
+          "incipient": 1
+        }
+      },
+      {
+        "year": 1300,
+        "population": 432303,
+        "groups": {
+          "mixed": 84,
+          "egalitarian": 10,
+          "stratified": 10,
+          "incipient": 1
+        }
+      },
+      {
+        "year": 1400,
+        "population": 433712,
+        "groups": {
+          "mixed": 84,
+          "egalitarian": 10,
+          "stratified": 10,
+          "incipient": 1
+        }
+      },
+      {
+        "year": 1500,
+        "population": 434838,
+        "groups": {
+          "mixed": 84,
+          "egalitarian": 10,
+          "stratified": 10,
+          "incipient": 1
+        }
+      },
+      {
+        "year": 1600,
+        "population": 436017,
+        "groups": {
+          "mixed": 84,
+          "egalitarian": 10,
+          "stratified": 10,
+          "incipient": 1
+        }
+      },
+      {
+        "year": 1700,
+        "population": 437024,
+        "groups": {
+          "mixed": 84,
+          "egalitarian": 10,
+          "stratified": 10,
+          "incipient": 1
+        }
+      },
+      {
+        "year": 1800,
+        "population": 433681,
+        "groups": {
+          "mixed": 82,
+          "egalitarian": 10,
+          "stratified": 12,
+          "incipient": 1
+        }
+      },
+      {
+        "year": 1900,
+        "population": 430977,
+        "groups": {
+          "mixed": 80,
+          "egalitarian": 10,
+          "stratified": 14,
+          "incipient": 1
+        }
+      },
+      {
+        "year": 2000,
+        "population": 430961,
+        "groups": {
+          "mixed": 79,
+          "egalitarian": 10,
+          "stratified": 15,
+          "incipient": 1
+        }
+      }
+    ],
+    "feedback": [
+      {
+        "year": 0,
+        "population": 70349,
+        "groups": {
+          "incipient": 89
+        }
+      },
+      {
+        "year": 100,
+        "population": 103943,
+        "groups": {
+          "egalitarian": 26,
+          "mixed": 34,
+          "stratified": 23,
+          "incipient": 17
+        }
+      },
+      {
+        "year": 200,
+        "population": 139356,
+        "groups": {
+          "egalitarian": 37,
+          "mixed": 24,
+          "stratified": 37,
+          "incipient": 6
+        }
+      },
+      {
+        "year": 300,
+        "population": 235321,
+        "groups": {
+          "egalitarian": 34,
+          "mixed": 21,
+          "stratified": 44,
+          "incipient": 5
+        }
+      },
+      {
+        "year": 400,
+        "population": 345196,
+        "groups": {
+          "egalitarian": 36,
+          "mixed": 21,
+          "stratified": 44,
+          "incipient": 3
+        }
+      },
+      {
+        "year": 500,
+        "population": 408562,
+        "groups": {
+          "egalitarian": 35,
+          "mixed": 23,
+          "stratified": 45,
+          "incipient": 1
+        }
+      },
+      {
+        "year": 600,
+        "population": 409140,
+        "groups": {
+          "egalitarian": 33,
+          "mixed": 24,
+          "stratified": 46,
+          "incipient": 1
+        }
+      },
+      {
+        "year": 700,
+        "population": 411470,
+        "groups": {
+          "egalitarian": 32,
+          "mixed": 21,
+          "stratified": 50,
+          "incipient": 1
+        }
+      },
+      {
+        "year": 800,
+        "population": 418508,
+        "groups": {
+          "egalitarian": 32,
+          "mixed": 21,
+          "stratified": 50,
+          "incipient": 1
+        }
+      },
+      {
+        "year": 900,
+        "population": 424900,
+        "groups": {
+          "egalitarian": 32,
+          "mixed": 20,
+          "stratified": 52,
+          "incipient": 1
+        }
+      },
+      {
+        "year": 1000,
+        "population": 426795,
+        "groups": {
+          "egalitarian": 32,
+          "mixed": 20,
+          "stratified": 52,
+          "incipient": 1
+        }
+      },
+      {
+        "year": 1100,
+        "population": 428604,
+        "groups": {
+          "egalitarian": 33,
+          "mixed": 18,
+          "stratified": 53,
+          "incipient": 1
+        }
+      },
+      {
+        "year": 1200,
+        "population": 429989,
+        "groups": {
+          "egalitarian": 33,
+          "mixed": 17,
+          "stratified": 54,
+          "incipient": 1
+        }
+      },
+      {
+        "year": 1300,
+        "population": 431066,
+        "groups": {
+          "egalitarian": 33,
+          "mixed": 16,
+          "stratified": 55,
+          "incipient": 1
+        }
+      },
+      {
+        "year": 1400,
+        "population": 432229,
+        "groups": {
+          "egalitarian": 33,
+          "mixed": 14,
+          "stratified": 57,
+          "incipient": 1
+        }
+      },
+      {
+        "year": 1500,
+        "population": 433110,
+        "groups": {
+          "egalitarian": 33,
+          "mixed": 13,
+          "stratified": 58,
+          "incipient": 1
+        }
+      },
+      {
+        "year": 1600,
+        "population": 434319,
+        "groups": {
+          "egalitarian": 33,
+          "mixed": 13,
+          "stratified": 58,
+          "incipient": 1
+        }
+      },
+      {
+        "year": 1700,
+        "population": 430955,
+        "groups": {
+          "egalitarian": 33,
+          "mixed": 13,
+          "stratified": 58,
+          "incipient": 1
+        }
+      },
+      {
+        "year": 1800,
+        "population": 429942,
+        "groups": {
+          "egalitarian": 33,
+          "mixed": 13,
+          "stratified": 58,
+          "incipient": 1
+        }
+      },
+      {
+        "year": 1900,
+        "population": 428241,
+        "groups": {
+          "egalitarian": 33,
+          "mixed": 13,
+          "stratified": 58,
+          "incipient": 1
+        }
+      },
+      {
+        "year": 2000,
+        "population": 427940,
+        "groups": {
+          "egalitarian": 32,
+          "mixed": 14,
+          "stratified": 58,
+          "incipient": 1
+        }
+      }
+    ]
+  },
+  "matchedOriginalVillages": [
+    {
+      "seed": 11,
+      "id": 15,
+      "linearP": -0.1448461046939188,
+      "feedbackP": -0.3136245209372834,
+      "linearGroup": "mixed",
+      "feedbackGroup": "egalitarian"
+    },
+    {
+      "seed": 11,
+      "id": 16,
+      "linearP": -0.6251197498551347,
+      "feedbackP": -0.7001346853510149,
+      "linearGroup": "egalitarian",
+      "feedbackGroup": "egalitarian"
+    },
+    {
+      "seed": 11,
+      "id": 17,
+      "linearP": -0.03139042099254893,
+      "feedbackP": -0.2228973705933048,
+      "linearGroup": "mixed",
+      "feedbackGroup": "mixed"
+    },
+    {
+      "seed": 11,
+      "id": 18,
+      "linearP": 0.021745288439914596,
+      "feedbackP": -0.16858091841988532,
+      "linearGroup": "mixed",
+      "feedbackGroup": "mixed"
+    },
+    {
+      "seed": 11,
+      "id": 37,
+      "linearP": -0.08262893550765343,
+      "feedbackP": -0.27576509348816364,
+      "linearGroup": "mixed",
+      "feedbackGroup": "egalitarian"
+    },
+    {
+      "seed": 11,
+      "id": 40,
+      "linearP": -0.09776100427129217,
+      "feedbackP": -0.2759316281681298,
+      "linearGroup": "mixed",
+      "feedbackGroup": "egalitarian"
+    },
+    {
+      "seed": 11,
+      "id": 43,
+      "linearP": -0.5988391897023372,
+      "feedbackP": -0.6810151975252907,
+      "linearGroup": "egalitarian",
+      "feedbackGroup": "egalitarian"
+    },
+    {
+      "seed": 11,
+      "id": 46,
+      "linearP": 0.1603919498864933,
+      "feedbackP": 0.3246944303813872,
+      "linearGroup": "mixed",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 11,
+      "id": 50,
+      "linearP": 0.11824239600046678,
+      "feedbackP": 0.30239910304051393,
+      "linearGroup": "mixed",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 11,
+      "id": 53,
+      "linearP": 0.1129930247191977,
+      "feedbackP": 0.286943060235943,
+      "linearGroup": "mixed",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 11,
+      "id": 55,
+      "linearP": 0.270465906716505,
+      "feedbackP": 0.3384480267301876,
+      "linearGroup": "stratified",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 11,
+      "id": 58,
+      "linearP": -0.17103325804146077,
+      "feedbackP": -0.456512361597291,
+      "linearGroup": "mixed",
+      "feedbackGroup": "egalitarian"
+    },
+    {
+      "seed": 11,
+      "id": 61,
+      "linearP": 0.021929101853004472,
+      "feedbackP": -0.1693824893251317,
+      "linearGroup": "mixed",
+      "feedbackGroup": "mixed"
+    },
+    {
+      "seed": 11,
+      "id": 64,
+      "linearP": 0.09005129312244083,
+      "feedbackP": 0.2684641650304969,
+      "linearGroup": "mixed",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 11,
+      "id": 67,
+      "linearP": -0.4275580717081145,
+      "feedbackP": -0.5508430394401047,
+      "linearGroup": "egalitarian",
+      "feedbackGroup": "egalitarian"
+    },
+    {
+      "seed": 11,
+      "id": 70,
+      "linearP": 0.09854765091424245,
+      "feedbackP": 0.27271197251393364,
+      "linearGroup": "mixed",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 11,
+      "id": 73,
+      "linearP": -0.31370741406348956,
+      "feedbackP": -0.44970336667186267,
+      "linearGroup": "egalitarian",
+      "feedbackGroup": "egalitarian"
+    },
+    {
+      "seed": 23,
+      "id": 13,
+      "linearP": -0.010808396195442415,
+      "feedbackP": -0.2069122873309719,
+      "linearGroup": "mixed",
+      "feedbackGroup": "mixed"
+    },
+    {
+      "seed": 23,
+      "id": 14,
+      "linearP": -0.1530320248801098,
+      "feedbackP": -0.47074582312512064,
+      "linearGroup": "mixed",
+      "feedbackGroup": "egalitarian"
+    },
+    {
+      "seed": 23,
+      "id": 15,
+      "linearP": 0.08476650568132216,
+      "feedbackP": 0.22360451077924884,
+      "linearGroup": "mixed",
+      "feedbackGroup": "mixed"
+    },
+    {
+      "seed": 23,
+      "id": 16,
+      "linearP": -0.15281137482407564,
+      "feedbackP": -0.4457927558242083,
+      "linearGroup": "mixed",
+      "feedbackGroup": "egalitarian"
+    },
+    {
+      "seed": 23,
+      "id": 37,
+      "linearP": -0.12461242932608935,
+      "feedbackP": -0.29948132471026245,
+      "linearGroup": "mixed",
+      "feedbackGroup": "egalitarian"
+    },
+    {
+      "seed": 23,
+      "id": 40,
+      "linearP": 0.20806211562487567,
+      "feedbackP": 0.36284886579566056,
+      "linearGroup": "mixed",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 23,
+      "id": 43,
+      "linearP": 0.24497844512256464,
+      "feedbackP": 0.3927641267330525,
+      "linearGroup": "mixed",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 23,
+      "id": 46,
+      "linearP": 0.254968611023366,
+      "feedbackP": 0.4008354542508444,
+      "linearGroup": "stratified",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 23,
+      "id": 49,
+      "linearP": 0.12766255251472225,
+      "feedbackP": 0.3288619695887458,
+      "linearGroup": "mixed",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 23,
+      "id": 52,
+      "linearP": 0.11208328577119582,
+      "feedbackP": 0.2893793786954515,
+      "linearGroup": "mixed",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 23,
+      "id": 54,
+      "linearP": 0.2265581670711835,
+      "feedbackP": 0.37769803391653056,
+      "linearGroup": "mixed",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 23,
+      "id": 57,
+      "linearP": -0.537922869310614,
+      "feedbackP": -0.6270708575295196,
+      "linearGroup": "egalitarian",
+      "feedbackGroup": "egalitarian"
+    },
+    {
+      "seed": 47,
+      "id": 11,
+      "linearP": 0.18049951483010385,
+      "feedbackP": 0.35826839111776515,
+      "linearGroup": "mixed",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 47,
+      "id": 12,
+      "linearP": 0.15607989089093569,
+      "feedbackP": 0.32131305604222665,
+      "linearGroup": "mixed",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 47,
+      "id": 13,
+      "linearP": -0.09684094581460327,
+      "feedbackP": -0.2753530368661134,
+      "linearGroup": "mixed",
+      "feedbackGroup": "egalitarian"
+    },
+    {
+      "seed": 47,
+      "id": 14,
+      "linearP": 0.12307163693385466,
+      "feedbackP": -0.22951830505102253,
+      "linearGroup": "mixed",
+      "feedbackGroup": "mixed"
+    },
+    {
+      "seed": 47,
+      "id": 33,
+      "linearP": 0.3649368678117269,
+      "feedbackP": 0.48917266902471274,
+      "linearGroup": "stratified",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 47,
+      "id": 36,
+      "linearP": 0.2319229687171607,
+      "feedbackP": 0.32156101085597705,
+      "linearGroup": "mixed",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 47,
+      "id": 39,
+      "linearP": 0.18946677133582668,
+      "feedbackP": 0.3517018816717915,
+      "linearGroup": "mixed",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 47,
+      "id": 41,
+      "linearP": 0.24669595889107027,
+      "feedbackP": 0.39361301206018723,
+      "linearGroup": "mixed",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 47,
+      "id": 43,
+      "linearP": -0.07790633776443652,
+      "feedbackP": -0.4970852263965189,
+      "linearGroup": "mixed",
+      "feedbackGroup": "egalitarian"
+    },
+    {
+      "seed": 47,
+      "id": 48,
+      "linearP": 0.07757916957718083,
+      "feedbackP": 0.2618923336643247,
+      "linearGroup": "mixed",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 47,
+      "id": 51,
+      "linearP": 0.23538536569596444,
+      "feedbackP": 0.3851877730446571,
+      "linearGroup": "mixed",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 47,
+      "id": 53,
+      "linearP": 0.24427157718739573,
+      "feedbackP": 0.39213398187569753,
+      "linearGroup": "mixed",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 47,
+      "id": 55,
+      "linearP": 0.40726455539568057,
+      "feedbackP": 0.5258815377387359,
+      "linearGroup": "stratified",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 47,
+      "id": 57,
+      "linearP": 0.05298671424553458,
+      "feedbackP": 0.23933366678716306,
+      "linearGroup": "mixed",
+      "feedbackGroup": "mixed"
+    },
+    {
+      "seed": 47,
+      "id": 61,
+      "linearP": -0.03362731188771464,
+      "feedbackP": -0.2269845212984536,
+      "linearGroup": "mixed",
+      "feedbackGroup": "mixed"
+    },
+    {
+      "seed": 47,
+      "id": 64,
+      "linearP": 0.07254777249182401,
+      "feedbackP": 0.2548404147927497,
+      "linearGroup": "mixed",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 47,
+      "id": 67,
+      "linearP": 0.08737313536206684,
+      "feedbackP": 0.2794393328137645,
+      "linearGroup": "mixed",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 47,
+      "id": 70,
+      "linearP": 0.25175144502369323,
+      "feedbackP": 0.39689211976992195,
+      "linearGroup": "stratified",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 47,
+      "id": 73,
+      "linearP": 0.15646100366804963,
+      "feedbackP": 0.3267201899726614,
+      "linearGroup": "mixed",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 47,
+      "id": 76,
+      "linearP": -0.09823785037104006,
+      "feedbackP": -0.36619715743285164,
+      "linearGroup": "mixed",
+      "feedbackGroup": "egalitarian"
+    },
+    {
+      "seed": 101,
+      "id": 18,
+      "linearP": 0.301246130996377,
+      "feedbackP": 0.43788575151125375,
+      "linearGroup": "stratified",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 101,
+      "id": 19,
+      "linearP": 0.09262968505080964,
+      "feedbackP": 0.27082447991666186,
+      "linearGroup": "mixed",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 101,
+      "id": 20,
+      "linearP": -0.1612217854945623,
+      "feedbackP": -0.41578803649962826,
+      "linearGroup": "mixed",
+      "feedbackGroup": "egalitarian"
+    },
+    {
+      "seed": 101,
+      "id": 21,
+      "linearP": 0.07872163752152356,
+      "feedbackP": 0.2599178901959448,
+      "linearGroup": "mixed",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 101,
+      "id": 41,
+      "linearP": -0.005899840625301932,
+      "feedbackP": -0.2027416783112623,
+      "linearGroup": "mixed",
+      "feedbackGroup": "mixed"
+    },
+    {
+      "seed": 101,
+      "id": 44,
+      "linearP": 0.24518780402394358,
+      "feedbackP": 0.3928785093496985,
+      "linearGroup": "mixed",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 101,
+      "id": 47,
+      "linearP": 0.26123198042996615,
+      "feedbackP": 0.40553523534408364,
+      "linearGroup": "stratified",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 101,
+      "id": 49,
+      "linearP": 0.11734719003232728,
+      "feedbackP": 0.2915627436364252,
+      "linearGroup": "mixed",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 101,
+      "id": 51,
+      "linearP": 0.11603539021492028,
+      "feedbackP": 0.2893098969763145,
+      "linearGroup": "mixed",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 101,
+      "id": 54,
+      "linearP": 0.1343065202048881,
+      "feedbackP": 0.306981885803975,
+      "linearGroup": "mixed",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 101,
+      "id": 56,
+      "linearP": -0.04137979899197009,
+      "feedbackP": -0.23295898579614294,
+      "linearGroup": "mixed",
+      "feedbackGroup": "mixed"
+    },
+    {
+      "seed": 101,
+      "id": 58,
+      "linearP": 0.217363871128386,
+      "feedbackP": 0.3707159031037336,
+      "linearGroup": "mixed",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 101,
+      "id": 60,
+      "linearP": -0.2382748966415188,
+      "feedbackP": -0.5102318560681168,
+      "linearGroup": "incipient",
+      "feedbackGroup": "incipient"
+    },
+    {
+      "seed": 101,
+      "id": 63,
+      "linearP": 0.10952858425359795,
+      "feedbackP": 0.2879038077544777,
+      "linearGroup": "mixed",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 101,
+      "id": 65,
+      "linearP": 0.08247373554194298,
+      "feedbackP": 0.2590180862623887,
+      "linearGroup": "mixed",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 101,
+      "id": 68,
+      "linearP": 0.366093155643236,
+      "feedbackP": 0.48845913084739506,
+      "linearGroup": "stratified",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 101,
+      "id": 71,
+      "linearP": 0.17585745053494853,
+      "feedbackP": 0.33701473543151966,
+      "linearGroup": "mixed",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 101,
+      "id": 73,
+      "linearP": 0.21587177616666714,
+      "feedbackP": 0.3711844923040148,
+      "linearGroup": "mixed",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 101,
+      "id": 75,
+      "linearP": 0.09565397603728076,
+      "feedbackP": 0.2751113922295407,
+      "linearGroup": "mixed",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 101,
+      "id": 77,
+      "linearP": 0.19819546057994178,
+      "feedbackP": 0.3642451846290689,
+      "linearGroup": "mixed",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 101,
+      "id": 81,
+      "linearP": 0.2547452671248815,
+      "feedbackP": 0.4006963998646713,
+      "linearGroup": "stratified",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 101,
+      "id": 83,
+      "linearP": -0.11633777150689953,
+      "feedbackP": -0.4138464126749686,
+      "linearGroup": "mixed",
+      "feedbackGroup": "egalitarian"
+    },
+    {
+      "seed": 101,
+      "id": 85,
+      "linearP": 0.029663723968106025,
+      "feedbackP": -0.16411651329330676,
+      "linearGroup": "mixed",
+      "feedbackGroup": "mixed"
+    },
+    {
+      "seed": 101,
+      "id": 87,
+      "linearP": 0.5669738059012494,
+      "feedbackP": 0.6507848027658092,
+      "linearGroup": "stratified",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 101,
+      "id": 89,
+      "linearP": 0.23250541863540325,
+      "feedbackP": 0.3837795108533977,
+      "linearGroup": "mixed",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 101,
+      "id": 91,
+      "linearP": 0.13267718807696693,
+      "feedbackP": 0.3183865198096553,
+      "linearGroup": "mixed",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 101,
+      "id": 95,
+      "linearP": 0.21313773368918562,
+      "feedbackP": 0.37027678805281994,
+      "linearGroup": "mixed",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 101,
+      "id": 97,
+      "linearP": -0.0238491852617842,
+      "feedbackP": -0.3227282819342088,
+      "linearGroup": "mixed",
+      "feedbackGroup": "egalitarian"
+    },
+    {
+      "seed": 101,
+      "id": 99,
+      "linearP": 0.2536650983830502,
+      "feedbackP": 0.39975596416073583,
+      "linearGroup": "stratified",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 101,
+      "id": 101,
+      "linearP": 0.2704679014745775,
+      "feedbackP": 0.4161429868024737,
+      "linearGroup": "stratified",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 101,
+      "id": 103,
+      "linearP": 0.0038282694384195806,
+      "feedbackP": -0.19301674150128886,
+      "linearGroup": "mixed",
+      "feedbackGroup": "mixed"
+    },
+    {
+      "seed": 101,
+      "id": 105,
+      "linearP": 0.21858119093621708,
+      "feedbackP": 0.32704612262296123,
+      "linearGroup": "mixed",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 101,
+      "id": 108,
+      "linearP": 0.2551114098338739,
+      "feedbackP": 0.40097841267023726,
+      "linearGroup": "stratified",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 101,
+      "id": 111,
+      "linearP": -0.08633622007324383,
+      "feedbackP": -0.25112919207044393,
+      "linearGroup": "mixed",
+      "feedbackGroup": "egalitarian"
+    },
+    {
+      "seed": 101,
+      "id": 113,
+      "linearP": 0.31294720284640637,
+      "feedbackP": 0.4473090574701167,
+      "linearGroup": "stratified",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 101,
+      "id": 121,
+      "linearP": 0.31393396784854044,
+      "feedbackP": 0.40154592851159343,
+      "linearGroup": "stratified",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 101,
+      "id": 123,
+      "linearP": -0.3886051993898262,
+      "feedbackP": -0.4999706566120409,
+      "linearGroup": "egalitarian",
+      "feedbackGroup": "egalitarian"
+    },
+    {
+      "seed": 101,
+      "id": 127,
+      "linearP": -0.20647693179832471,
+      "feedbackP": -0.48443615784054905,
+      "linearGroup": "mixed",
+      "feedbackGroup": "egalitarian"
+    },
+    {
+      "seed": 101,
+      "id": 131,
+      "linearP": -0.03309093809624411,
+      "feedbackP": -0.41567304960464535,
+      "linearGroup": "mixed",
+      "feedbackGroup": "egalitarian"
+    },
+    {
+      "seed": 101,
+      "id": 139,
+      "linearP": -0.4392634507957347,
+      "feedbackP": -0.5506877291027827,
+      "linearGroup": "egalitarian",
+      "feedbackGroup": "egalitarian"
+    },
+    {
+      "seed": 1729,
+      "id": 10,
+      "linearP": -0.2014065853990614,
+      "feedbackP": -0.4894906163752124,
+      "linearGroup": "mixed",
+      "feedbackGroup": "egalitarian"
+    },
+    {
+      "seed": 1729,
+      "id": 11,
+      "linearP": -0.20177718106906575,
+      "feedbackP": -0.47985119836779694,
+      "linearGroup": "mixed",
+      "feedbackGroup": "egalitarian"
+    },
+    {
+      "seed": 1729,
+      "id": 12,
+      "linearP": -0.42475694792792634,
+      "feedbackP": -0.5402978670162466,
+      "linearGroup": "egalitarian",
+      "feedbackGroup": "egalitarian"
+    },
+    {
+      "seed": 1729,
+      "id": 13,
+      "linearP": -0.1989151506161765,
+      "feedbackP": -0.4368445904631449,
+      "linearGroup": "mixed",
+      "feedbackGroup": "egalitarian"
+    },
+    {
+      "seed": 1729,
+      "id": 31,
+      "linearP": 0.08524082374215543,
+      "feedbackP": 0.2564032326118076,
+      "linearGroup": "mixed",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 1729,
+      "id": 35,
+      "linearP": 0.07078139150654912,
+      "feedbackP": 0.2564796055660361,
+      "linearGroup": "mixed",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 1729,
+      "id": 37,
+      "linearP": 0.10200250648020077,
+      "feedbackP": 0.28058278213395155,
+      "linearGroup": "mixed",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 1729,
+      "id": 40,
+      "linearP": -0.089821407355317,
+      "feedbackP": -0.2835258791962118,
+      "linearGroup": "mixed",
+      "feedbackGroup": "egalitarian"
+    },
+    {
+      "seed": 1729,
+      "id": 43,
+      "linearP": -0.06398343876418991,
+      "feedbackP": -0.24880552061086655,
+      "linearGroup": "mixed",
+      "feedbackGroup": "mixed"
+    },
+    {
+      "seed": 1729,
+      "id": 46,
+      "linearP": 0.11085439220325329,
+      "feedbackP": 0.28840399508031406,
+      "linearGroup": "mixed",
+      "feedbackGroup": "stratified"
+    },
+    {
+      "seed": 1729,
+      "id": 54,
+      "linearP": 0.16471249821980682,
+      "feedbackP": 0.32831848373021133,
+      "linearGroup": "mixed",
+      "feedbackGroup": "stratified"
+    }
+  ],
+  "history": [
+    {
+      "seed": 11,
+      "variant": "linear",
+      "turns": 267,
+      "exposure": {
+        "incipient": 1083.6555116039328,
+        "mixed": 25100.397414818926,
+        "egalitarian": 7707.070799696256,
+        "stratified": 158.00422553713256
+      },
+      "splits": {},
+      "reversals": [],
+      "fissions": []
+    },
+    {
+      "seed": 11,
+      "variant": "feedback",
+      "turns": 267,
+      "exposure": {
+        "incipient": 1083.6555116039328,
+        "mixed": 8336.462923335497,
+        "egalitarian": 15680.864573317142,
+        "stratified": 8948.144943399693
+      },
+      "splits": {},
+      "reversals": [
+        {
+          "camp": 64,
+          "from": "egalitarian",
+          "to": "stratified",
+          "fromYear": 237.76462989166245,
+          "year": 1204.3082656312627,
+          "fromP": -0.2518329609409393,
+          "p": 0.250590976847188
+        }
+      ],
+      "fissions": []
+    },
+    {
+      "seed": 23,
+      "variant": "linear",
+      "turns": 267,
+      "exposure": {
+        "incipient": 1282.7722365638629,
+        "mixed": 22447.266738120405,
+        "egalitarian": 3130.4175228117,
+        "stratified": 359.0329028568101
+      },
+      "splits": {
+        "incipient": 1,
+        "mixed": 1
+      },
+      "reversals": [],
+      "fissions": [
+        {
+          "year": 55.74160127699381,
+          "group": "incipient",
+          "ParentCamp": 57,
+          "ParentBefore": 650,
+          "Daughter": 195,
+          "Trigger": 1
+        },
+        {
+          "year": 765.2273114987976,
+          "group": "mixed",
+          "ParentCamp": 49,
+          "ParentBefore": 1587,
+          "Daughter": 476,
+          "Trigger": 1
+        }
+      ]
+    },
+    {
+      "seed": 23,
+      "variant": "feedback",
+      "turns": 267,
+      "exposure": {
+        "incipient": 1282.7722365638629,
+        "egalitarian": 10452.022062065991,
+        "mixed": 5854.909636544621,
+        "stratified": 9629.785465178327
+      },
+      "splits": {
+        "incipient": 1,
+        "egalitarian": 1
+      },
+      "reversals": [
+        {
+          "camp": 49,
+          "from": "egalitarian",
+          "to": "stratified",
+          "fromYear": 862.4280930106437,
+          "year": 1280.162329304593,
+          "fromP": -0.25412651631768657,
+          "p": 0.2554083597863809
+        }
+      ],
+      "fissions": [
+        {
+          "year": 55.74160127699381,
+          "group": "incipient",
+          "ParentCamp": 57,
+          "ParentBefore": 650,
+          "Daughter": 195,
+          "Trigger": 1
+        },
+        {
+          "year": 765.2273114987976,
+          "group": "egalitarian",
+          "ParentCamp": 49,
+          "ParentBefore": 1586,
+          "Daughter": 475,
+          "Trigger": 1
+        }
+      ]
+    },
+    {
+      "seed": 47,
+      "variant": "linear",
+      "turns": 267,
+      "exposure": {
+        "incipient": 1680.276014754751,
+        "mixed": 34504.82524181673,
+        "stratified": 5502.111181909449,
+        "egalitarian": 2183.6763975114964
+      },
+      "splits": {
+        "incipient": 1,
+        "egalitarian": 1
+      },
+      "reversals": [],
+      "fissions": [
+        {
+          "year": 82.95092385767127,
+          "group": "incipient",
+          "ParentCamp": 14,
+          "ParentBefore": 859,
+          "Daughter": 317,
+          "Trigger": 1
+        },
+        {
+          "year": 109.73758935183,
+          "group": "egalitarian",
+          "ParentCamp": 88,
+          "ParentBefore": 535,
+          "Daughter": 160,
+          "Trigger": 0
+        }
+      ]
+    },
+    {
+      "seed": 47,
+      "variant": "feedback",
+      "turns": 267,
+      "exposure": {
+        "incipient": 1680.276014754751,
+        "mixed": 7714.16579280872,
+        "stratified": 24550.743962643664,
+        "egalitarian": 9925.703065785436
+      },
+      "splits": {
+        "incipient": 1,
+        "egalitarian": 1
+      },
+      "reversals": [],
+      "fissions": [
+        {
+          "year": 82.95092385767127,
+          "group": "incipient",
+          "ParentCamp": 14,
+          "ParentBefore": 859,
+          "Daughter": 317,
+          "Trigger": 1
+        },
+        {
+          "year": 109.73758935183,
+          "group": "egalitarian",
+          "ParentCamp": 88,
+          "ParentBefore": 535,
+          "Daughter": 160,
+          "Trigger": 0
+        }
+      ]
+    },
+    {
+      "seed": 101,
+      "variant": "linear",
+      "turns": 267,
+      "exposure": {
+        "incipient": 5702.901887494166,
+        "mixed": 59763.6707817902,
+        "stratified": 12522.555561247365,
+        "egalitarian": 4059.95690102752
+      },
+      "splits": {
+        "incipient": 1
+      },
+      "reversals": [],
+      "fissions": [
+        {
+          "year": 69.39992831792516,
+          "group": "incipient",
+          "ParentCamp": 97,
+          "ParentBefore": 830,
+          "Daughter": 275,
+          "Trigger": 1
+        }
+      ]
+    },
+    {
+      "seed": 101,
+      "variant": "feedback",
+      "turns": 267,
+      "exposure": {
+        "incipient": 5714.612858012134,
+        "stratified": 48403.948186147005,
+        "mixed": 10691.494151035133,
+        "egalitarian": 17239.029936364645
+      },
+      "splits": {
+        "incipient": 1
+      },
+      "reversals": [
+        {
+          "camp": 101,
+          "from": "egalitarian",
+          "to": "stratified",
+          "fromYear": 136.11455229065902,
+          "year": 298.38263073179036,
+          "fromP": -0.30069131418907846,
+          "p": 0.269588464452006
+        },
+        {
+          "camp": 21,
+          "from": "egalitarian",
+          "to": "stratified",
+          "fromYear": 262.26801422388655,
+          "year": 1352.8259214610364,
+          "fromP": -0.25128045914850955,
+          "p": 0.2501448794719777
+        }
+      ],
+      "fissions": [
+        {
+          "year": 69.39992831792516,
+          "group": "incipient",
+          "ParentCamp": 97,
+          "ParentBefore": 830,
+          "Daughter": 275,
+          "Trigger": 1
+        }
+      ]
+    },
+    {
+      "seed": 1729,
+      "variant": "linear",
+      "turns": 267,
+      "exposure": {
+        "incipient": 1062.8088246684003,
+        "mixed": 18572.12300074504,
+        "egalitarian": 2396.856849187759
+      },
+      "splits": {},
+      "reversals": [],
+      "fissions": []
+    },
+    {
+      "seed": 1729,
+      "variant": "feedback",
+      "turns": 267,
+      "exposure": {
+        "incipient": 1062.8088246684003,
+        "egalitarian": 10829.78510763751,
+        "mixed": 3685.553859397903,
+        "stratified": 6453.64088289723
+      },
+      "splits": {},
+      "reversals": [
+        {
+          "camp": 54,
+          "from": "egalitarian",
+          "to": "stratified",
+          "fromYear": 262.26801422388655,
+          "year": 532.0037155343592,
+          "fromP": -0.26288913384036483,
+          "p": 0.2571031839668426
+        }
+      ],
+      "fissions": []
+    }
+  ],
+  "runs": [
+    {
+      "variant": "feedback",
+      "seed": 11,
+      "arm": "annual",
+      "feedback": 0.2,
+      "turns": 267,
+      "checkpointSha256": "a8e04f52b0846a5a23abd40a144a1e8c47ff4bb5cd25eba29e4be5212a63f510",
+      "finalSha256": "754f9126d294ce820c581e5232d60bfd8adbea9b89d7f3ea1f1695e7dfbe9b8b",
+      "legacyParity": false,
+      "censusPure": true,
+      "saveContinuation": true,
+      "seconds": 30.3679105,
+      "originalCamps": [
+        15,
+        16,
+        17,
+        18,
+        37,
+        40,
+        43,
+        46,
+        50,
+        53,
+        55,
+        58,
+        61,
+        64,
+        67,
+        70,
+        73
+      ]
+    },
+    {
+      "variant": "feedback",
+      "seed": 23,
+      "arm": "annual",
+      "feedback": 0.2,
+      "turns": 267,
+      "checkpointSha256": "de15ee9a3ea2c80c62ae63701f948408495d8490780f9395d3af684b9b54ca23",
+      "finalSha256": "b33d0ddf7a0121b6df8c9cc9bdee5206ec8d55ac91c2cfb3cc57dd101a88325a",
+      "legacyParity": false,
+      "censusPure": true,
+      "saveContinuation": true,
+      "seconds": 21.484008,
+      "originalCamps": [
+        13,
+        14,
+        15,
+        16,
+        37,
+        40,
+        43,
+        46,
+        49,
+        52,
+        54,
+        57
+      ]
+    },
+    {
+      "variant": "feedback",
+      "seed": 47,
+      "arm": "annual",
+      "feedback": 0.2,
+      "turns": 267,
+      "checkpointSha256": "bd39ba0d6063e3968129c897c6dd05408eb7c7d42e535455e90519472b5ef465",
+      "finalSha256": "35258c9b30b8631efb584c662a57c015f8b0013f7f23e80013bf510858a3b0b8",
+      "legacyParity": false,
+      "censusPure": true,
+      "saveContinuation": true,
+      "seconds": 33.7993655,
+      "originalCamps": [
+        11,
+        12,
+        13,
+        14,
+        33,
+        36,
+        39,
+        41,
+        43,
+        48,
+        51,
+        53,
+        55,
+        57,
+        61,
+        64,
+        67,
+        70,
+        73,
+        76
+      ]
+    },
+    {
+      "variant": "feedback",
+      "seed": 101,
+      "arm": "annual",
+      "feedback": 0.2,
+      "turns": 267,
+      "checkpointSha256": "65a059ce20c943560c23014cf5a3462c450d2f2869cffa6d366bb39b9c696990",
+      "finalSha256": "6328dd93099cb5a38517b3318b66f98afabd39f97406bdb2efdd90f786052bc6",
+      "legacyParity": false,
+      "censusPure": true,
+      "saveContinuation": true,
+      "seconds": 67.4255006,
+      "originalCamps": [
+        18,
+        19,
+        20,
+        21,
+        41,
+        44,
+        47,
+        49,
+        51,
+        54,
+        56,
+        58,
+        60,
+        63,
+        65,
+        68,
+        71,
+        73,
+        75,
+        77,
+        81,
+        83,
+        85,
+        87,
+        89,
+        91,
+        95,
+        97,
+        99,
+        101,
+        103,
+        105,
+        108,
+        111,
+        113,
+        121,
+        123,
+        127,
+        131,
+        139
+      ]
+    },
+    {
+      "variant": "feedback",
+      "seed": 1729,
+      "arm": "annual",
+      "feedback": 0.2,
+      "turns": 267,
+      "checkpointSha256": "0d61df6283d8024cd4a5131da0a0ef92848c8f858d44aa547e940d81226e8eb3",
+      "finalSha256": "d4cac8dde9428b85951c69f0fb2a487f5d877c625f9b93dda43e2ed4288087be",
+      "legacyParity": false,
+      "censusPure": true,
+      "saveContinuation": true,
+      "seconds": 16.116359,
+      "originalCamps": [
+        10,
+        11,
+        12,
+        13,
+        31,
+        35,
+        37,
+        40,
+        43,
+        46,
+        54
+      ]
+    },
+    {
+      "variant": "linear",
+      "seed": 11,
+      "arm": "annual",
+      "turns": 267,
+      "checkpointSha256": "a8e04f52b0846a5a23abd40a144a1e8c47ff4bb5cd25eba29e4be5212a63f510",
+      "finalSha256": "7d317287a549d000e3e5d56796ea60746cd85f30e62a9cf9c3b88c24dd50118d",
+      "legacyParity": false,
+      "censusPure": true,
+      "saveContinuation": true,
+      "seconds": 22.6375245,
+      "originalCamps": [
+        15,
+        16,
+        17,
+        18,
+        37,
+        40,
+        43,
+        46,
+        50,
+        53,
+        55,
+        58,
+        61,
+        64,
+        67,
+        70,
+        73
+      ]
+    },
+    {
+      "variant": "linear",
+      "seed": 23,
+      "arm": "annual",
+      "turns": 267,
+      "checkpointSha256": "de15ee9a3ea2c80c62ae63701f948408495d8490780f9395d3af684b9b54ca23",
+      "finalSha256": "2e974985d8ef8faf11e34509e265e68fc3a1681c7269c531d45aa0e8faadafda",
+      "legacyParity": false,
+      "censusPure": true,
+      "saveContinuation": true,
+      "seconds": 18.9091159,
+      "originalCamps": [
+        13,
+        14,
+        15,
+        16,
+        37,
+        40,
+        43,
+        46,
+        49,
+        52,
+        54,
+        57
+      ]
+    },
+    {
+      "variant": "linear",
+      "seed": 47,
+      "arm": "annual",
+      "turns": 267,
+      "checkpointSha256": "bd39ba0d6063e3968129c897c6dd05408eb7c7d42e535455e90519472b5ef465",
+      "finalSha256": "8196d1287e54afb99104cf0c314789f431edbeae1158f4c9186c81b1232583b0",
+      "legacyParity": false,
+      "censusPure": true,
+      "saveContinuation": true,
+      "seconds": 31.7325296,
+      "originalCamps": [
+        11,
+        12,
+        13,
+        14,
+        33,
+        36,
+        39,
+        41,
+        43,
+        48,
+        51,
+        53,
+        55,
+        57,
+        61,
+        64,
+        67,
+        70,
+        73,
+        76
+      ]
+    },
+    {
+      "variant": "linear",
+      "seed": 101,
+      "arm": "annual",
+      "turns": 267,
+      "checkpointSha256": "65a059ce20c943560c23014cf5a3462c450d2f2869cffa6d366bb39b9c696990",
+      "finalSha256": "a3836d6156d2f1372ad85cb75a3b1d9e10032f80ea94f476878acbdd6b959dd1",
+      "legacyParity": false,
+      "censusPure": true,
+      "saveContinuation": true,
+      "seconds": 58.9127173,
+      "originalCamps": [
+        18,
+        19,
+        20,
+        21,
+        41,
+        44,
+        47,
+        49,
+        51,
+        54,
+        56,
+        58,
+        60,
+        63,
+        65,
+        68,
+        71,
+        73,
+        75,
+        77,
+        81,
+        83,
+        85,
+        87,
+        89,
+        91,
+        95,
+        97,
+        99,
+        101,
+        103,
+        105,
+        108,
+        111,
+        113,
+        121,
+        123,
+        127,
+        131,
+        139
+      ]
+    },
+    {
+      "variant": "linear",
+      "seed": 1729,
+      "arm": "annual",
+      "turns": 267,
+      "checkpointSha256": "0d61df6283d8024cd4a5131da0a0ef92848c8f858d44aa547e940d81226e8eb3",
+      "finalSha256": "e02f0c39ca79e6d91b39645c034b30b07618e2eb3f6ffec838a031a196a1c134",
+      "legacyParity": false,
+      "censusPure": true,
+      "saveContinuation": true,
+      "seconds": 16.2302861,
+      "originalCamps": [
+        10,
+        11,
+        12,
+        13,
+        31,
+        35,
+        37,
+        40,
+        43,
+        46,
+        54
+      ]
+    }
+  ],
+  "zeroFeedbackReplay": {
+    "manifest": {
+      "seeds": [
+        11
+      ],
+      "arms": [
+        "annual"
+      ],
+      "years": 2000,
+      "feedback": 0,
+      "createdUtc": "2026-11-28T21:14:04.0721316Z",
+      "runtime": "8.0.34",
+      "binarySha256": "71408c2c4ac17a6cbcdcccb36090bc12fbca7797778bedd78f996f4f0c70e191",
+      "note": "Matched initial 600-year organic checkpoints; inherited Plough/Irrigation grant. Civic full treatment and food mode begin together at elapsed year zero."
+    },
+    "result": {
+      "seed": 11,
+      "arm": "annual",
+      "feedback": 0,
+      "turns": 267,
+      "checkpointSha256": "a8e04f52b0846a5a23abd40a144a1e8c47ff4bb5cd25eba29e4be5212a63f510",
+      "finalSha256": "766dcdfd6be886ce46164843ffecfdaa8a03081f925eed90ae84c4dabd08469a",
+      "legacyParity": false,
+      "censusPure": true,
+      "saveContinuation": true,
+      "seconds": 29.8241703,
+      "originalCamps": [
+        15,
+        16,
+        17,
+        18,
+        37,
+        40,
+        43,
+        46,
+        50,
+        53,
+        55,
+        58,
+        61,
+        64,
+        67,
+        70,
+        73
+      ]
+    }
+  },
+  "definitions": {
+    "reversal": "C > .05, crosses from P < -.25 to P > .25 or vice versa, allowing intervening mixed years; reset on incipient state",
+    "quartiles": "Unweighted endpoint village population, linear interpolation"
+  }
+}

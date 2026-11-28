@@ -35,6 +35,7 @@ internal static class CivicGovernanceChecks
         ConfigAndValidation();
         StewardRoleContract();
         AttractorsRelaxationAndFormulas();
+        StratificationFeedback();
         PrecedentsFissionAndAbandonment();
         OrdersMultiPolicyAndPlanningDraft();
         ObservationsAndPolicy();
@@ -51,6 +52,90 @@ internal static class CivicGovernanceChecks
         Phase2OrganicWallBreakGate();
         Console.WriteLine("PASS: " + checks + " civic governance assertions");
         return checks;
+    }
+
+    private static void StratificationFeedback()
+    {
+        var cfg = new SimulationConfig { Civic = new CivicGovernanceSettings { Enabled = true, StratificationFeedbackStrength = .2 } };
+        double Advance(double p, double e, double y) => CivicGovernance.AdvanceStratification(cfg, p, e, y);
+        Near(Advance(0, 0, 10000), 0, "feedback never invents a direction at exact neutrality", 1e-12);
+        Near(Advance(.01, 0, 5000), .2, "small positive lean tends to positive attractor", 1e-12);
+        Near(Advance(-.01, 0, 5000), -.2, "small negative lean tends to negative attractor", 1e-12);
+        Check(Advance(.4, -.03, 1000) > 0, "mild opposing circumstances retain established positive lean");
+        Check(Advance(-.4, .03, 1000) < 0, "mild opposing circumstances retain established negative lean");
+        Check(Advance(.4, -.35, 100) < -.25, "strong opposing circumstances reverse stratification");
+        Check(Advance(-.4, .35, 100) > .25, "strong opposing circumstances reverse egalitarian lean");
+        Near(Advance(.4, -.35, 100), -Advance(-.4, .35, 100), "feedback has no intrinsic directional bias", 1e-12);
+        foreach (double strength in new[] { 0.0, .1, .15, .2, .3 })
+        {
+            cfg.Civic.StratificationFeedbackStrength = strength;
+            foreach (double p in new[] { -1.0, -.4, -.15, -.01, 0, .01, .15, .4, 1 })
+            foreach (double e in new[] { -1.0, -.7, -.1, -.03, 0, .03, .1, .7, 1 })
+            foreach (double years in new[] { .001, 20, 200, 2000 })
+            {
+                double one = Advance(p, e, years), split = p;
+                for (int i = 0; i < 100; i++) split = Advance(split, e, years / 100);
+                Near(split, one, $"feedback semigroup strength={strength} P={p} E={e} years={years}", 2e-11);
+                Check(one >= -1 && one <= 1 && !double.IsNaN(one), "feedback remains bounded");
+                if (strength == 0) Check(one == CivicGovernance.Relax(p,e,.02,years), "zero strength exactly preserves linear update");
+            }
+        }
+        cfg.Civic.StratificationFeedbackStrength = .2;
+        foreach (double p in new[] { -.7, -.15, -.01, .01, .15, .7 })
+        foreach (double e in new[] { -.4, -.05, 0, .05, .4 })
+        {
+            // Independent fixed-step RK4 oracle: test-only, never production.
+            double numeric = p, dt = .01;
+            double F(double x) => .02 * (e - x + .2 * (1-Math.Abs(e)) * Math.Max(-1, Math.Min(1, x/.15)));
+            for (int i = 0; i < 20000; i++)
+            {
+                double a=F(numeric), b=F(numeric+dt*a/2), c=F(numeric+dt*b/2), d=F(numeric+dt*c);
+                numeric += dt*(a+2*b+2*c+d)/6;
+            }
+            Near(Advance(p,e,200),numeric,"analytical feedback agrees with independent numerical integration",1e-8);
+        }
+        double daily=.01;
+        for(int i=0;i<7300;i++) daily=Advance(daily,.1,1.0/365);
+        Near(daily,Advance(.01,.1,20),"feedback daily versus twenty-year horizon",1e-12);
+        foreach(double p in new[]{-1.0,-.15,0,.15,1})
+        foreach(double e in new[]{-1.0,-.1,0,.1,1})
+            Check(!double.IsNaN(Advance(p,e,double.MaxValue)),"very long feedback horizon stays finite");
+        cfg.Civic.StratificationFeedbackStrength = -.01;
+        ExpectThrows<ArgumentException>(()=>cfg.Validate(),"negative feedback strength rejected");
+        cfg.Civic.StratificationFeedbackStrength = .31;
+        ExpectThrows<ArgumentException>(()=>cfg.Validate(),"excessive feedback strength rejected");
+        cfg.Civic.StratificationFeedbackStrength = double.NaN;
+        ExpectThrows<ArgumentException>(()=>cfg.Validate(),"NaN feedback strength rejected");
+        var w=CivicFixture(); w.Config.Civic.StratificationFeedbackStrength=.2;
+        byte[] saved=SaveCodec.Save(w);
+        Near(SaveCodec.Load(saved).Config.Civic.StratificationFeedbackStrength,.2,"feedback strength survives save/load");
+        var old=SaveCodec.Load(StripXmlElements(saved,new HashSet<string>{"StratificationFeedbackStrength"}));
+        Check(old.Config.Civic.StratificationFeedbackStrength==0,"absent feedback field keeps old-save dynamics");
+        w.Config.Civic.StratificationFeedbackStrength=0;
+        Check(SaveCodec.Fingerprint(old)==SaveCodec.Fingerprint(w),"omitted versus explicit zero feedback state parity");
+        w.Config.Civic.StratificationFeedbackStrength=.2;
+        w.Camps[0].People.CivicPrecedents.Add(CivicPrecedents.CeremonialIntegration);
+        w.Camps[0].CivicComplexity=.25; w.Camps[0].CivicStratification=.02;
+        var replica=SaveCodec.Load(SaveCodec.Save(w));
+        for(int turn=0;turn<8;turn++)
+        {
+            new TurnResolver(new PhaseExecution(1)).Resolve(w,new Dictionary<int,List<Order>>());
+            new TurnResolver(new PhaseExecution(4,1,true,1)).Resolve(replica,new Dictionary<int,List<Order>>());
+            Check(SaveCodec.Fingerprint(w)==SaveCodec.Fingerprint(replica),"active feedback scalar/worker replay");
+        }
+        cfg.Civic.StratificationFeedbackStrength=.2;
+        foreach(double horizon in new[]{1.0/365,20,2000})
+        {
+            for(int i=0;i<10000;i++) Advance(.4,-.35,horizon);
+            var timer=System.Diagnostics.Stopwatch.StartNew(); long allocated=GC.GetAllocatedBytesForCurrentThread();
+            double checksum=0;
+            // 100,000 settlement updates: larger than a mature 10,000-settlement
+            // turn, or repeated RL transitions, without world-generation noise.
+            for(int i=0;i<100000;i++) checksum+=Advance((i%201-100)/100.0,(i%101-50)/50.0,horizon);
+            long bytes=GC.GetAllocatedBytesForCurrentThread()-allocated;
+            Check(bytes==0,"feedback transition allocates zero bytes at mature/RL batch size");
+            Console.WriteLine($"civic feedback calls=100000 years={horizon:G6} ms={timer.Elapsed.TotalMilliseconds:F2} bytes={bytes} checksum={checksum:G8}");
+        }
     }
 
     private static string RepoPath(string relative)
@@ -84,7 +169,7 @@ internal static class CivicGovernanceChecks
         Check(true, "default disabled CivicGovernanceSettings validates cleanly (Unity JsonUtility safety)");
 
         var fields = typeof(CivicGovernanceSettings).GetFields(BindingFlags.Public | BindingFlags.Instance);
-        Check(fields.Length == 73, "CivicGovernanceSettings exposes all 73 public fields (" + fields.Length + ")");
+        Check(fields.Length == 74, "CivicGovernanceSettings exposes all 74 public fields (" + fields.Length + ")");
 
         string profilePath = RepoPath(Path.Combine("Assets", "_Anthropocene", "Resources", "CivicGovernanceOpeningConfig.json"));
         string json = File.ReadAllText(profilePath);
@@ -92,7 +177,7 @@ internal static class CivicGovernanceChecks
         {
             Check(doc.RootElement.TryGetProperty("Civic", out var civicElem), "CivicGovernanceOpeningConfig.json contains top-level Civic block");
             int jsonFieldCount = civicElem.EnumerateObject().Count();
-            Check(jsonFieldCount == 73, "CivicGovernanceOpeningConfig.json Civic block contains all 73 fields (" + jsonFieldCount + ")");
+            Check(jsonFieldCount == 74, "CivicGovernanceOpeningConfig.json Civic block contains all 74 fields (" + jsonFieldCount + ")");
         }
 
         var loaded = JsonSerializer.Deserialize<SimulationConfig>(json, new JsonSerializerOptions { IncludeFields = true });
@@ -103,6 +188,7 @@ internal static class CivicGovernanceChecks
         {
             if (field.Name == nameof(CivicGovernanceSettings.Enabled) || field.Name == nameof(CivicGovernanceSettings.SanitationEnabled)) continue;
             object expected = field.GetValue(defaults);
+            if (field.Name == nameof(CivicGovernanceSettings.StratificationFeedbackStrength)) expected = 0.20;
             object actual = field.GetValue(loaded.Civic);
             if (field.FieldType == typeof(double))
                 Near((double)actual, (double)expected, "profile JSON matches C# default for " + field.Name, 1e-12);
@@ -1203,6 +1289,7 @@ internal static class CivicGovernanceChecks
     {
         // 1. Full civic save/load roundtrip & continuation + exact 365 bytes/tile layout
         var w = CivicFixture(sanitation: true);
+        w.Config.Civic.StratificationFeedbackStrength = .2;
         w.Resources = null;
         var c = w.Camps[0];
         c.Population = 800; c.StationaryTurns = 4; c.StationaryYears = 80;

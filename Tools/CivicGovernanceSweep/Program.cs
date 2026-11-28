@@ -152,6 +152,7 @@ internal static class Program
     private static void Main(string[] args)
     {
         if (args.Contains("--civic-playthrough")) { CivicPlaythrough.Run(args); return; }
+        if (args.Contains("--civic-feedback-evidence")) { CivicFeedbackEvidence.Run(args); return; }
         if (args.Contains("--annual-food-experiment")) { AnnualFoodExperiment.Run(args); return; }
         if (args.Contains("--audit-inspect")) { CivicAudit.Inspect(args); return; }
         if (args.Contains("--audit-duration-probe")) { CivicAudit.DurationProbe(args); return; }

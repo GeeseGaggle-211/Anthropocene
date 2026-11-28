@@ -31,7 +31,10 @@ the shipped opening remain unchanged. Validation: `AnnualLandFoodChecks`
 [CivicGovernance.md](CivicGovernance.md) implements the opt-in civic and
 governance system for crowding beyond the ~1,000-resident Plough/irrigation
 ceiling. Each village has a continuous Complexity x Stratification state that
-relaxes toward an environmental attractor, steered by player policy. Civic
+relaxes toward an environmental attractor, steered by player policy. The experimental
+profiles now enable bounded positive stratification feedback (CivicGovernance.md,
+Choice #2): established leans reinforce themselves, while sufficiently changed
+circumstances can reverse them. The saved strength defaults to zero for old worlds. Civic
 capital and Stewards reduce crowding mortality (Phase 1, toward ~3,000), and
 watered sanitation from Tier 3B reduces disease mortality (Phase 2, 5,000-10,000).
 Sanitation water is a Tier-2 claim placed after drinking and herd water and

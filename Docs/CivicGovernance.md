@@ -22,7 +22,7 @@ In PR #49 (`features/plough-elder-irrigation`), irrigated and ploughed Neolithic
 - **Extensible Continuous 2D Institutional Grid** on every `Camp`:
   - **Complexity $C \in [0, C_{\max}] \subseteq [0, 1]$**: institutional scale, capped by practice-driven `Society` precedents (Tier 1 $\to$ Tier 2 $\to$ Tier 3A).
   - **Power Distribution $P \in [-1, +1]$**: continuous spectrum from **Corporate / Egalitarian** ($P \to -1$, e.g. Trypillia mega-sites / neighborhood assemblies) through **Hybrid / Council-Oikos** ($P \approx 0$) to **Stratified / Centralized** ($P \to +1$, e.g. Ubaid/Uruk temple-granary cities).
-- **Environmental Attractor + Continuous Policy Steering + Alignment Friction**: Four empirically grounded $O(\text{local})$ drivers compute $(C_{\text{env}}, P_{\text{env}})$ from committed simulation state (zero hidden terrain tags). Three levers (`FissionPolicy`, new `ImmigrationPolicy`, new `CivicFocus`) steer $P^*$. Coordinates relax analytically over arbitrary elapsed physical years $\Delta t$. Fighting one's environment is possible, never free: mismatch $|P - P_{\text{env}}|$ increases Steward/upkeep demand and creates open-frontier exit friction.
+- **Environmental Attractor + Continuous Policy Steering + Alignment Friction**: Four empirically grounded $O(\text{local})$ drivers compute $(C_{\text{env}}, P_{\text{env}})$ from committed simulation state (zero hidden terrain tags). Three levers (`FissionPolicy`, new `ImmigrationPolicy`, new `CivicFocus`) steer $P^*$. Experimental profiles add bounded, reversible stratification feedback (Choice #2). Coordinates relax analytically over arbitrary elapsed physical years $\Delta t$. Fighting one's environment is possible, never free: mismatch $|P - P_{\text{env}}|$ increases Steward/upkeep demand and creates open-frontier exit friction.
 - **Physical Workforce & Capital Economy**: One unified `WorkforceRoles.Steward` role (adaptive UI label: *Council Arbiter* / *Civic Steward* / *Temple Scribe*) plus sparse fixed `CivicCapital` (Phase 1) and `SanitationCapital` (Phase 2) built and maintained via the generalized PR #49 `Builder` + `HousingMaterial` + generic `Tools` pipeline.
 - **Survival-First `DemandControl`**: `Protected` (survival food + kernel-scored clothing/shelter) is untouched; core Stewards and existing capital upkeep sit in `Continuity`; expansion competes in `Development` on a physically comparable `food / worker-year` `PriorityScore`.
 - **Two-Phase Delivery, Single Unified Spec**:
@@ -239,13 +239,24 @@ Let $F_1 = \text{Map.Radius}(c.\text{Tile}, 1)$, $L_1 = \{t \in F_1 : \text{Cult
    - $\Delta P_{\text{fission}}$: `Encourage` $= -0.15$, `Neutral` $= 0.00$, `Discourage` $= +0.15$.
    - $\Delta P_{\text{imm}}$: `Open` $= -0.15$, `Neutral` $= 0.00$, `Restricted` $= +0.15$.
    - $\Delta P_{\text{focus}}$: `Communal` $= -0.45$, **`Auto` $= 0.00$**, `Centralized` $= +0.45$.
-   - **Zero-cliff guarantee:** `CivicFocus.Auto` contributes **exact `0.0`** to $P^*$, so AI Elders follow $(C_{\text{env}}, P_{\text{env}})$ smoothly with zero discontinuous jump and zero self-inflicted alignment penalty. Maximum explicit steering is $\pm 0.75$ (capable of pulling an extreme $P_{\text{env}} = \pm 0.80$ past neutral at the cost of alignment friction).
-3. **Analytical `dt`-Invariant Relaxation (`PhysicalDemography.Expm1`):**
+   - **Zero-cliff guarantee:** `CivicFocus.Auto` contributes **exact `0.0`** to $P^*$, so AI Elders have no discontinuous policy jump. With feedback enabled, history can sustain environmental mismatch and its existing alignment cost. Maximum explicit steering is $\pm 0.75$ (capable of pulling an extreme $P_{\text{env}} = \pm 0.80$ past neutral at the cost of alignment friction).
+3. **Analytical `dt`-Invariant Relaxation (`PhysicalDemography.Expm1`), feedback disabled:**
    - Rates: $\lambda_C = 0.025\text{ yr}^{-1}$ ($t_{1/2} = 27.73\text{ yr}$), $\lambda_P = 0.020\text{ yr}^{-1}$ ($t_{1/2} = 34.66\text{ yr}$).
    $$C(t + \Delta t) = \operatorname{clamp}\!\Big(C(t) + (C^* - C(t))\big(-\operatorname{expm1}(-\lambda_C \Delta t)\big),\; 0,\; C_{\max}\Big)$$
    $$P(t + \Delta t) = \operatorname{clamp}\!\Big(P(t) + (P^* - P(t))\big(-\operatorname{expm1}(-\lambda_P \Delta t)\big),\; -1,\; +1\Big)$$
    - **Verified semigroup invariance (Python):** $|4\times 5\text{y} - 20\text{y}| = 0.00$, $|20\times 1\text{y} - 20\text{y}| = 5.55 \times 10^{-17}$, $|7300\times 1\text{d} - 20\text{y}| \le 1.08 \times 10^{-15}$.
-4. **Fission Daughter Dampening (`CivicGovernance.DaughterCoordinates`):**
+4. **Bounded stratification feedback (November 2026):**
+   Let $E=P^*$ be the environmental-plus-policy target above, $h=$ `StratificationFeedbackStrength`, and $w=0.15$. The enabled transition solves
+   $$\frac{dP}{dt}=\lambda_P\left[E-P+h(1-|E|)\operatorname{clamp}(P/w,-1,1)\right].$$
+   The feedback is continuous and symmetric, capped at $h=0.20$ in both experimental opening profiles. The C# default and an absent saved field are zero, preserving the preceding linear model. The validated range is $[0,0.30]$. Environmental/policy targets remain separate: feedback does not rewrite `LastEnvironmentalStratification`, conceal alignment costs, change civic complexity, or exempt societies from exit pressure.
+
+   Under neutral circumstances, an exact zero stays zero, while a small positive or negative lean tends toward $+0.20$ or $-0.20$. Mild contrary pressure can retain either trajectory. With the profile strength, bistability exists only for $|E|<(0.20-0.15)/(1+0.20)\approx0.04167$; stronger opposing pressure removes the old attractor and permits reversal. For example, $P=+0.4$ with $E=-0.35$ crosses to the egalitarian side within 100 years. The feedback weakens as $|E|$ grows, and vanishes at $|E|=1$; endpoints are not absorbing states.
+
+   **Temporal and scaling contract:** `Camp.CivicStratification` remains the sole authoritative trajectory state. This autonomous scalar flow is affine in three regions separated by $P=\pm0.15$. `AdvanceStratification` integrates each region analytically and solves boundary arrival times; a trajectory crosses at most two boundaries. Work and memory are $O(1)$ per active camp, with no annual loop, numerical substeps, allocations, new observations or extra saved camp state. The same bounded work applies to mature worlds and RL rollouts. Fixed external forcing obeys the semigroup property; changing geography/policy at shorter turn boundaries can still change results. A per-turn frozen feedback bias was rejected because it would change reinforcement with turn length. A general nonlinear numerical solver was unnecessary.
+
+   **Validation:** the civic suite checks independent RK4 agreement, whole-versus-split horizons (including daily), symmetry, neutral stability/instability, mild-pressure persistence, strong-pressure reversals, bounds, parameter validation, missing-field compatibility, and save/reload continuation. Matched native playthrough measurements are recorded in section 7.
+
+5. **Fission Daughter Dampening (`CivicGovernance.DaughterCoordinates`):**
    Shared identically by `Fission.Found` and `SocialRelocationForecastCache.Daughter`:
    $$C_{\text{daughter}} = \operatorname{clamp}(0.50\,C_{\text{parent}},\; 0,\; C_{\max}), \qquad P_{\text{daughter}} = \operatorname{clamp}(0.50\,P_{\text{parent}} - 0.15,\; -1,\; +1)$$
    Daughter inherits deep-copied `Society.CivicPrecedents` and `Society.CivicExperience`, starts with `CivicCapital = 0`, `SanitationCapital = 0`, `RecentTradeVolume = 0`, `ImmigrationPolicy = Neutral`, `CivicFocus = Auto` (hence $I_{\text{civic}} = I_{\text{sanit}} = 0$).
@@ -546,6 +557,7 @@ Every `double` field is rejected by `Validate()` if `NaN`, `Infinity`, or outsid
 | `Tier3ComplexityCeiling` | `1.00` | $(C_2, 1]$ | Tier 3A (`TokensAndAccounting`) $C_{\max}$ |
 | `ComplexityRelaxationRate` | `0.025` | $> 0$ | $\lambda_C$ ($\text{yr}^{-1}$) |
 | `StratificationRelaxationRate` | `0.020` | $> 0$ | $\lambda_P$ ($\text{yr}^{-1}$) |
+| `StratificationFeedbackStrength` | `0` (profiles `0.20`) | $[0,0.30]$ | Saved bounded reinforcement; absent field retains linear behavior |
 | `TradeVolumeRelaxationRate` | `0.025` | $> 0$ | $\lambda_{\text{trade}}$ ($\text{yr}^{-1}$) |
 | `ComplexityCrowdingScale` | `0.64` | $> 0$ | Denominator in $1 - e^{-\rho_{\text{crowd}} / 0.64}$ |
 | `FissionPolicySteeringShift` | `0.15` | $[0, 1]$ | $\Delta P_{\text{fission}}$ (`Encourage` $-$ / `Discourage` $+$) |
@@ -625,6 +637,7 @@ Exact copy of `Assets/_Anthropocene/Resources/AgriculturalTechnologyOpeningConfi
     "Tier3ComplexityCeiling": 1.00,
     "ComplexityRelaxationRate": 0.025,
     "StratificationRelaxationRate": 0.020,
+    "StratificationFeedbackStrength": 0.20,
     "TradeVolumeRelaxationRate": 0.025,
     "ComplexityCrowdingScale": 0.64,
     "FissionPolicySteeringShift": 0.15,
@@ -777,3 +790,77 @@ Per-seed peak village (off / phase1 / full):
 **Open decisions:**
 - Reaching 5k–10k cities needs a land and food-logistics mechanism beyond the radius-1 footprint: hinterland fields, tribute/redistribution from satellite villages, or irrigation adoption by the AI. This belongs outside this civic PR.
 - Tier 3A calibration depends on the storage and trade defaults.
+
+## 7. Bounded feedback playthrough (28 November 2026)
+
+The feedback treatment uses the same five original civic-activation checkpoints
+and annual food model as [CivicPlaythrough.md](CivicPlaythrough.md), through year
+2,002.89. Only `Civic.StratificationFeedbackStrength` changes from 0 to 0.20.
+Five treatment runs are compared with the retained five annual-food controls;
+an additional zero-feedback seed-11 run exactly reproduces its decoded control
+endpoint. No technologies, populations, policies, water or civic capital are
+added after the shared activation checkpoint.
+
+| Final measure, all five worlds | Linear control | Feedback 0.20 |
+| --- | ---: | ---: |
+| Population | 430,961 | 427,940 |
+| Villages | 105 | 105 |
+| Egalitarian villages (`C > .05`, `P < -.25`) | 10 | 32 |
+| Mixed villages | 79 | 14 |
+| Stratified villages (`C > .05`, `P > .25`) | 15 | 58 |
+| Incipient villages | 1 | 1 |
+| Mean stratification | +0.0409 | +0.0420 |
+| Mean absolute stratification | 0.1818 | 0.3589 |
+| Population-weighted complexity | 0.9480 | 0.9473 |
+| Accounting villages | 64 | 64 |
+| Villages using irrigation | 22 | 22 |
+| Fissions during the 2,000-year continuation | 5 | 5 |
+| Reversals between egalitarian and stratified categories | 0 | 5 |
+
+The contribution is bounded, but the classification effect is substantial:
+mean distance from neutral nearly doubles. This is an experimental calibration,
+not a claim that the category frequencies are historically calibrated. Average
+stratification barely moves; population is 0.70% lower. Population p25 / median /
+p75 change from 1,479 / 3,691 / 6,527 to 1,477 / 3,637 / 6,325.
+
+Reversals are measured from every persisted turn's civic report, after the civic
+update. A camp must cross from `P < -.25` to `P > .25`, or vice versa, while
+`C > .05`; intervening mixed years are allowed and an incipient state resets
+tracking. All five native reversals in this sample are egalitarian → stratified:
+seed/camp 11/64, 23/49, 101/101, 101/21 and 1729/54. For example, 101/101 moves
+from P=-0.301 at year 136 to P=+0.270 at year 298. These native histories do not
+establish that each reversal was caused by a sudden shock. Controlled kernel
+probes separately demonstrate rapid reversal in **both directions** under
+opposing environmental/policy forcing. The native sample contains no complete
+stratified → egalitarian reversal.
+
+Validation passes: **4,648 civic assertions**, **680 fission assertions** and
+**1,927 annual-food assertions**. The civic suite includes independent numerical
+integration, interval subdivision, active-feedback scalar/four-worker replay,
+missing-field load and live/save/reload continuation. All five native treatment
+runs pass final invariants, census/Prepare purity and save/reload continuation.
+A warmed batch of 100,000 coordinate updates (ten 10,000-settlement turns, or
+repeated RL transitions) allocates zero bytes and takes approximately 17–22 ms
+for daily, 20-year and 2,000-year horizons on this shared host. This measures the
+new kernel only, not whole-world throughput or Unity interaction.
+
+[Compact measurements and provenance](Experiments/CivicFeedback-20261128-summary.json)
+retain per-seed results, run binary/checkpoint/save hashes, endpoint quartiles,
+matched original village coordinates, fissions and reversal records. Raw native
+saves and generated plots remain ignored under `TestResults/CivicFeedback`.
+
+Reproduce with the Release `Tools/CivicGovernanceSweep` binary and the original
+checkpoint/control artifacts described in the preceding playthrough:
+
+```text
+--civic-playthrough --seeds=11,23,47 --arms=annual --feedback=0.2 --output=TestResults/CivicFeedback/a
+--civic-playthrough --seeds=101,1729 --arms=annual --feedback=0.2 --output=TestResults/CivicFeedback/b
+--civic-playthrough --seeds=11 --arms=annual --feedback=0 --output=TestResults/CivicFeedback/control
+--civic-feedback-evidence
+```
+
+Then run `python Tools/CivicGovernanceSweep/SummarizeCivicFeedback.py` to produce
+the endpoint distribution, Complexity × Stratification scatter, controlled
+shock trajectories and population comparison. The census harness defaults to
+feedback **zero** so the preceding published experiment remains reproducible;
+new games using either experimental opening profile explicitly select 0.20.

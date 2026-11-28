@@ -25,7 +25,7 @@ namespace Anthropocene.Simulation
 
     // Null in legacy configurations. Enabled only by an explicit new-game profile
     // (Assets/_Anthropocene/Resources/CivicGovernanceOpeningConfig.json).
-    // All 73 fields match Docs/CivicGovernance.md §5 Choice #11 A & B.
+    // Settings match Docs/CivicGovernance.md §5 Choice #11 A & B.
     [Serializable]
     public sealed class CivicGovernanceSettings
     {
@@ -36,6 +36,8 @@ namespace Anthropocene.Simulation
         public double Tier3ComplexityCeiling = 1.00;
         public double ComplexityRelaxationRate = 0.025;
         public double StratificationRelaxationRate = 0.020;
+        // Absent old-save fields remain zero: existing worlds retain linear relaxation.
+        [System.Runtime.Serialization.OptionalField] public double StratificationFeedbackStrength = 0.0;
         public double TradeVolumeRelaxationRate = 0.025;
         public double ComplexityCrowdingScale = 0.64;
         public double FissionPolicySteeringShift = 0.15;
@@ -117,6 +119,8 @@ namespace Anthropocene.Simulation
             if (ComplexityRelaxationRate <= 0 || StratificationRelaxationRate <= 0 ||
                 TradeVolumeRelaxationRate <= 0 || ComplexityCrowdingScale <= 0)
                 throw new ArgumentException("Invalid civic relaxation or crowding scale.");
+            if (StratificationFeedbackStrength < 0 || StratificationFeedbackStrength > 0.30)
+                throw new ArgumentException("Invalid civic stratification feedback strength.");
             if (FissionPolicySteeringShift < 0 || FissionPolicySteeringShift > 1 ||
                 ImmigrationPolicySteeringShift < 0 || ImmigrationPolicySteeringShift > 1 ||
                 CivicFocusSteeringShift < 0 || CivicFocusSteeringShift > 1 ||
@@ -936,6 +940,55 @@ namespace Anthropocene.Simulation
             return result;
         }
 
+        // dP/dt = lambda * (E - P + strength*(1-|E|)*clamp(P/0.15,-1,1)).
+        // E is the environmental + policy target, frozen over the horizon. The
+        // continuous field is affine in three regions; monotonic scalar motion
+        // crosses each boundary at most once. Exact event times preserve the
+        // semigroup without annual stepping, allocations, or extra saved state.
+        public static double AdvanceStratification(SimulationConfig cfg, double current, double target, double years)
+        {
+            double p = ClampFinite(current, -1, 1), e = ClampFinite(target, -1, 1);
+            double rate = cfg?.Civic?.StratificationRelaxationRate ?? 0.020;
+            double strength = Enabled(cfg) ? cfg.Civic.StratificationFeedbackStrength : 0;
+            if (!(strength > 0)) return ClampFinite(Relax(p, e, rate, years), -1, 1);
+            if (!(years > 0) || double.IsInfinity(years) || !(rate > 0) || double.IsInfinity(rate)) return p;
+            const double width = 0.15;
+            double bias = Math.Min(0.30, strength) * (1 - Math.Abs(e));
+            double remaining = rate * years;
+            for (int segment = 0; segment < 3; segment++)
+            {
+                double velocity = e - p + bias * Numbers.Clamp(p / width, -1, 1);
+                if (velocity == 0) return p;
+                bool lower = p < -width || (p == -width && velocity < 0);
+                bool upper = p > width || (p == width && velocity > 0);
+                double slope = lower || upper ? -1 : bias / width - 1;
+                double intercept = lower ? e - bias : upper ? e + bias : e;
+                velocity = intercept + slope * p;
+                if (velocity == 0) return p;
+                double boundary = lower ? -width : upper ? width : velocity > 0 ? width : -width;
+                bool towardBoundary = !lower && !upper || lower && velocity > 0 || upper && velocity < 0;
+                double hit = double.PositiveInfinity;
+                if (towardBoundary)
+                {
+                    double travel = (boundary - p) / velocity;
+                    double ratio = slope * travel;
+                    if (slope == 0) hit = travel;
+                    else if (ratio > -1) hit = PhysicalDemography.Log1p(ratio) / slope;
+                }
+                if (!double.IsInfinity(hit) && hit <= remaining)
+                {
+                    p = boundary;
+                    remaining -= hit;
+                    if (!(remaining > 0)) return p;
+                    continue;
+                }
+                double step = slope == 0 ? velocity * remaining
+                    : velocity * (PhysicalDemography.Expm1(slope * remaining) / slope);
+                return ClampFinite(p + step, -1, 1);
+            }
+            return p;
+        }
+
         public static double NextComplexity(WorldState w, Camp c, double years)
         {
             if (w == null || c == null || !Enabled(w.Config)) return 0;
@@ -1310,7 +1363,7 @@ namespace Anthropocene.Simulation
                 double cTarget = ClampFinite(env.EnvironmentalComplexity, 0, cMax);
                 double pTarget = TargetStratification(cfg, env.EnvironmentalStratification, c.FissionPolicy, c.ImmigrationPolicy, c.CivicFocus);
                 c.CivicComplexity = ClampFinite(Relax(cBefore, cTarget, s.ComplexityRelaxationRate, dt), 0, cMax);
-                c.CivicStratification = ClampFinite(Relax(pBefore, pTarget, s.StratificationRelaxationRate, dt), -1, 1);
+                c.CivicStratification = AdvanceStratification(cfg, pBefore, pTarget, dt);
                 if (reports != null)
                 {
                     reports.Add(new CivicTurnReport
