@@ -16,7 +16,26 @@ namespace Anthropocene.Presentation
         private AgentObservation observation;
         private readonly TurnResolver resolver = new TurnResolver(PhaseExecution.Desktop);
         private readonly AgentObservationBuilder builder = new AgentObservationBuilder();
+        private readonly struct PolicyOrderKey : IEquatable<PolicyOrderKey>
+        {
+            public readonly int Entity;
+            public readonly OrderKind Kind;
+            public PolicyOrderKey(int entity, OrderKind kind) { Entity = entity; Kind = kind; }
+            public bool Equals(PolicyOrderKey other) => Entity == other.Entity && Kind == other.Kind;
+            public override bool Equals(object obj) => obj is PolicyOrderKey other && Equals(other);
+            public override int GetHashCode() => unchecked(Entity * 397 ^ (int)Kind);
+        }
         private readonly Dictionary<int, Order> planned = new Dictionary<int, Order>();
+        private readonly Dictionary<PolicyOrderKey, Order> plannedPolicies = new Dictionary<PolicyOrderKey, Order>();
+        private static bool IsPolicyOrder(OrderKind kind)
+            => kind == OrderKind.FissionPolicy || kind == OrderKind.ImmigrationPolicy || kind == OrderKind.CivicFocus;
+        private IEnumerable<Order> AllPlannedOrders()
+            => planned.Values.Concat(plannedPolicies.Values).OrderBy(o => o.Entity).ThenBy(o => (int)o.Kind);
+        private void ClearPlanned()
+        {
+            planned.Clear();
+            plannedPolicies.Clear();
+        }
         private Task<WorldState> generating;
         private Task saving;
         private Task<TurnRecord> resolving;
@@ -61,7 +80,7 @@ namespace Anthropocene.Presentation
             if (resolving != null && resolving.IsCompleted) { if (resolving.IsFaulted) status = "Turn failed: " + resolving.Exception.GetBaseException().Message; else FinishTurn(resolving.Result); resolving = null; }
             if (generating == null || !generating.IsCompleted) return;
             if (generating.IsFaulted) status = "World generation failed: " + generating.Exception.GetBaseException().Message;
-            else { world = generating.Result; drafting = null; InvalidateWorldPreview(); previewOpen = previewAfterGeneration; previewAfterGeneration = false; menu = false; planned.Clear(); journal.Clear(); lastResolutionSummary = ""; FocusCamp(); Refresh(); status = operation == "Loading the saved opening" ? "Saved opening restored." : "Your people gather automatically. Choose orders, then commit the generation."; transitionDismissed = operation == "Loading the saved opening" && (world.Camps.FirstOrDefault(c => c.Player == 0)?.Technology ?? Technology.None) != Technology.None; StartDraft(); }
+            else { world = generating.Result; drafting = null; InvalidateWorldPreview(); previewOpen = previewAfterGeneration; previewAfterGeneration = false; menu = false; ClearPlanned(); journal.Clear(); lastResolutionSummary = ""; FocusCamp(); Refresh(); status = operation == "Loading the saved opening" ? "Saved opening restored." : "Your people gather automatically. Choose orders, then commit the generation."; transitionDismissed = operation == "Loading the saved opening" && (world.Camps.FirstOrDefault(c => c.Player == 0)?.Technology ?? Technology.None) != Technology.None; StartDraft(); }
             generating = null;
         }
         private void OnDestroy() { if (hex != null) Destroy(hex); InvalidateWorldPreview(); }
@@ -105,8 +124,11 @@ namespace Anthropocene.Presentation
             int seed = PlaytestScenarios.Seed;
             if (scenarioIndex == 0 && !int.TryParse(seedText, out seed)) { status = "Enter a whole-number seed."; return; }
             var config = new SimulationConfig();
-            var profile = Array.IndexOf(System.Environment.GetCommandLineArgs(), "--anthropocene-agricultural-technology") >= 0
-                ? "AgriculturalTechnologyOpeningConfig" : "OpeningConfig";
+            var args = System.Environment.GetCommandLineArgs();
+            var profile = Array.IndexOf(args, "--anthropocene-civic-governance") >= 0
+                ? "CivicGovernanceOpeningConfig"
+                : Array.IndexOf(args, "--anthropocene-agricultural-technology") >= 0
+                    ? "AgriculturalTechnologyOpeningConfig" : "OpeningConfig";
             var tuning = Resources.Load<TextAsset>(profile);
             if (tuning != null)
             {
@@ -116,6 +138,7 @@ namespace Anthropocene.Presentation
                 JsonUtility.FromJsonOverwrite(tuning.text, config);
                 if (!System.Text.RegularExpressions.Regex.IsMatch(tuning.text, "\"Agriculture\"\\s*:\\s*\\{")) config.Agriculture = null;
                 if (!System.Text.RegularExpressions.Regex.IsMatch(tuning.text, "\"SmoothCalendar\"\\s*:\\s*\\{")) config.SmoothCalendar = null;
+                if (!System.Text.RegularExpressions.Regex.IsMatch(tuning.text, "\"Civic\"\\s*:\\s*\\{")) config.Civic = null;
                 config.MigrateMissingPhysicalFoodHorizons();
             }
             var resourceOptions = new ResourceGenerationOptions();
@@ -123,7 +146,6 @@ namespace Anthropocene.Presentation
             {
                 var resourceTuning = Resources.Load<TextAsset>("ResourceGenerationConfig");
                 if (resourceTuning != null) JsonUtility.FromJsonOverwrite(resourceTuning.text, resourceOptions);
-                var args = System.Environment.GetCommandLineArgs();
                 int option = Array.IndexOf(args, "--anthropocene-resource-maximum");
                 if (option >= 0)
                 {
@@ -319,15 +341,22 @@ namespace Anthropocene.Presentation
                 if (reintegrateError != null) { GUI.Label(new Rect(14, y, width, 34), "Unavailable: " + reintegrateError, small); y += 38; }
             }
 
-            bool hasOrder = planned.TryGetValue(selected, out var selectedOrder), available = GUI.enabled;
+            bool hasOrdinary = planned.TryGetValue(selected, out var selectedOrder);
+            var selectedPolicies = plannedPolicies.Values.Where(o => o.Entity == selected).OrderBy(o => (int)o.Kind).ToArray();
+            bool hasOrder = hasOrdinary || selectedPolicies.Length > 0, available = GUI.enabled;
             GUI.enabled = available && hasOrder;
             if (Button(new Rect(14, y, width, 32), "CANCEL SELECTED ORDER [Backspace]")) CancelSelectedOrder();
             GUI.enabled = available; y += 38;
-            GUI.Label(new Rect(14, y, width, 42), hasOrder ? "Selected queue: " + Describe(selectedOrder) + ". Choosing another command replaces it." : "Selected queue: hold position. Choosing a command adds it.", small); y += 48;
+            string selectedQueueSummary = hasOrder
+                ? "Selected queue: " + string.Join(" · ", (hasOrdinary ? new[] { selectedOrder } : Array.Empty<Order>()).Concat(selectedPolicies).Select(Describe)) + ". Choosing another command replaces it."
+                : "Selected queue: hold position. Choosing a command adds it.";
+            float selectedQueueHeight = Mathf.Max(42, small.CalcHeight(new GUIContent(selectedQueueSummary), width) + 6);
+            GUI.Label(new Rect(14, y, width, selectedQueueHeight), selectedQueueSummary, small); y += selectedQueueHeight + 6;
 
             GUI.Label(new Rect(14, y, width, 22), "ORDER QUEUE", section); y += 24;
-            if (planned.Count == 0) { GUI.Label(new Rect(14, y, width, 24), "No explicit orders", small); y += 28; }
-            foreach (var order in planned.Values.OrderBy(o => o.Entity))
+            var queuedOrders = AllPlannedOrders().ToArray();
+            if (queuedOrders.Length == 0) { GUI.Label(new Rect(14, y, width, 24), "No explicit orders", small); y += 28; }
+            foreach (var order in queuedOrders)
             {
                 GUI.Label(new Rect(14, y, width, 36), "◆ " + UnitName(order.Entity) + "  ·  " + Describe(order), small); y += 38;
             }
@@ -468,8 +497,26 @@ namespace Anthropocene.Presentation
             }
             e.Use();
         }
+        private void QueuePolicyOrder(Order order)
+        {
+            if (order == null || saving != null || world.LinkedPopulation(world.Camps.First(c => c.Player == 0)) <= 0) return;
+            string error = resolver.Validate(world, 0, order, new HashSet<int>(observation.Tiles.Keys));
+            if (error != null) { status = "Unavailable: " + error; return; }
+            var key = new PolicyOrderKey(order.Entity, order.Kind);
+            string previous = plannedPolicies.TryGetValue(key, out var prior) ? Describe(prior) : null;
+            plannedPolicies[key] = order.Copy();
+            status = PlanningPath.QueueMessage(previous, Describe(order)) + " It will resolve only when you commit the generation.";
+        }
+        private void CancelPolicyOrder(int entity, OrderKind kind, string committedLabel)
+        {
+            var key = new PolicyOrderKey(entity, kind);
+            if (plannedPolicies.Remove(key))
+                status = "Reverted queued policy change; keeping " + committedLabel + ".";
+        }
         private void Queue(Order order)
         {
+            if (order == null) return;
+            if (IsPolicyOrder(order.Kind)) { QueuePolicyOrder(order); return; }
             if (saving != null || world.LinkedPopulation(world.Camps.First(c => c.Player == 0)) <= 0) return;
             string error = resolver.Validate(world, 0, order, new HashSet<int>(observation.Tiles.Keys));
             if (error != null) { status = "Unavailable: " + error; return; }
@@ -482,7 +529,7 @@ namespace Anthropocene.Presentation
         {
             if (saving != null || world.LinkedPopulation(world.Camps.First(c => c.Player == 0)) <= 0) return;
             resolvingSummary = CommitPreview();
-            var playerOrders = planned.Values.OrderBy(o => o.Entity).Select(o => o.Copy()).ToList();
+            var playerOrders = AllPlannedOrders().Select(o => o.Copy()).ToList();
             var committed = world; var pendingDraft = drafting; drafting = null;
             resolving = Task.Run(() =>
             {
@@ -524,8 +571,10 @@ namespace Anthropocene.Presentation
                 if (ownOrder.Kind == OrderKind.Dispatch) { journal.Add("Turn " + turn + ": " + ownOrder.Population + " people formed a hunter group."); outcomes.Add(ownOrder.Population + " people formed a new hunter group at camp"); }
                 if (ownOrder.Kind == OrderKind.Reintegrate) outcomes.Add(world.Hunters.Any(h => h.Id == ownOrder.Entity) ? "Hunters " + ownOrder.Entity + " could not reintegrate" : "Hunters " + ownOrder.Entity + " rejoined the camp");
             }
+            foreach (var policyOrder in plannedPolicies.Values.OrderBy(o => o.Entity).ThenBy(o => (int)o.Kind))
+                outcomes.Add(UnitName(policyOrder.Entity) + ": " + Describe(policyOrder));
             var previousTechnologies = observation.TechnologyStatuses.Where(s => s.Acquired).Select(s => s.Technology).ToArray();
-            planned.Clear(); Refresh();
+            ClearPlanned(); Refresh();
             // Never show the authoritative global event log to the player: it contains hidden rival activity.
             var ownTransfers = record.Transfers.Where(t => ownIds.Contains(t.Entity)).ToArray();
             foreach (var hunt in ownTransfers.Where(t => t.Kind == "Hunting" && t.Food > 0).GroupBy(t => t.Entity).OrderBy(group => group.Key))
@@ -669,6 +718,10 @@ namespace Anthropocene.Presentation
             if (order.Kind == OrderKind.Fish) return "Fish water tile " + order.Target + (order.Destination >= 0 ? " from tile " + order.Destination : " from current tile");
             if (order.Kind == OrderKind.Move) return "Move to tile " + order.Destination;
             if (order.Kind == OrderKind.Reintegrate) return "Reintegrate at source camp";
+            if (order.Kind == OrderKind.Economy) return "Update settlement economy";
+            if (order.Kind == OrderKind.FissionPolicy) return "Fission policy: " + (FissionPolicy)order.Target;
+            if (order.Kind == OrderKind.ImmigrationPolicy) return "Immigration policy: " + (ImmigrationPolicy)order.Target;
+            if (order.Kind == OrderKind.CivicFocus) return "Civic focus: " + (CivicFocus)order.Target;
             return "Hold position";
         }
         private static string TechName(Technology tech) => tech == Technology.AnimalHusbandry ? "Animal Husbandry" : tech == Technology.Cultivation ? "Agriculture / Cultivation" : "Watercraft";

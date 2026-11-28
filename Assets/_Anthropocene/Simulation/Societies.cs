@@ -47,6 +47,8 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public Dictionary<string, double> CraftExperience = new Dictionary<string, double>();
         [System.Runtime.Serialization.OptionalField] public List<string> UnlockedSpecialists = new List<string>();
         [System.Runtime.Serialization.OptionalField] public List<string> NeolithicTechnologies = new List<string>();
+        [System.Runtime.Serialization.OptionalField] public Dictionary<string, double> CivicExperience = new Dictionary<string, double>();
+        [System.Runtime.Serialization.OptionalField] public List<string> CivicPrecedents = new List<string>();
 #pragma warning restore SYSLIB0050
         // Remembered explored geography and settlement contacts (WP6). Null before the first breakthrough and in older saves.
         [System.Runtime.Serialization.OptionalField] public ContactMemory Memory;
@@ -58,6 +60,7 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public double KinAffinity;
         public double NeolithicPractice(Domain domain) => NeolithicExperience == null ? 0 : NeolithicExperience[(int)domain];
         public bool HasTech(string tech) => NeolithicTechnologies != null && NeolithicTechnologies.Contains(tech);
+        public bool HasCivicPrecedent(string precedent) => CivicPrecedents != null && CivicPrecedents.Contains(precedent);
     }
 
     [Serializable]

@@ -58,7 +58,7 @@ namespace Anthropocene.Simulation
         public static string RequiredTechnology(string role) => role == WorkforceRoles.Toolmaker || role == WorkforceRoles.Stonecutter ? NeolithicTech.Toolmaking : role == WorkforceRoles.Potter || role == WorkforceRoles.ClayMiner ? NeolithicTech.Pottery : role == WorkforceRoles.Weaver ? NeolithicTech.Weaving : role == WorkforceRoles.Carpenter || role == WorkforceRoles.Woodcutter ? NeolithicTech.Carpentry : role == WorkforceRoles.Builder ? NeolithicTech.Construction : null;
         public static string Validate(AgentObservation o, SettlementObservation c, EconomicIntent e)
             => Validate(Constraints(o, c), e);
-        public static EconomicConstraints Constraints(AgentObservation o, SettlementObservation c) => c == null ? null : new EconomicConstraints { Agriculture = c.Agriculture, Husbandry = c.Husbandry, FishingEnabled = c.FishingEnabled, Population = c.Population, Technologies = c.Technologies.ToArray(), FocusTiles = o.Tiles.Values.Where(t => t.Cultivable && o.Map.Distance(c.Tile, t.Id) <= 1).Select(t => t.Id).OrderBy(id => id).ToArray() };
+        public static EconomicConstraints Constraints(AgentObservation o, SettlementObservation c) => c == null ? null : new EconomicConstraints { Agriculture = c.Agriculture, Husbandry = c.Husbandry, FishingEnabled = c.FishingEnabled, StewardEnabled = c.StewardEnabled, Population = c.Population, Technologies = c.Technologies.ToArray(), FocusTiles = o.Tiles.Values.Where(t => t.Cultivable && o.Map.Distance(c.Tile, t.Id) <= 1).Select(t => t.Id).OrderBy(id => id).ToArray() };
         public static string Validate(EconomicConstraints c, EconomicIntent e)
         {
             if (c == null) return "Economic capability information is unavailable.";
@@ -76,6 +76,7 @@ namespace Anthropocene.Simulation
             if (!c.Agriculture && e.Assignments.Any(a => a.Role == WorkforceRoles.Farmer)) return "Farmer assignments require Cultivation.";
             if (!c.Husbandry && e.Assignments.Any(a => a.Role == WorkforceRoles.Herder)) return "Herder assignments require Animal Husbandry.";
             if (!c.FishingEnabled && e.Assignments.Any(a => a.Role == WorkforceRoles.Fisher)) return "Fisher assignments require feature-enabled Watercraft Fishing.";
+            if (!c.StewardEnabled && e.Assignments.Any(a => a.Role == WorkforceRoles.Steward)) return "Steward assignments require Ceremonial Integration with Civic Governance enabled.";
             if (e.ManagedBreedingIntensity > 1) return "Managed breeding intensity must be at most one.";
             if (e.HerdTargetSet && (e.HerdTarget < 0 || !c.Husbandry)) return e.HerdTarget < 0 ? "Herd target cannot be negative." : "A herd target requires Animal Husbandry.";
             return null;
@@ -101,6 +102,7 @@ namespace Anthropocene.Simulation
         public bool Agriculture;
         public bool Husbandry;
         public bool FishingEnabled;
+        public bool StewardEnabled;
         public int Population;
         public string[] Technologies = Array.Empty<string>();
         public int[] FocusTiles = Array.Empty<int>();

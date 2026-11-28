@@ -413,7 +413,7 @@ namespace Anthropocene.Simulation
             for (int i = 0; i < roles.Length; i++)
             {
                 int moved = share[i + 1]; roles[i].Population -= moved;
-                string role = daughterFarmersBecomeGatherers && roles[i].Role == WorkforceRoles.Farmer
+                string role = daughterFarmersBecomeGatherers && (roles[i].Role == WorkforceRoles.Farmer || roles[i].Role == WorkforceRoles.Steward)
                     ? WorkforceRoles.Gatherer : roles[i].Role;
                 if (moved <= 0) continue;
                 composition[role] = (composition.TryGetValue(role, out int prior) ? prior : 0) + moved;
@@ -598,6 +598,7 @@ namespace Anthropocene.Simulation
             view.AquaticFood = Math.Max(0, aquatic); view.Inventory = inventory.Copy();
             view.Inventory.HousingUnits = 0; view.Workforce = WorkforceTransfer.Copy(workforce);
             view.Workforce.Normalize(view.Population); view.EconomicLabor = null; view.IsVillage = false;
+            CivicGovernance.InitializeDaughterView(world, parent, view);
             return new SocialSettlementState
             {
                 Origin = parent, View = view, DeficitYears = Math.Max(0, parent.FoodDeficitYears),
@@ -797,7 +798,7 @@ namespace Anthropocene.Simulation
             // nonnegative and full-nutrition fertility is the maximum birth rate.
             // This avoids an authoritative per-candidate demographic solve while
             // ensuring the service envelope can never spend unfunded food/textile.
-            double fertility = PhysicalDemography.FertilityFactor(world, state.Origin);
+            double fertility = PhysicalDemography.FertilityFactor(world, c);
             double servicePersonYears = PhysicalDemography.BirthOnlyPersonYears(c.Population,
                 cfg.BaseBirthRate * fertility, years);
             double foodNeed = servicePersonYears * PhysicalDemography.FoodPerPersonYear(cfg);
@@ -840,20 +841,28 @@ namespace Anthropocene.Simulation
             double e = Expectation(n, c);
             double protection = Math.Max(n.RudimentaryWeightClothing * (1 - e), n.RudimentaryWeightClothing)
                 + Math.Max(n.RudimentaryWeightHousing * (1 - e), n.RudimentaryWeightHousing);
-            double scaleLow = NeolithicProduction.CohesionScale(n, 0), scaleHigh = NeolithicProduction.CohesionScale(n, 1);
-            if (!(scaleLow > 0) || !(scaleHigh > 0) || !(n.SocialCohesionExponent > 0)) return double.PositiveInfinity;
-            double cohesion = Math.Max(NeolithicProduction.SocialCohesion(n, 0, c.Population),
-                NeolithicProduction.SocialCohesion(n, 1, c.Population));
-            double qoL = Numbers.Clamp(f.Nutrition * state.WaterCoverage * Math.Max(0, protection) * cohesion, 0, 1);
+            bool civicEnabled = CivicGovernance.Enabled(cfg);
+            double civicMult = civicEnabled ? CivicGovernance.CohesionMultiplier(world, c) : 1;
+            double eqMult = civicEnabled ? CivicGovernance.QoLEqualityMultiplier(world, c) : 1;
+            if (!(civicMult > 0) || double.IsNaN(civicMult) || double.IsInfinity(civicMult) ||
+                !(eqMult >= 0) || double.IsNaN(eqMult) || double.IsInfinity(eqMult))
+                return double.PositiveInfinity;
+            double scaleLow = NeolithicProduction.CohesionScale(n, 0, civicMult), scaleHigh = NeolithicProduction.CohesionScale(n, 1, civicMult);
+            if (!(scaleLow > 0) || double.IsInfinity(scaleLow) || !(scaleHigh > 0) || double.IsInfinity(scaleHigh) || !(n.SocialCohesionExponent > 0))
+                return double.PositiveInfinity;
+            double cohesion = Math.Max(NeolithicProduction.SocialCohesion(n, 0, c.Population, civicMult),
+                NeolithicProduction.SocialCohesion(n, 1, c.Population, civicMult));
+            double baseQoL = f.Nutrition * state.WaterCoverage * Math.Max(0, protection) * cohesion;
+            double qoL = Numbers.Clamp(civicEnabled ? baseQoL * eqMult : baseQoL, 0, 1);
 
             bool deficient = f.Nutrition < 1 - 1e-12;
             double years = f.Years;
             double graceRemaining = deficient
                 ? Math.Max(0, PhysicalDemography.StarvationGraceYears(cfg) - state.DeficitYears) : years;
             double firstYears = Math.Min(years, graceRemaining);
-            double crowding = PhysicalDemography.CrowdingMitigation(world, state.Origin);
-            double disease = PhysicalDemography.DiseaseMitigation(world, state.Origin);
-            double additional = PhysicalDemography.AdditionalMortality(world, state.Origin);
+            double crowding = PhysicalDemography.CrowdingMitigation(world, c);
+            double disease = PhysicalDemography.DiseaseMitigation(world, c);
+            double additional = PhysicalDemography.AdditionalMortality(world, c);
             double MinimumDeath(bool legacyStarvation)
             {
                 double best = double.PositiveInfinity;
@@ -930,29 +939,30 @@ namespace Anthropocene.Simulation
                     + opportunity.ShelterPeople;
                 shelter = new NeolithicProduction.ShelterCapacity(fixedPeople, lightPeople);
             }
+            bool civicEnabled = CivicGovernance.Enabled(cfg);
+            double civicMult = civicEnabled ? CivicGovernance.CohesionMultiplier(world, c) : 1;
+            double eqMult = civicEnabled ? CivicGovernance.QoLEqualityMultiplier(world, c) : 1;
             double housingCoverage = NeolithicProduction.HousingCoverage(shelter, c.Population);
             double housingShare = NeolithicProduction.HousingShare(n, shelter, c.Population);
             double expectation = Expectation(n, c);
             double protection = n.RudimentaryWeightClothing * (1 - expectation * (1 - clothingCoverage))
                 + n.RudimentaryWeightHousing * (1 - expectation * (1 - housingCoverage));
             double qoL = nutrition * state.WaterCoverage * protection
-                * NeolithicProduction.SocialCohesion(n, housingShare, c.Population);
+                * NeolithicProduction.SocialCohesion(n, housingShare, c.Population, civicMult);
+            if (civicEnabled) qoL *= eqMult;
 
             bool deficient = nutrition < 1 - 1e-12;
             double graceRemaining = deficient
                 ? Math.Max(0, PhysicalDemography.StarvationGraceYears(cfg) - state.DeficitYears) : years;
             double firstYears = Math.Min(years, graceRemaining);
+            double crowding = PhysicalDemography.CrowdingMitigation(world, c);
+            double disease = PhysicalDemography.DiseaseMitigation(world, c);
+            double additional = PhysicalDemography.AdditionalMortality(world, c);
             var first = PhysicalDemography.Rates(cfg, c.Population, nutrition, clothingCoverage,
-                shelter.Total, false, state.DensityPopulationOffset,
-                PhysicalDemography.CrowdingMitigation(world, state.Origin),
-                PhysicalDemography.DiseaseMitigation(world, state.Origin),
-                fertility, PhysicalDemography.AdditionalMortality(world, state.Origin));
+                shelter.Total, false, state.DensityPopulationOffset, crowding, disease, fertility, additional);
             var second = deficient && firstYears < years
                 ? PhysicalDemography.Rates(cfg, c.Population, nutrition, clothingCoverage, shelter.Total, true,
-                    state.DensityPopulationOffset,
-                    PhysicalDemography.CrowdingMitigation(world, state.Origin),
-                    PhysicalDemography.DiseaseMitigation(world, state.Origin),
-                    fertility, PhysicalDemography.AdditionalMortality(world, state.Origin))
+                    state.DensityPopulationOffset, crowding, disease, fertility, additional)
                 : first;
             double population = c.Population, personYears = 0, exposureDeaths = 0, crowdingDeaths = 0, diseaseDeaths = 0, starvationDeaths = 0;
             void Segment(double duration, DemographicRates rates)

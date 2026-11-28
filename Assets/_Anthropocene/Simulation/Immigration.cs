@@ -210,6 +210,38 @@ namespace Anthropocene.Simulation
             => config.ImmigrationDistanceCost * distance + config.ImmigrationAttachmentCost
                 + LifestyleCost(config, source, destination) + penalty;
 
+        internal static SocialRelocationPolicy PolicyFor(WorldState w, Camp source, Camp destination, int distance, double penalty)
+        {
+            var cfg = w.Config;
+            double baseCost = PrivateCost(cfg, distance, source, destination, penalty);
+            if (!CivicGovernance.Enabled(cfg))
+                return new SocialRelocationPolicy(cfg.ImmigrationDeadband, 0, cfg.FissionDaughterMargin,
+                    cfg.FissionDaughterMargin, 1, 0, baseCost, 0, cfg.ImmigrationQualityWeight);
+            var cs = cfg.Civic;
+            double deltaKPol = 0, incTol = cfg.FissionDaughterMargin;
+            if (destination.ImmigrationPolicy == ImmigrationPolicy.Open)
+            {
+                deltaKPol = -cs.OpenImmigrationCostReduction;
+                incTol = cfg.FissionDaughterMargin + cs.OpenIncumbentToleranceBonus;
+            }
+            else if (destination.ImmigrationPolicy == ImmigrationPolicy.Restricted)
+            {
+                deltaKPol = cs.RestrictedImmigrationCostPenalty;
+                incTol = cfg.FissionDaughterMargin * cs.RestrictedIncumbentToleranceScale;
+            }
+            double covDest = CivicGovernance.CivicCoverage(w, destination);
+            double deltaKP = covDest > 0 && !double.IsNaN(destination.CivicStratification)
+                ? cs.StratificationImmigrationFriction
+                    * Numbers.Clamp(destination.CivicStratification, -1, 1)
+                    * Numbers.Clamp(destination.CivicComplexity, 0, 1)
+                    * covDest
+                : 0;
+            double deltaKExit = -cs.ExitMismatchImmigrationReduction * CivicGovernance.ExitMismatch(source);
+            double privateCost = Math.Max(0, baseCost + deltaKPol + deltaKP + deltaKExit);
+            return new SocialRelocationPolicy(cfg.ImmigrationDeadband, 0, cfg.FissionDaughterMargin,
+                incTol, 1, 0, privateCost, 0, cfg.ImmigrationQualityWeight);
+        }
+
         private static SocialRelocationEvaluation Decide(Context context, Camp source, Camp destination, int movers,
             int pendingPopulation, double pendingPlant, double pendingAnimal, double pendingAquatic,
             PopulationLedger pendingWorkforce, double pendingDeficitExposure,
@@ -243,9 +275,9 @@ namespace Anthropocene.Simulation
                 SocialRelocationDestination.ExistingSettlement, transfer.MoverComposition, pendingReservations);
             var opportunity = EmploymentOpportunityMatcher.Match(context.Opportunities, request);
             var destinationOpportunity = EmploymentOpportunityMatch.Combine(pendingOpportunity, opportunity);
-            var policy = new SocialRelocationPolicy(cfg.ImmigrationDeadband, 0, cfg.FissionDaughterMargin,
-                cfg.FissionDaughterMargin, 1, 0, PrivateCost(cfg, context.World.Map.Distance(source.Tile, destination.Tile),
-                    source, destination, ReturnPenalty(context.World, source, destination)), 0, cfg.ImmigrationQualityWeight);
+            var policy = PolicyFor(context.World, source, destination,
+                context.World.Map.Distance(source.Tile, destination.Tile),
+                ReturnPenalty(context.World, source, destination));
 
             // Exact mover-gate screen: the destination's utility cannot exceed
             // its food-stage bound, so a pair whose bound already misses the
@@ -482,11 +514,8 @@ namespace Anthropocene.Simulation
                 var sourceAfter = Forecast(intent.Source, null);
                 var destinationNoMove = Forecast(intent.Destination, intent);
                 var destinationAfter = Forecast(intent.Destination, null);
-                var cfg = context.World.Config;
-                var policy = new SocialRelocationPolicy(cfg.ImmigrationDeadband, 0,
-                    cfg.FissionDaughterMargin, cfg.FissionDaughterMargin, 1, 0,
-                    PrivateCost(cfg, intent.Distance, intent.Source, intent.Destination, intent.Penalty),
-                    0, cfg.ImmigrationQualityWeight);
+                var policy = PolicyFor(context.World, intent.Source, intent.Destination,
+                    intent.Distance, intent.Penalty);
                 return SocialRelocationEvaluator.Evaluate(SocialRelocationDestination.ExistingSettlement,
                     sourceNoMove, sourceAfter, destinationNoMove, destinationAfter, policy, Match(intent));
             }

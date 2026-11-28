@@ -20,6 +20,14 @@ namespace Anthropocene.Simulation
             if (order.Economy != null) return "Economic payload requires an economic order.";
             if (order.Kind == OrderKind.FissionPolicy)
                 return settlement == null || order.Target < 0 || order.Target > (int)FissionPolicy.Encourage || order.Destination >= 0 || order.Population != 0 ? "A fission policy must name Neutral, Discourage or Encourage for a settlement." : null;
+            if (order.Kind == OrderKind.ImmigrationPolicy)
+                return !o.CivicGovernanceEnabled ? "Immigration policy requires civic governance."
+                    : settlement == null || order.Target < 0 || order.Target > (int)ImmigrationPolicy.Restricted || order.Destination >= 0 || order.Population != 0
+                        ? "An immigration policy must name Neutral, Open or Restricted for a settlement." : null;
+            if (order.Kind == OrderKind.CivicFocus)
+                return !o.CivicGovernanceEnabled ? "Civic focus requires civic governance."
+                    : settlement == null || order.Target < 0 || order.Target > (int)CivicFocus.Centralized || order.Destination >= 0 || order.Population != 0
+                        ? "A civic focus must name Auto, Communal or Centralized for a settlement." : null;
             if (order.Kind == OrderKind.NoOp) return order.Destination >= 0 || order.Target >= 0 || order.Population != 0 ? "Wait cannot include movement or another action." : null;
             if (order.Kind == OrderKind.Dispatch)
                 return settlement == null || order.Destination >= 0 || order.Target >= 0 || order.Population <= 0 || order.Population > settlement.Gatherers || settlement.Population - order.Population < o.MinimumCamp ? "Dispatch must use available gatherers and preserve the camp's minimum population." : null;
@@ -80,6 +88,11 @@ namespace Anthropocene.Simulation
                 {
                     if (camp.Agriculture || camp.Husbandry || camp.FishingEnabled) { mask.Economy = EconomicIntents.Constraints(o, camp); Add(new Order(OrderKind.Economy, entity) { Economy = camp.Economy.Copy() }); }
                     foreach (FissionPolicy policy in Enum.GetValues(typeof(FissionPolicy))) Add(new Order(OrderKind.FissionPolicy, entity, target: (int)policy));
+                    if (o.CivicGovernanceEnabled)
+                    {
+                        foreach (ImmigrationPolicy policy in Enum.GetValues(typeof(ImmigrationPolicy))) Add(new Order(OrderKind.ImmigrationPolicy, entity, target: (int)policy));
+                        foreach (CivicFocus focus in Enum.GetValues(typeof(CivicFocus))) Add(new Order(OrderKind.CivicFocus, entity, target: (int)focus));
+                    }
                     int max = Math.Min(camp.Gatherers, camp.Population - o.MinimumCamp);
                     if (OrderRules.Validate(o, new Order(OrderKind.Dispatch, entity, population: max)) == null) { mask.MinimumDispatch = 1; mask.MaximumDispatch = max; }
                 }

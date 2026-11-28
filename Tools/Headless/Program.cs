@@ -294,6 +294,7 @@ internal static class Program
         if (args.Contains("--surplus-equilibria")) return DemographySocialAblation.RunSurplusEquilibria();
         if (args.Contains("--kernel-mixed-checks")) { KernelMixedChecks.Run(); return 0; }
         if (args.Contains("--bound-audit")) SocialRelocationForecastCache.AuditBounds = true;
+        if (args.Contains("--civic-only")) { CivicGovernanceChecks.Run(); return 0; }
         var kernelScaling = args.FirstOrDefault(a => a.StartsWith("--kernel-scaling=", StringComparison.Ordinal));
         if (kernelScaling != null)
         {
@@ -452,6 +453,7 @@ internal static class Program
                 new ParallelChecks.Entry { Name = "FarmFoodPhaseChecks", Run = () => FarmFoodPhaseChecks.Run() },
                 new ParallelChecks.Entry { Name = "CultivationCacheChecks", Run = () => CultivationCacheChecks.Run() },
                 new ParallelChecks.Entry { Name = "AgriculturalTechnologyChecks", Run = () => AgriculturalTechnologyChecks.Run() },
+                new ParallelChecks.Entry { Name = "CivicGovernanceChecks", Run = () => CivicGovernanceChecks.Run() },
                 new ParallelChecks.Entry { Name = "HorizonCultivationChecks", Run = () => HorizonCultivationChecks.Run() },
                 new ParallelChecks.Entry { Name = "HorizonEcologyChecks", Run = () => HorizonEcologyChecks.Run() },
                 new ParallelChecks.Entry { Name = "HorizonExecutionChecks", Run = () => HorizonExecutionChecks.Run() },

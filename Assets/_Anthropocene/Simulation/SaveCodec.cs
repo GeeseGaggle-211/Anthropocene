@@ -298,6 +298,9 @@ namespace Anthropocene.Simulation
                 if (soc.CraftExperience == null) soc.CraftExperience = new System.Collections.Generic.Dictionary<string, double>();
                 if (soc.UnlockedSpecialists == null) soc.UnlockedSpecialists = new System.Collections.Generic.List<string>();
                 if (soc.NeolithicTechnologies == null) soc.NeolithicTechnologies = new System.Collections.Generic.List<string>();
+                if (soc.CivicExperience == null) soc.CivicExperience = new System.Collections.Generic.Dictionary<string, double>();
+                if (soc.CivicPrecedents == null) soc.CivicPrecedents = new System.Collections.Generic.List<string>();
+                CivicGovernance.ValidateLoadedSociety(soc);
                 soc.FishingGroundKnowledge = soc.FishingGroundKnowledge ?? new System.Collections.Generic.List<FishingGroundSnapshot>();
             }
             bool legacyGenerationalConfig = config.StartingReserveGenerations <= 0 && config.HunterCarryGenerations <= 0 && config.MinimumStorageGenerations <= 0 && config.MaximumStorageGenerations <= 0;
@@ -330,6 +333,7 @@ namespace Anthropocene.Simulation
                 // Herd target (Docs/HerdLabour.md): absent in older saves, which load unset and so never slaughter.
                 if (!camp.HerdTargetSet) camp.HerdTarget = 0;
                 else if (camp.HerdTarget < 0) throw new InvalidDataException("Invalid herd target.");
+                CivicGovernance.ValidateLoadedCamp(camp);
             }
             if (config.ActiveFishingPracticeMultiplier <= 0) config.ActiveFishingPracticeMultiplier = 4.25;
             if (config.GrasslandHerdDensityMultiplier <= 0) config.GrasslandHerdDensityMultiplier = 1.35;

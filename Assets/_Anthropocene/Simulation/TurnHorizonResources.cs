@@ -307,6 +307,10 @@ namespace Anthropocene.Simulation
                 foreach (int id in claims.Where(d => d.Kind == "Drinking").Select(d => d.Tile).Distinct())
                 { LazyEcology.MaterializeEcology(w, id, horizon.StartDays); activeTiles.Add(id); touch(id); }
             }
+            // Tier 2 (Docs/CivicGovernance.md §5 Choice #10): municipal sanitation water after biological claims and
+            // before irrigation, which already protects every non-irrigation freshwater claim on its source.
+            CivicGovernance.AllocateSanitationWater(w, claims, horizon.StartDays, horizon.Days, record,
+                id => { LazyEcology.MaterializeEcology(w, id, horizon.StartDays); activeTiles.Add(id); touch(id); });
             var irrigation = IrrigationEconomy.Allocate(w, claims, horizon.StartDays, horizon.Days);
             claims.AddRange(irrigation.Withdrawals);
             if (IrrigationEconomy.Enabled(w)) record.IrrigationWater = irrigation.Receipts;
@@ -535,7 +539,7 @@ namespace Anthropocene.Simulation
             LastMetrics.HorizonCommitMilliseconds = commitTimer.Elapsed.TotalMilliseconds;
             foreach (var transfer in transfers)
             {
-                if (transfer.Kind == "Drinking" || transfer.Kind == "Irrigation") { /* Water-only receipt; already debited at its source. */ }
+                if (transfer.Kind == "Drinking" || transfer.Kind == "Irrigation" || transfer.Kind == "SanitationWater") { /* Water-only receipt; already debited at its source. */ }
                 else if (transfer.Kind == "Herd")
                 {
                     var herd = herds[transfer.Entity];

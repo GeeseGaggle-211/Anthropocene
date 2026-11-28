@@ -152,7 +152,7 @@ namespace Anthropocene.Simulation
                 double q = Math.Max(0, planned(r.Good));
                 if (equipment) equipmentOutputs += q;
                 if (r.Good == CraftGood.Housing) housingAssembly += q;
-                else if (IrrigationEconomy.InfrastructureGood(r.Good)) infrastructureMaterials += q * r.HousingMaterial;
+                else if (NeolithicProduction.IsInfrastructureGood(r.Good)) infrastructureMaterials += q * r.HousingMaterial;
             }
         }
     }

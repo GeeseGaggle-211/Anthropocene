@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using Anthropocene.Simulation;
 using UnityEngine;
@@ -18,6 +20,8 @@ namespace Anthropocene.Presentation
             string before = draft.Stamp;
             bool husbandry = CultivationEconomy.HusbandryEnabled(camp);
             bool fishing = FishingEconomy.FeatureEnabled(world, camp);
+            bool civicEnabled = CivicGovernance.Enabled(world.Config);
+            bool sanitationEnabled = CivicGovernance.SanitationEnabled(world.Config);
             float width = Mathf.Min(1040, Screen.width - 32), height = Mathf.Min(820, Screen.height - 32);
             Fill(new Rect(0, 0, Screen.width, Screen.height), new Color(.02f, .03f, .03f, .88f));
             var panel = new Rect((Screen.width - width) / 2, (Screen.height - height) / 2, width, height);
@@ -36,7 +40,8 @@ namespace Anthropocene.Presentation
             float pastoralDescriptionHeight = husbandry ? small.CalcHeight(new GUIContent(pastoralDescription), col - 8) + 8 : 0;
             float livestockRows = husbandry ? ownedLivestock.Length * 54 : 0;
             float fishingRows = fishing ? observation.FishingGrounds.Count(g => world.Map.Distance(camp.Tile, g.Tile) <= FishingEconomy.GroundRange + 1) * 24 : 0;
-            float contentHeight = Mathf.Max(1370 + livestockRows + fishingRows, 940 + livestockRows + pastoralDescriptionHeight + fishingRows) + (world.Config.Agriculture == null ? 0 : 240);
+            float civicPanelExtra = civicEnabled ? (sanitationEnabled ? 430f : 380f) : (world.Config.FissionEnabled ? 110f : 0f);
+            float contentHeight = Mathf.Max(1370 + livestockRows + fishingRows, 940 + livestockRows + pastoralDescriptionHeight + fishingRows) + (world.Config.Agriculture == null ? 0 : 240) + civicPanelExtra;
             villageInspectorScroll = GUI.BeginScrollView(new Rect(12, 52, width - 24, height - 64), villageInspectorScroll, new Rect(0, 0, scrollContentWidth, contentHeight));
             float y = 4;
             var inventory = camp.Inventory;
@@ -74,13 +79,17 @@ namespace Anthropocene.Presentation
             }
             float x = 4, wy = y;
             GUI.Label(new Rect(x, wy, col, 24), "WORKFORCE", section); wy += 28;
-            foreach (string role in WorkforceRoles.All.Where(r => r != WorkforceRoles.Gatherer))
+            foreach (string role in WorkforceRoles.All.Where(r => r != WorkforceRoles.Gatherer && (civicEnabled || r != WorkforceRoles.Steward)))
             {
                 int count = draft.Assignments.Where(a => a.Role == role).Sum(a => a.Population);
                 int free = camp.Population - draft.Assignments.Sum(a => a.Population);
                 string tech = EconomicIntents.RequiredTechnology(role);
-                bool available = role == WorkforceRoles.Farmer ? CultivationEconomy.Enabled(camp) : role == WorkforceRoles.Herder ? husbandry : role == WorkforceRoles.Fisher ? fishing : tech == null || camp.People.HasTech(tech);
-                GUI.Label(new Rect(x, wy, col - 78, 24), WorkforceRoles.Label(role) + ": " + count + (available ? "" : " (locked)"), small);
+                bool available = role == WorkforceRoles.Farmer ? CultivationEconomy.Enabled(camp)
+                    : role == WorkforceRoles.Herder ? husbandry
+                    : role == WorkforceRoles.Fisher ? fishing
+                    : role == WorkforceRoles.Steward ? CivicGovernance.StewardAvailable(world, camp)
+                    : tech == null || camp.People.HasTech(tech);
+                GUI.Label(new Rect(x, wy, col - 78, 24), WorkforceRoles.Label(role, camp) + ": " + count + (available ? "" : " (locked)"), small);
                 if (Button(new Rect(x + col - 74, wy, 32, 22), "−") && count > 0)
                 {
                     var a = draft.Assignments.First(v => v.Role == role); a.Population--; if (a.Population == 0) draft.Assignments.Remove(a);
@@ -185,8 +194,124 @@ namespace Anthropocene.Presentation
             }
             GUI.Label(new Rect(x, fy + 10, col - 8, 280), AgriculturalTechnology.Plough(world, camp) || world.Config.Agriculture != null
                 ? IrrigationEconomy.Status(world, camp) + $"\nConstruction progress: {(world.Canals?.Where(s => s.Operator == camp.Id).Sum(s => s.Construction) ?? 0):F2} completed segment equivalents." : "Plough and Irrigation are available in the opt-in agricultural technology profile.", small);
+            if (civicEnabled || world.Config.FissionEnabled)
+            {
+                float gy = Mathf.Max(wy + 104f, Mathf.Max(cy + 8f, fy + 296f)) + 12f;
+                float panelHeight = civicEnabled ? (sanitationEnabled ? 370f : 330f) : 82f;
+                Fill(new Rect(4, gy, scrollContentWidth - 16, panelHeight), new Color(.11f, .13f, .12f));
+                float px = 14f, py = gy + 10f, pw = scrollContentWidth - 36f;
+                if (civicEnabled)
+                {
+                    var inv = CultureInfo.InvariantCulture;
+                    GUI.Label(new Rect(px, py, pw, 22), "CIVIC & GOVERNANCE", section); py += 26f;
+                    double cMax = CivicGovernance.MaxComplexity(world, camp);
+                    double friction = CivicGovernance.AlignmentFriction(world, camp);
+                    string focusLabel = CivicGovernance.EffectiveFocusLabel(camp);
+                    GUI.Label(new Rect(px, py, pw, 22),
+                        "Complexity C " + camp.CivicComplexity.ToString("F2", inv) + " / " + cMax.ToString("F2", inv)
+                        + " (env " + camp.LastEnvironmentalComplexity.ToString("F2", inv) + ")  ·  Power P "
+                        + camp.CivicStratification.ToString("+0.00;-0.00;0.00", inv)
+                        + " (env " + camp.LastEnvironmentalStratification.ToString("+0.00;-0.00;0.00", inv) + ")", small);
+                    py += 24f;
+                    GUI.Label(new Rect(px, py, pw, 22),
+                        "Alignment friction " + friction.ToString("F2", inv) + "×  ·  Effective focus: " + focusLabel
+                        + "  ·  Role: " + WorkforceRoles.Label(WorkforceRoles.Steward, camp), small);
+                    py += 24f;
+                    double civicCov = CivicGovernance.CivicCoverage(world, camp);
+                    double reqCap = CivicGovernance.RequiredCivicCapital(world, camp);
+                    double reqStewards = CivicGovernance.RequiredStewards(world, camp);
+                    int committedStewards = CultivationEconomy.Workers(camp, WorkforceRoles.Steward);
+                    int draftedStewards = draft.Assignments.Where(a => a.Role == WorkforceRoles.Steward).Sum(a => a.Population);
+                    GUI.Label(new Rect(px, py, pw, 22),
+                        "Civic coverage I_civic " + (civicCov * 100).ToString("F0", inv) + "%  ·  Civic capital "
+                        + camp.CivicCapital.ToString("F1", inv) + " / " + reqCap.ToString("F1", inv)
+                        + "  ·  Stewards " + committedStewards
+                        + (draftedStewards != committedStewards ? " (draft " + draftedStewards + ")" : "")
+                        + " / " + reqStewards.ToString("F1", inv), small);
+                    py += 24f;
+                    if (sanitationEnabled)
+                    {
+                        double sanitCov = CivicGovernance.SanitationCoverage(world, camp);
+                        double reqSanit = CivicGovernance.RequiredSanitationCapital(world.Config, camp.Population);
+                        GUI.Label(new Rect(px, py, pw, 22),
+                            "Sanitation I_sanit " + (sanitCov * 100).ToString("F0", inv) + "%  ·  Capital "
+                            + camp.SanitationCapital.ToString("F1", inv) + " / " + reqSanit.ToString("F1", inv)
+                            + "  ·  Water W_sanit " + (camp.SanitationWaterRatio * 100).ToString("F0", inv) + "%", small);
+                        py += 24f;
+                    }
+                    var cs = world.Config.Civic;
+                    var precedentDefs = new List<(string Id, string Label, double Threshold)>
+                    {
+                        (CivicPrecedents.CeremonialIntegration, "Ceremonial Integration", cs.Tier1PracticeThreshold),
+                        (CivicPrecedents.CivicOrganization, "Civic Organization", cs.Tier2PracticeThreshold),
+                        (CivicPrecedents.TokensAndAccounting, "Tokens & Accounting", cs.Tier3APracticeThreshold)
+                    };
+                    if (sanitationEnabled)
+                        precedentDefs.Add((CivicPrecedents.PlannedQuartersAndDrainage, "Planned Quarters & Drainage", cs.Tier3BPracticeThreshold));
+                    var unlocked = new List<string>();
+                    var progress = new List<string>();
+                    foreach (var pDef in precedentDefs)
+                    {
+                        if (camp.People != null && camp.People.HasCivicPrecedent(pDef.Id))
+                            unlocked.Add(pDef.Label);
+                        else
+                        {
+                            double xp = 0;
+                            if (camp.People != null && camp.People.CivicExperience != null)
+                                camp.People.CivicExperience.TryGetValue(pDef.Id, out xp);
+                            progress.Add(pDef.Label + " " + xp.ToString("F1", inv) + "/" + pDef.Threshold.ToString("F0", inv));
+                        }
+                    }
+                    GUI.Label(new Rect(px, py, pw, 22),
+                        "Unlocked precedents: " + (unlocked.Count == 0 ? "None" : string.Join(", ", unlocked)), small);
+                    py += 24f;
+                    string progressLine = "Progress: " + (progress.Count == 0 ? "All precedents unlocked" : string.Join("  ·  ", progress));
+                    float progressHeight = Mathf.Max(22f, small.CalcHeight(new GUIContent(progressLine), pw) + 4f);
+                    GUI.Label(new Rect(px, py, pw, progressHeight), progressLine, small);
+                    py += progressHeight + 8f;
+                }
+                else
+                {
+                    GUI.Label(new Rect(px, py, pw, 22), "SETTLEMENT POLICY", section); py += 26f;
+                }
+                if (civicEnabled || world.Config.FissionEnabled)
+                    DrawPolicyToggleRow("Fission policy", camp.Id, OrderKind.FissionPolicy, (int)camp.FissionPolicy,
+                        new[] { "Neutral", "Discourage", "Encourage" }, px, ref py, pw);
+                if (civicEnabled)
+                {
+                    DrawPolicyToggleRow("Immigration policy", camp.Id, OrderKind.ImmigrationPolicy, (int)camp.ImmigrationPolicy,
+                        new[] { "Neutral", "Open", "Restricted" }, px, ref py, pw);
+                    DrawPolicyToggleRow("Civic focus", camp.Id, OrderKind.CivicFocus, (int)camp.CivicFocus,
+                        new[] { "Auto", "Communal", "Centralized" }, px, ref py, pw);
+                }
+            }
             GUI.EndScrollView(); GUI.EndGroup();
             if (draft.Stamp != before) Queue(new Order(OrderKind.Economy, camp.Id) { Economy = draft });
+        }
+        private void DrawPolicyToggleRow(string label, int campId, OrderKind kind, int committedValue, string[] optionLabels, float x, ref float y, float width)
+        {
+            var key = new PolicyOrderKey(campId, kind);
+            int? queuedValue = plannedPolicies.TryGetValue(key, out var queuedOrder) ? queuedOrder.Target : (int?)null;
+            int effectiveValue = queuedValue ?? committedValue;
+            float labelWidth = 210f;
+            float gap = 6f;
+            float btnWidth = Mathf.Max(60f, (width - labelWidth - gap * 2f) / 3f);
+            GUI.Label(new Rect(x, y + 3f, labelWidth - 8f, 22f),
+                label + (queuedValue.HasValue && queuedValue.Value != committedValue ? " (queued)" : ""), small);
+            for (int v = 0; v < 3; v++)
+            {
+                bool isActive = effectiveValue == v;
+                bool isQueued = queuedValue.HasValue && queuedValue.Value == v && v != committedValue;
+                bool isCommitted = committedValue == v;
+                string btnText = (isQueued ? "◆ " : isCommitted ? "● " : "◇ ") + optionLabels[v] + (isQueued ? "*" : "");
+                var btnRect = new Rect(x + labelWidth + v * (btnWidth + gap), y, btnWidth, 26f);
+                if (Button(btnRect, btnText, isActive))
+                {
+                    if (v == committedValue) CancelPolicyOrder(campId, kind, label + " " + optionLabels[v]);
+                    else QueuePolicyOrder(new Order(kind, campId, target: v));
+                }
+            }
+            y += 32f;
         }
         private int villageAutomationTurns = 5;
         private void DrawEconomicValue(string label, ref double value, float x, ref float y, float width, double step)

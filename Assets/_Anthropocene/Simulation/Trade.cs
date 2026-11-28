@@ -551,6 +551,7 @@ namespace Anthropocene.Simulation
         internal sealed class Valuation
         {
             public int Camp, Society, Tile;
+            public bool HasAccounting;
             public readonly ValueCurve[] Curves = new ValueCurve[Registry.Length];      // per good (shared instances per key)
             public readonly double[] Held = new double[Registry.Length];
             public readonly bool[] Active = new bool[Registry.Length];
@@ -678,7 +679,7 @@ namespace Anthropocene.Simulation
         {
             var context = new CampContext { LastProduction = lastProduction, Recipes = recipes ?? NeolithicProduction.Recipes(w.Config), MaterialUse = materialUse == null ? new double[4] : materialUse.Length >= 4 ? materialUse : materialUse.Concat(new double[4 - materialUse.Length]).ToArray() };
             var cfg = w.Config;
-            var v = new Valuation { Camp = c.Id, Society = c.SocietyId, Tile = c.Tile };
+            var v = new Valuation { Camp = c.Id, Society = c.SocietyId, Tile = c.Tile, HasAccounting = CivicGovernance.HasAccounting(w, c) };
             var built = new Dictionary<string, CurveTerms>(); var held = new Dictionary<string, double>();
             // A key the planner has priced uses its published schedule; every other key its provisional builder.
             var published = Published(c);
@@ -864,7 +865,10 @@ namespace Anthropocene.Simulation
         private static TradeAgreement Respond(Valuation r, Valuation p, Requisition x, SimulationConfig cfg, HashSet<(int, int, string)> flows)
         {
             Counters.Count(ref Counters.Responds);
-            double margin = cfg.TradeMargin * (1 - x.Affinity), transport = Math.Min(1, cfg.TradeDistanceCostPerHex * x.Distance);
+            double margin = cfg.TradeMargin * (1 - x.Affinity);
+            if (r.HasAccounting || p.HasAccounting)
+                margin *= CivicGovernance.TradeMarginMultiplier(cfg, r.HasAccounting, p.HasAccounting);
+            double transport = Math.Min(1, cfg.TradeDistanceCostPerHex * x.Distance);
             TradeAgreement best = null;
             foreach (var want in x.Wants)
                 foreach (var give in x.Gives)
@@ -917,11 +921,16 @@ namespace Anthropocene.Simulation
             // that can take part (a requester with a partner, and its partners) are valued; a camp with no possible partner
             // could never send or receive a requisition.
             var societyOf = eligible.ToDictionary(c => c.Id, c => c.SocietyId);
-            var partnersOf = workers.Map(eligible, c => c.People.Memory.Contacts
-                .Where(k => !k.Moved && k.Tile >= 0 && societyOf.TryGetValue(k.Camp, out int society) && society != c.SocietyId)
-                .Select(k => (k.Camp, Distance: map.Distance(c.Tile, k.Tile)))
-                .Where(p => p.Distance <= cfg.TradeRange)
-                .OrderBy(p => p.Distance).ThenBy(p => p.Camp).Take(cfg.TradeRequisitionsPerCamp).ToArray());
+            var partnersOf = workers.Map(eligible, c =>
+            {
+                long range = (long)cfg.TradeRange + CivicGovernance.ExtraTradeRange(w, c);
+                int maxReqs = cfg.TradeRequisitionsPerCamp + CivicGovernance.ExtraTradeRequisitions(w, c);
+                return c.People.Memory.Contacts
+                    .Where(k => !k.Moved && k.Tile >= 0 && societyOf.TryGetValue(k.Camp, out int society) && society != c.SocietyId)
+                    .Select(k => (k.Camp, Distance: map.Distance(c.Tile, k.Tile)))
+                    .Where(p => p.Distance <= range)
+                    .OrderBy(p => p.Distance).ThenBy(p => p.Camp).Take(maxReqs).ToArray();
+            });
             var taking = new HashSet<int>();
             for (int i = 0; i < eligible.Length; i++)
                 if (partnersOf[i].Length > 0) { taking.Add(eligible[i].Id); foreach (var partner in partnersOf[i]) taking.Add(partner.Camp); }
@@ -1153,10 +1162,11 @@ namespace Anthropocene.Simulation
                 var a = s.Plan.Agreements[k];
                 if (!camps.TryGetValue(a.Requester, out var r) || !camps.TryGetValue(a.Responder, out var p)) continue;
                 double want = double.IsNaN(s.WantScale[k]) ? 0 : s.WantScale[k], give = double.IsNaN(s.GiveScale[k]) ? 0 : s.GiveScale[k];
-                record.Trades.Add(new TradeRecord { Turn = w.Turn, Requester = r.Id, Responder = p.Id, RequesterSociety = r.SocietyId, ResponderSociety = p.SocietyId,
+                var tradeRecord = new TradeRecord { Turn = w.Turn, Requester = r.Id, Responder = p.Id, RequesterSociety = r.SocietyId, ResponderSociety = p.SocietyId,
                     Distance = a.Distance, Want = a.Want, Give = a.Give, WantQuantity = a.WantQuantity * want, GiveQuantity = a.GiveQuantity * give,
                     Ratio = a.Ratio, Affinity = a.Affinity, Countered = a.Countered, RequesterGain = a.RequesterGain, ResponderGain = a.ResponderGain, Delivered = want, GiveDelivered = give,
-                    WantMadeToOrder = a.WantMade > 1e-12, GiveMadeToOrder = a.GiveMade > 1e-12 });
+                    WantMadeToOrder = a.WantMade > 1e-12, GiveMadeToOrder = a.GiveMade > 1e-12 };
+                record.Trades.Add(tradeRecord);
                 ContactKnowledge.RecordTrade(w, r.People, p);
                 ContactKnowledge.RecordTrade(w, p.People, r);
                 // A receiver learns the practice that produced what it imports (inert while TradePracticePerValue = 0).
@@ -1168,6 +1178,9 @@ namespace Anthropocene.Simulation
                         if (d.Parts[i].Practice.HasValue) TechnologyDiscovery.RecordTradePractice(w, receiver.People, d.Parts[i].Practice.Value, gain * scale * amounts[i] / total);
                 }
                 Learn(r, a.Want, WithMade(a.WantParts, a.WantMade), a.RequesterGain, want); Learn(p, a.Give, WithMade(a.GiveParts, a.GiveMade), a.ResponderGain, give);
+                double civicVolume = CivicGovernance.TradeRecordVolumePersonYears(w.Config, tradeRecord);
+                CivicGovernance.RecordTradeDiffusion(w, r.People, p.People, civicVolume);
+                CivicGovernance.RecordTradeDiffusion(w, p.People, r.People, civicVolume);
             }
         }
     }

@@ -519,6 +519,8 @@ namespace Anthropocene.Simulation
                 // Remote provisions may have been refunded after person-year closure.
                 Supply.Finish(w, record);
             }
+            // Phase 2: retained-opening sanitation capital only gates this turn's demography (Docs/CivicGovernance.md §5 Choice #3.3).
+            foreach (var camp in w.Camps) camp.UseActiveSanitationCapital = false;
             ApplyStorage(w, record, intervals);
 
             // Physical service and goods settle against the locked cohort. Gross natural events become authoritative
@@ -997,7 +999,9 @@ namespace Anthropocene.Simulation
                     .OrderBy(h => h.Id).Sum(h => h.GrowthRemainder - h.DeathRemainder);
                 double effective = Math.Max(0, reproductive + camp.GrowthRemainder - camp.DeathRemainder + hunterRemainders);
                 var physical = PhysicalDemography.AdvanceBudget(w.Config, effective, years, foodBudget, clothingBudget,
-                    housing, camp.FoodDeficitYears, true);
+                    housing, camp.FoodDeficitYears, true, 0,
+                    PhysicalDemography.CrowdingMitigation(w, camp), PhysicalDemography.DiseaseMitigation(w, camp),
+                    PhysicalDemography.FertilityFactor(w, camp), PhysicalDemography.AdditionalMortality(w, camp));
                 double change = physical.FinalPopulation - effective;
                 return change >= 0 ? camp.Population + change
                     : Math.Max(0, camp.Population + change * camp.Population / Math.Max(1, reproductive));
@@ -1221,7 +1225,9 @@ namespace Anthropocene.Simulation
                         new[] { new DemographicCohortInput(EffectivePopulation(detached[i]), detached[i].FoodDeficitYears) },
                         detachedFood[i].Total, 0, 0));
                 }
-                CoupledDemographicResult coupled = PhysicalDemography.AdvanceCoupledBudget(w.Config, pools, years);
+                CoupledDemographicResult coupled = PhysicalDemography.AdvanceCoupledBudget(w.Config, pools, years,
+                    PhysicalDemography.CrowdingMitigation(w, camp), PhysicalDemography.DiseaseMitigation(w, camp),
+                    PhysicalDemography.FertilityFactor(w, camp), PhysicalDemography.AdditionalMortality(w, camp));
                 DemographicResult result = coupled.Pools[0];
 
                 // Reconstruct textile stocks from their pre-needs provenance, then debit exactly the closed budget.

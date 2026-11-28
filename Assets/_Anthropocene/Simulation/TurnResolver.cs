@@ -88,6 +88,16 @@ namespace Anthropocene.Simulation
                 var camp = w.Camps.First(c => c.Id == order.Entity);
                 camp.FissionPolicy = (FissionPolicy)order.Target;
             }
+            foreach (var order in locked.Where(o => o.Kind == OrderKind.ImmigrationPolicy).OrderBy(o => o.Entity))
+            {
+                var camp = w.Camps.First(c => c.Id == order.Entity);
+                camp.ImmigrationPolicy = (ImmigrationPolicy)order.Target;
+            }
+            foreach (var order in locked.Where(o => o.Kind == OrderKind.CivicFocus).OrderBy(o => o.Entity))
+            {
+                var camp = w.Camps.First(c => c.Id == order.Entity);
+                camp.CivicFocus = (CivicFocus)order.Target;
+            }
             foreach (var order in locked.Where(o => o.Kind == OrderKind.Economy).OrderBy(o => o.Entity))
             {
                 var camp = w.Camps.First(c => c.Id == order.Entity);
@@ -193,6 +203,7 @@ namespace Anthropocene.Simulation
             foreach (var camp in w.Camps.OrderBy(c => c.Id)) BreakthroughBound(w, camp, record);
             using (PhaseProfile.Scope("Technology")) TechnologyDiscovery.Resolve(w, record);
             AgriculturalTechnology.Close(w, record);
+            CivicGovernance.Close(w, record, horizon.Years);
             using (PhaseProfile.Scope("FieldDomestication")) fieldContact.Resolve(w, record);
             // Close phase, after demography and progression: freeze the post-demography snapshot, then fission (Docs/Fission.md).
             // Immigration between known settlements precedes fission (QoLFissionTradeDesign 4, 9); its sources and arrivals sit out fission this turn.
@@ -427,6 +438,7 @@ namespace Anthropocene.Simulation
                         }
                         camp.LastSelectedFishingGrounds?.Clear();
                     }
+                    CivicGovernance.ReleaseAbandoned(camp);
                     camp.Moves++; camp.StationaryTurns = 0;
                     // Settled expectations survive abandonment, so fixed
                     // housing left behind hurts QoL under the same formula.
@@ -577,6 +589,7 @@ namespace Anthropocene.Simulation
                 if (c.EconomyAutomationTurns < -1 || c.EconomicLabor != null && c.EconomicLabor.Values().Any(v => double.IsNaN(v) || double.IsInfinity(v) || v < 0)) throw new InvalidOperationException("Invalid saved economic automation state.");
                 if (c.FissionEligibleTurn < 0 || c.Inventory == null || typeof(CampInventory).GetFields().Where(f => f.FieldType == typeof(double)).Select(f => (double)f.GetValue(c.Inventory)).Any(v => double.IsNaN(v) || double.IsInfinity(v) || v < -1e-8) || new[] { c.PlantFood, c.AnimalFood, c.AquaticFood, c.StationaryYears, c.HousingDemand, c.FabricConsumed }.Any(v => double.IsNaN(v) || double.IsInfinity(v) || v < -1e-8) || new[] { c.QoL, c.FoodNeedsMetRatio, c.WaterNeedsMetRatio, c.ClothPerCapita, c.HousingPerCapita, c.RudimentaryExpectation }.Any(v => double.IsNaN(v) || double.IsInfinity(v) || v < 0 || v > 1 + 1e-8)) throw new InvalidOperationException("Invalid economic inventory, needs or fission-maturity state.");
             }
+            CivicGovernance.ValidateInvariants(w);
             if (w.Camps.Select(c => c.Tile).Distinct().Count() != w.Camps.Count) throw new InvalidOperationException("Rival camps overlap.");
             var ids = w.Camps.Select(c => c.Id).Concat(w.Hunters.Select(h => h.Id)).Concat(w.Herds.Select(h => h.Id)).ToArray();
             if (ids.Distinct().Count() != ids.Length || ids.Any(i => i >= w.NextId)) throw new InvalidOperationException("Invalid stable IDs.");

@@ -80,10 +80,14 @@ namespace Anthropocene.Simulation
         }
 
         public static CoupledDemographicResult AdvanceCoupledBudget(SimulationConfig config,
-            IReadOnlyList<DemographicServicePoolInput> pools, double years)
+            IReadOnlyList<DemographicServicePoolInput> pools, double years,
+            double crowdingMitigation = 1, double diseaseMitigation = 1, double fertilityFactor = 1,
+            double additionalMortality = 0)
         {
-            CoupledLayout layout = ValidateCoupledCall(config, pools, years);
-            if (TryExactScalarReduction(config, pools, layout, years, out CoupledDemographicResult reduced))
+            CoupledLayout layout = ValidateCoupledCall(config, pools, years,
+                crowdingMitigation, diseaseMitigation, fertilityFactor, additionalMortality);
+            if (TryExactScalarReduction(config, pools, layout, years, out CoupledDemographicResult reduced,
+                crowdingMitigation, diseaseMitigation, fertilityFactor, additionalMortality))
                 return reduced;
 
             double foodRate = FoodPerPersonYear(config), clothingRate = ClothingPerPersonYear(config);
@@ -102,7 +106,8 @@ namespace Anthropocene.Simulation
                         if (layout.PoolOf[i] == p) { deficit += layout.DeficitYears[i] * layout.Population[i]; include |= layout.IncludeStarvation[i]; }
                     deficit = population > 0 ? deficit / population : 0;
                     if (population > 0) SurplusBudget(config, population, years, pools[p].FoodBudget, pools[p].ClothingBudget,
-                        pools[p].HousingCapacity, deficit, include, Math.Max(0, totalPopulation - population), out poolFertility[p]);
+                        pools[p].HousingCapacity, deficit, include, Math.Max(0, totalPopulation - population), out poolFertility[p],
+                        false, crowdingMitigation, diseaseMitigation, fertilityFactor, additionalMortality);
                     else poolFertility[p] = 1;
                 }
             }
@@ -113,7 +118,7 @@ namespace Anthropocene.Simulation
             bool requiresClosure = false;
             for (int p = 0; p < count; p++)
             {
-                maximumY[p] = BirthOnlyPersonYears(layout.PoolPopulation[p], config.BaseBirthRate, years);
+                maximumY[p] = BirthOnlyPersonYears(layout.PoolPopulation[p], config.BaseBirthRate * fertilityFactor, years);
                 guess[p] = maximumY[p];
                 fullFood[p] = pools[p].FoodBudget >= foodRate * maximumY[p];
                 fullClothing[p] = pools[p].ClothingBudget >= clothingRate * maximumY[p];
@@ -131,7 +136,8 @@ namespace Anthropocene.Simulation
                     nutrition[p] = fullFood[p] ? 1 : Numbers.Clamp(pools[p].FoodBudget / (foodRate * denominator), 0, 1);
                     clothing[p] = fullClothing[p] ? 1 : Numbers.Clamp(pools[p].ClothingBudget / (clothingRate * denominator), 0, 1);
                 }
-                CoupledDemographicResult value = AdvanceCoupledFixed(config, pools, layout, years, nutrition, clothing, poolFertility);
+                CoupledDemographicResult value = AdvanceCoupledFixed(config, pools, layout, years, nutrition, clothing,
+                    poolFertility, crowdingMitigation, diseaseMitigation, fertilityFactor, additionalMortality);
                 allRates += value.RateEvaluations; allAccepted += value.AcceptedSteps;
                 allRejected += value.RejectedSteps; evaluations++;
                 return value;
@@ -192,15 +198,21 @@ namespace Anthropocene.Simulation
         // high-accuracy reference without allowing a gameplay caller to bypass paid service budgets.
         internal static CoupledDemographicResult AdvanceCoupledFixed(SimulationConfig config,
             IReadOnlyList<DemographicServicePoolInput> pools, double years,
-            IReadOnlyList<double> nutrition, IReadOnlyList<double> clothing)
+            IReadOnlyList<double> nutrition, IReadOnlyList<double> clothing,
+            double crowdingMitigation = 1, double diseaseMitigation = 1, double fertilityFactor = 1,
+            double additionalMortality = 0)
         {
-            CoupledLayout layout = ValidateCoupledCall(config, pools, years);
-            return AdvanceCoupledFixed(config, pools, layout, years, nutrition, clothing);
+            CoupledLayout layout = ValidateCoupledCall(config, pools, years,
+                crowdingMitigation, diseaseMitigation, fertilityFactor, additionalMortality);
+            return AdvanceCoupledFixed(config, pools, layout, years, nutrition, clothing, null,
+                crowdingMitigation, diseaseMitigation, fertilityFactor, additionalMortality);
         }
 
         private static CoupledDemographicResult AdvanceCoupledFixed(SimulationConfig config,
             IReadOnlyList<DemographicServicePoolInput> pools, CoupledLayout layout, double years,
-            IReadOnlyList<double> nutrition, IReadOnlyList<double> clothing, IReadOnlyList<double> fertility = null)
+            IReadOnlyList<double> nutrition, IReadOnlyList<double> clothing, IReadOnlyList<double> fertility = null,
+            double crowdingMitigation = 1, double diseaseMitigation = 1, double fertilityFactor = 1,
+            double additionalMortality = 0)
         {
             if (nutrition == null || clothing == null || nutrition.Count != pools.Count || clothing.Count != pools.Count)
                 throw new ArgumentException("Coupled service coverage must have exactly one value per pool.");
@@ -242,11 +254,14 @@ namespace Anthropocene.Simulation
                     throw new DemographicNumericalException("Coupled demographic solver selected a nonpositive step.");
 
                 Rk4Coupled(config, pools, layout, nutrition, clothing, state, step, work.Full, work,
-                    work.StarvationActive, ref rateEvaluations, fertility);
+                    work.StarvationActive, ref rateEvaluations, fertility,
+                    crowdingMitigation, diseaseMitigation, fertilityFactor, additionalMortality);
                 Rk4Coupled(config, pools, layout, nutrition, clothing, state, step * .5, work.Half, work,
-                    work.StarvationActive, ref rateEvaluations, fertility);
+                    work.StarvationActive, ref rateEvaluations, fertility,
+                    crowdingMitigation, diseaseMitigation, fertilityFactor, additionalMortality);
                 Rk4Coupled(config, pools, layout, nutrition, clothing, work.Half, step * .5, work.Fine, work,
-                    work.StarvationActive, ref rateEvaluations, fertility);
+                    work.StarvationActive, ref rateEvaluations, fertility,
+                    crowdingMitigation, diseaseMitigation, fertilityFactor, additionalMortality);
 
                 double errorRatio = 0;
                 for (int j = 0; j < stateSize; j++)
@@ -308,19 +323,25 @@ namespace Anthropocene.Simulation
         private static void Rk4Coupled(SimulationConfig config, IReadOnlyList<DemographicServicePoolInput> pools,
             CoupledLayout layout, IReadOnlyList<double> nutrition, IReadOnlyList<double> clothing,
             double[] state, double step, double[] destination, CoupledWorkspace work,
-            bool[] starvationActive, ref int rateEvaluations, IReadOnlyList<double> fertility = null)
+            bool[] starvationActive, ref int rateEvaluations, IReadOnlyList<double> fertility = null,
+            double crowdingMitigation = 1, double diseaseMitigation = 1, double fertilityFactor = 1,
+            double additionalMortality = 0)
         {
             CoupledDerivative(config, pools, layout, nutrition, clothing, state, work.K1,
-                work.PoolPopulation, starvationActive, ref rateEvaluations, fertility);
+                work.PoolPopulation, starvationActive, ref rateEvaluations, fertility,
+                crowdingMitigation, diseaseMitigation, fertilityFactor, additionalMortality);
             for (int j = 0; j < state.Length; j++) work.Temporary[j] = double.IsNaN(state[j]) ? double.NaN : state[j] + step * .5 * work.K1[j];
             CoupledDerivative(config, pools, layout, nutrition, clothing, work.Temporary, work.K2,
-                work.PoolPopulation, starvationActive, ref rateEvaluations, fertility);
+                work.PoolPopulation, starvationActive, ref rateEvaluations, fertility,
+                crowdingMitigation, diseaseMitigation, fertilityFactor, additionalMortality);
             for (int j = 0; j < state.Length; j++) work.Temporary[j] = double.IsNaN(state[j]) ? double.NaN : state[j] + step * .5 * work.K2[j];
             CoupledDerivative(config, pools, layout, nutrition, clothing, work.Temporary, work.K3,
-                work.PoolPopulation, starvationActive, ref rateEvaluations, fertility);
+                work.PoolPopulation, starvationActive, ref rateEvaluations, fertility,
+                crowdingMitigation, diseaseMitigation, fertilityFactor, additionalMortality);
             for (int j = 0; j < state.Length; j++) work.Temporary[j] = double.IsNaN(state[j]) ? double.NaN : state[j] + step * work.K3[j];
             CoupledDerivative(config, pools, layout, nutrition, clothing, work.Temporary, work.K4,
-                work.PoolPopulation, starvationActive, ref rateEvaluations, fertility);
+                work.PoolPopulation, starvationActive, ref rateEvaluations, fertility,
+                crowdingMitigation, diseaseMitigation, fertilityFactor, additionalMortality);
             for (int j = 0; j < state.Length; j++)
                 destination[j] = double.IsNaN(state[j]) ? double.NaN
                     : state[j] + step * (work.K1[j] + 2 * work.K2[j] + 2 * work.K3[j] + work.K4[j]) / 6;
@@ -330,7 +351,8 @@ namespace Anthropocene.Simulation
             IReadOnlyList<DemographicServicePoolInput> pools, CoupledLayout layout,
             IReadOnlyList<double> nutrition, IReadOnlyList<double> clothing, double[] state,
             double[] derivative, double[] poolPopulation, bool[] starvationActive, ref int rateEvaluations,
-            IReadOnlyList<double> fertility = null)
+            IReadOnlyList<double> fertility = null, double crowdingMitigation = 1, double diseaseMitigation = 1,
+            double fertilityFactor = 1, double additionalMortality = 0)
         {
             Array.Clear(derivative, 0, derivative.Length);
             Array.Clear(poolPopulation, 0, poolPopulation.Length);
@@ -356,7 +378,8 @@ namespace Anthropocene.Simulation
                 double h = poolPopulation[p] > 0
                     ? Math.Min(1, pools[p].HousingCapacity / poolPopulation[p]) : 1;
                 DemographicRates rates = RatesAtDensityCoverage(config, density, nutrition[p], clothing[p], h,
-                    starvationActive[i], fertilityFactor: fertility != null ? fertility[p] : 1);
+                    starvationActive[i], crowdingMitigation, diseaseMitigation,
+                    fertilityFactor * (fertility != null ? fertility[p] : 1), additionalMortality);
                 derivative[offset + CoupledX] = rates.Net;
                 derivative[offset + CoupledY] = n;
                 derivative[offset + CoupledBirths] = rates.Birth * n;
@@ -371,11 +394,14 @@ namespace Anthropocene.Simulation
         }
 
         private static CoupledLayout ValidateCoupledCall(SimulationConfig config,
-            IReadOnlyList<DemographicServicePoolInput> pools, double years)
+            IReadOnlyList<DemographicServicePoolInput> pools, double years,
+            double crowdingMitigation = 1, double diseaseMitigation = 1, double fertilityFactor = 1,
+            double additionalMortality = 0)
         {
             if (config == null) throw new ArgumentNullException(nameof(config));
             if (pools == null || pools.Count == 0) throw new ArgumentException("At least one demographic service pool is required.");
             if (!Finite(years) || years < 0) throw new ArgumentException("Demographic duration must be finite and nonnegative.");
+            ValidateModifiers(crowdingMitigation, diseaseMitigation, fertilityFactor, additionalMortality);
             if (config.DemographicMaxServiceIterations <= 0 || config.DemographicServiceTolerance <= 0)
                 throw new ArgumentException("Invalid coupled demographic numerical configuration.");
             int members = 0;
@@ -414,7 +440,8 @@ namespace Anthropocene.Simulation
 
         private static bool TryExactScalarReduction(SimulationConfig config,
             IReadOnlyList<DemographicServicePoolInput> pools, CoupledLayout layout, double years,
-            out CoupledDemographicResult result)
+            out CoupledDemographicResult result, double crowdingMitigation = 1, double diseaseMitigation = 1,
+            double fertilityFactor = 1, double additionalMortality = 0)
         {
             result = null;
             int firstMember = Array.FindIndex(layout.Population, n => n > 0);
@@ -453,7 +480,7 @@ namespace Anthropocene.Simulation
             double totalClothing = pools.Sum(p => p.ClothingBudget);
             double totalHousing = pools.Sum(p => p.HousingCapacity);
             DemographicResult scalar = AdvanceBudget(config, totalPopulation, years, totalFood, totalClothing,
-                totalHousing, deficit, include);
+                totalHousing, deficit, include, 0, crowdingMitigation, diseaseMitigation, fertilityFactor, additionalMortality);
             result = EmptyCoupledResult(pools, layout);
             for (int p = 0; p < pools.Count; p++)
             {

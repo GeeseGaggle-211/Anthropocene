@@ -16,12 +16,24 @@ namespace Anthropocene.Simulation
         public const string Carpenter = "Carpenter";
         public const string Builder = "Builder";
         public const string Woodcutter = "Woodcutter", Stonecutter = "Stonecutter", ClayMiner = "ClayMiner";
+        public const string Steward = "Steward";
         // Keep the saved Stonecutter identifier stable; only its player-facing label changes.
         public static string Label(string role) => role == Stonecutter ? "Stone Quarrier" : role == ClayMiner ? "Clay Miner" : role;
+        public static string Label(string role, Camp camp)
+        {
+            if (role == Steward)
+            {
+                if (camp == null) return Steward;
+                if (camp.CivicStratification <= -0.30) return "Council Arbiter";
+                if (camp.CivicStratification >= 0.30) return "Temple Scribe";
+                return "Civic Steward";
+            }
+            return Label(role);
+        }
         public static readonly string[] Extractors = { Stonecutter, Woodcutter, ClayMiner };
 
         public static readonly string[] Specialists = { Toolmaker, Potter, Weaver, Carpenter, Builder };
-        public static readonly string[] All = { Gatherer, Farmer, Herder, Fisher, Craftsperson, Toolmaker, Potter, Weaver, Carpenter, Builder, Woodcutter, Stonecutter, ClayMiner };
+        public static readonly string[] All = { Gatherer, Farmer, Herder, Fisher, Craftsperson, Toolmaker, Potter, Weaver, Carpenter, Builder, Woodcutter, Stonecutter, ClayMiner, Steward };
     }
 
     public sealed partial class PopulationLedger

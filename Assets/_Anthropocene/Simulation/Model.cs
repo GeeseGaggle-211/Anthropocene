@@ -8,7 +8,7 @@ namespace Anthropocene.Simulation
     public enum Terrain { Ocean, Shallows, Lake, Grassland, Woodland, Jungle, Desert, Tundra, Mountain, Ice }
     public enum Domain { Hunting, Gathering, Fishing }
     public enum Technology { None, AnimalHusbandry, Cultivation, Watercraft }
-    public enum OrderKind { NoOp, Move, Dispatch, Hunt, Fish, Reintegrate, Economy, FissionPolicy }
+    public enum OrderKind { NoOp, Move, Dispatch, Hunt, Fish, Reintegrate, Economy, FissionPolicy, ImmigrationPolicy, CivicFocus }
     public enum WorldShape { Continents, Archipelagos, Pangaea }
     public enum Relief { Lowland, Hills, Highland, Mountain }
     public enum WaterKind { None, Freshwater, Saltwater }
@@ -27,6 +27,7 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public AgriculturalTechnologySettings Agriculture;
         // Absent/null is legacy fixed timing. Enabled only by an explicit new-game profile.
         [System.Runtime.Serialization.OptionalField] public SmoothCalendarSettings SmoothCalendar;
+        [System.Runtime.Serialization.OptionalField] public CivicGovernanceSettings Civic;
         public SimulationConfig()
         {
             double referenceYears = Neolithic.ReferenceTurnYears;
@@ -39,6 +40,7 @@ namespace Anthropocene.Simulation
         {
             var defaults = new SimulationConfig(); Neolithic = defaults.Neolithic;
             SmoothCalendar = null;
+            Civic = null;
             // Older saves retain abstract altitude calibration and their stored climate.
             ElevationMetersPerUnit = 0; LapseRateCPerKm = defaults.LapseRateCPerKm;
             DrainageTerrainEnabled = false;
@@ -309,6 +311,7 @@ namespace Anthropocene.Simulation
                 throw new ArgumentException("Invalid crop moisture response.");
             Neolithic.Validate();
             Agriculture?.Validate();
+            Civic?.Validate();
             if (double.IsNaN(LandFoodRegeneration) || double.IsInfinity(LandFoodRegeneration)
                 || LandFoodRegeneration < 0 || LandFoodRegeneration >= 1)
                 throw new ArgumentException("Invalid land food regeneration fraction.");
@@ -561,12 +564,40 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public int FissionEligibleTurn;
         // Immigration hysteresis (WP10b-2): sparse, pruned at commit; null when empty and absent in older saves.
         [System.Runtime.Serialization.OptionalField] public List<MigrationMemory> RecentMigration;
+        // Civic Governance (Docs/CivicGovernance.md §3.2). Stored on Camp (never CampInventory)
+        // so Fission.Found's reflection split never splits fixed urban capital or institutional coordinates.
+        [System.Runtime.Serialization.OptionalField] public double CivicComplexity;
+        [System.Runtime.Serialization.OptionalField] public double CivicStratification;
+        [System.Runtime.Serialization.OptionalField] public double CivicCapital;
+        [System.Runtime.Serialization.OptionalField] public double SanitationCapital;
+        [System.Runtime.Serialization.OptionalField] public ImmigrationPolicy ImmigrationPolicy;
+        [System.Runtime.Serialization.OptionalField] public CivicFocus CivicFocus;
+        [System.Runtime.Serialization.OptionalField] public double RecentTradeVolume;
+        [System.Runtime.Serialization.OptionalField] public double SanitationWaterRatio;
+        [System.Runtime.Serialization.OptionalField] public double LastEnvironmentalComplexity;
+        [System.Runtime.Serialization.OptionalField] public double LastEnvironmentalStratification;
+        [System.Runtime.Serialization.OptionalField] public double LastCircumscription;
+        [NonSerialized] internal double SanitationWaterDelivered;
+        [NonSerialized] internal double ActiveSanitationCapital;
+        [NonSerialized] internal bool UseActiveSanitationCapital;
         [NonSerialized] private Society people = new Society();
         public Society People => people ?? (people = new Society());
         internal void Bind(Society owner) { people = owner; SocietyId = owner.Id; Player = owner.Player; }
         // A planning view sharing every field but a private inventory copy (trade
         // deltas, Trade.ApplyToPlanningInventory). Read-only like the camp itself.
-        internal Camp WithPrivateInventory() { var view = (Camp)MemberwiseClone(); view.Inventory = Inventory.Copy(); view.TradeExports = (double[])TradeExports?.Clone(); view.TradeImports = (double[])TradeImports?.Clone(); view.TradeOwed = null; view.GoodsStorage = null; return view; }
+        internal Camp WithPrivateInventory()
+        {
+            var view = (Camp)MemberwiseClone();
+            view.Inventory = Inventory.Copy();
+            view.TradeExports = (double[])TradeExports?.Clone();
+            view.TradeImports = (double[])TradeImports?.Clone();
+            view.TradeOwed = null;
+            view.GoodsStorage = null;
+            view.SanitationWaterDelivered = 0;
+            view.ActiveSanitationCapital = 0;
+            view.UseActiveSanitationCapital = false;
+            return view;
+        }
         // Docs/Trade.md: the made-to-order part of goods this camp has agreed to deliver this turn after its
         // production, by CraftGood (the stock part has already left its stock, into escrow). Set on planning views
         // and, for the duration of production only, on the resolving camp. Demand adds it; never saved.
@@ -718,6 +749,8 @@ namespace Anthropocene.Simulation
         [System.Runtime.Serialization.OptionalField] public List<IrrigationWaterReceipt> IrrigationWater;
         [System.Runtime.Serialization.OptionalField] public List<AgriculturalFoodReceipt> AgriculturalFood;
         [System.Runtime.Serialization.OptionalField] public List<LineageWelfareReport> LineageWelfare = new List<LineageWelfareReport>();
+        [System.Runtime.Serialization.OptionalField] public List<SanitationWaterReceipt> SanitationWater;
+        [System.Runtime.Serialization.OptionalField] public List<CivicTurnReport> CivicReports;
         public void Log(string message) => Events.Add(message);
     }
     [Serializable]

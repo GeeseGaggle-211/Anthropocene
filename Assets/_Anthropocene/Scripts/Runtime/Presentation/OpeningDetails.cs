@@ -90,7 +90,7 @@ namespace Anthropocene.Presentation
             var config = world.Config;
             hoverTiming.Observe(tile, pointer.x, pointer.y, Time.unscaledTimeAsDouble, context, config.HoverDelay, config.HoverFadeIn, config.HoverFadeOut, config.HoverMotionPixels);
             if (hoverTiming.Displayed < 0 || hoverTiming.Alpha <= 0 || !observation.Tiles.ContainsKey(hoverTiming.Displayed)) return;
-            if (hoverTiming.Displayed == tile) { detailAnchor = hoveredBounds; hoverText = TileDetails.Describe(observation, tile, planned.Values); }
+            if (hoverTiming.Displayed == tile) { detailAnchor = hoveredBounds; hoverText = TileDetails.Describe(observation, tile, AllPlannedOrders()); }
             if (hoverStyle == null) hoverStyle = new GUIStyle(text) { fontSize = 15, richText = false, padding = new RectOffset(0, 0, 0, 0) };
             float width = Mathf.Min(480, Screen.width - 24), availableHeight = Screen.height - 34;
             float height = hoverStyle.CalcHeight(new GUIContent(hoverText), width - 28) + 28;

@@ -221,9 +221,10 @@ namespace Anthropocene.Presentation
 
         private string CommitPreview()
         {
-            if (planned.Count == 0) return "No explicit orders. The camp will gather locally; hunters hold position and automatically hunt co-located wild herds.";
-            string orders = string.Join("  ·  ", planned.Values.OrderBy(o => o.Entity).Select(o => UnitName(o.Entity) + ": " + Describe(o)));
-            return planned.Count + " queued: " + orders + " Camp gathering and co-located hunting still occur automatically.";
+            var queued = AllPlannedOrders().ToArray();
+            if (queued.Length == 0) return "No explicit orders. The camp will gather locally; hunters hold position and automatically hunt co-located wild herds.";
+            string orders = string.Join("  ·  ", queued.Select(o => UnitName(o.Entity) + ": " + Describe(o)));
+            return queued.Length + " queued: " + orders + " Camp gathering and co-located hunting still occur automatically.";
         }
 
         private string UnitName(int id) => id == observation.CampId ? "Camp" : "Hunters " + id;
@@ -251,8 +252,11 @@ namespace Anthropocene.Presentation
 
         private void CancelSelectedOrder()
         {
-            if (!planned.Remove(selected)) return;
-            status = UnitName(selected) + " will now hold position; its queued order was cancelled.";
+            bool removedOrdinary = planned.Remove(selected);
+            var policyKeys = plannedPolicies.Keys.Where(k => k.Entity == selected).ToArray();
+            foreach (var key in policyKeys) plannedPolicies.Remove(key);
+            if (!removedOrdinary && policyKeys.Length == 0) return;
+            status = UnitName(selected) + " queued orders were cancelled.";
             mode = "Inspect";
         }
 
