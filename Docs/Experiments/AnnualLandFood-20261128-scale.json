@@ -1,0 +1,145 @@
+{
+  "note": "Five-turn 80-founder opening smoke, same saved start, native four workers. Unwarmed shared-host timings are indicative only; not an RL throughput certification. Legacy uses the pre-optimization binary; quiet annual specialization is disabled in that arm.",
+  "runs": [
+    {
+      "runtime": ".NET 8.0.34",
+      "runtimeVersion": "8.0.34",
+      "operatingSystem": "Debian GNU/Linux 13 (trixie)",
+      "worldWidth": 1024,
+      "worldHeight": 512,
+      "players": 80,
+      "seed": 11,
+      "inputSaveSha256": "6EAB573E6FA12416C98BF808090C379BF8EE81882CB7CE2D0AE3FB9ABC3530F5",
+      "configHash": "58B6E30AA865805D80553AFC773D69126D8E1DDF12C7CD5F26064417925A1AB0",
+      "workerCount": 4,
+      "arm": "legacy",
+      "rawSha256": "b184b297a23a2189aeb6f7c9cb3fb5387fa038441ed72699e09423e890cdb0e3",
+      "sourceSha256": "961a48eecd000a0a76106e3a6c91b3bbf0d6bbb67b264d1a38655c06e1c3b22b",
+      "population": 5349,
+      "meanTotalMs": 618.02594,
+      "meanAllocatedBytes": 70932784,
+      "samples": [
+        {
+          "turn": 1,
+          "population": 2400,
+          "campCount": 80,
+          "totalMs": 730.1226,
+          "allocatedBytes": 40472544,
+          "activeTiles": 3619,
+          "tileIntegrations": 3619,
+          "seasonalTiles": 0
+        },
+        {
+          "turn": 2,
+          "population": 2960,
+          "campCount": 80,
+          "totalMs": 461.8042,
+          "allocatedBytes": 65594288,
+          "activeTiles": 3514,
+          "tileIntegrations": 3514,
+          "seasonalTiles": 0
+        },
+        {
+          "turn": 3,
+          "population": 3760,
+          "campCount": 81,
+          "totalMs": 499.9504,
+          "allocatedBytes": 76440792,
+          "activeTiles": 3612,
+          "tileIntegrations": 3612,
+          "seasonalTiles": 0
+        },
+        {
+          "turn": 4,
+          "population": 4507,
+          "campCount": 81,
+          "totalMs": 732.2251,
+          "allocatedBytes": 79587592,
+          "activeTiles": 3475,
+          "tileIntegrations": 3475,
+          "seasonalTiles": 0
+        },
+        {
+          "turn": 5,
+          "population": 5349,
+          "campCount": 81,
+          "totalMs": 666.0274,
+          "allocatedBytes": 92568704,
+          "activeTiles": 3622,
+          "tileIntegrations": 3622,
+          "seasonalTiles": 0
+        }
+      ]
+    },
+    {
+      "runtime": ".NET 8.0.34",
+      "runtimeVersion": "8.0.34",
+      "operatingSystem": "Debian GNU/Linux 13 (trixie)",
+      "worldWidth": 1024,
+      "worldHeight": 512,
+      "players": 80,
+      "seed": 11,
+      "inputSaveSha256": "6EAB573E6FA12416C98BF808090C379BF8EE81882CB7CE2D0AE3FB9ABC3530F5",
+      "configHash": "B8D56EEA9C6E399D9E8D807611FC18189219D139D95D8860C3BEF311D992ED38",
+      "workerCount": 4,
+      "arm": "annual",
+      "rawSha256": "7de3b656808a0375e9222eff889c3fe788f6a3a519e9fec5103da8ef74e07d0c",
+      "sourceSha256": "3865890739c35b41b3901e7d7eede4dd11d82174d5798c322efd9445025e04a4",
+      "population": 5399,
+      "meanTotalMs": 567.2230999999999,
+      "meanAllocatedBytes": 73723776,
+      "samples": [
+        {
+          "turn": 1,
+          "population": 2400,
+          "campCount": 80,
+          "totalMs": 751.5953999999999,
+          "allocatedBytes": 43396328,
+          "activeTiles": 3612,
+          "tileIntegrations": 3612,
+          "seasonalTiles": 0
+        },
+        {
+          "turn": 2,
+          "population": 2960,
+          "campCount": 80,
+          "totalMs": 574.2125,
+          "allocatedBytes": 67226704,
+          "activeTiles": 3482,
+          "tileIntegrations": 3482,
+          "seasonalTiles": 0
+        },
+        {
+          "turn": 3,
+          "population": 3760,
+          "campCount": 80,
+          "totalMs": 376.1596,
+          "allocatedBytes": 77384464,
+          "activeTiles": 3581,
+          "tileIntegrations": 3581,
+          "seasonalTiles": 0
+        },
+        {
+          "turn": 4,
+          "population": 4532,
+          "campCount": 80,
+          "totalMs": 534.931,
+          "allocatedBytes": 83818656,
+          "activeTiles": 3502,
+          "tileIntegrations": 3502,
+          "seasonalTiles": 0
+        },
+        {
+          "turn": 5,
+          "population": 5399,
+          "campCount": 80,
+          "totalMs": 599.217,
+          "allocatedBytes": 96792728,
+          "activeTiles": 3633,
+          "tileIntegrations": 3633,
+          "seasonalTiles": 0
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,611 @@
+{
+  "manifests": [
+    {
+      "createdUtc": "2026-11-28T20:12:44.0644968Z",
+      "seeds": [
+        11,
+        23,
+        47
+      ],
+      "arms": [
+        "legacy",
+        "annual",
+        "annual-fixed"
+      ],
+      "runtime": "8.0.34",
+      "binarySha256": "977ea81283e0a6ee1b3fd4fe74caf8daac02a87f067555dd836dd7528961b2ca",
+      "sourceSha256": "3865890739c35b41b3901e7d7eede4dd11d82174d5798c322efd9445025e04a4"
+    },
+    {
+      "createdUtc": "2026-11-28T20:12:44.0694986Z",
+      "seeds": [
+        101,
+        1729
+      ],
+      "arms": [
+        "legacy",
+        "annual",
+        "annual-fixed"
+      ],
+      "runtime": "8.0.34",
+      "binarySha256": "977ea81283e0a6ee1b3fd4fe74caf8daac02a87f067555dd836dd7528961b2ca",
+      "sourceSha256": "3865890739c35b41b3901e7d7eede4dd11d82174d5798c322efd9445025e04a4"
+    }
+  ],
+  "equivalentEndpointReferenceManifests": [
+    {
+      "createdUtc": "2026-11-28T20:07:53.4957987Z",
+      "seeds": [
+        11,
+        23,
+        47
+      ],
+      "arms": [
+        "legacy",
+        "annual",
+        "annual-fixed"
+      ],
+      "runtime": "8.0.34",
+      "binarySha256": "2a375fe30f29e193cc399c90f4ba38a6f6eb72e2e3ca632fcac9a670bf5f4b6d",
+      "sourceSha256": "961a48eecd000a0a76106e3a6c91b3bbf0d6bbb67b264d1a38655c06e1c3b22b"
+    },
+    {
+      "createdUtc": "2026-11-28T20:07:54.831249Z",
+      "seeds": [
+        101,
+        1729
+      ],
+      "arms": [
+        "legacy",
+        "annual",
+        "annual-fixed"
+      ],
+      "runtime": "8.0.34",
+      "binarySha256": "2a375fe30f29e193cc399c90f4ba38a6f6eb72e2e3ca632fcac9a670bf5f4b6d",
+      "sourceSha256": "961a48eecd000a0a76106e3a6c91b3bbf0d6bbb67b264d1a38655c06e1c3b22b"
+    }
+  ],
+  "runs": [
+    {
+      "seed": 11,
+      "arm": "annual",
+      "checkpointSha256": "19f0e3eaad53cb1f1d0c0213abb2f95b2a293d3949984c07fe3a5d9dd7eca283",
+      "finalSha256": "a51410de5ec9e5b9b0b357265e5e69f20771287e22eb6bcd8e2abf0ffa4acdbf",
+      "legacyParity": null,
+      "saveContinuation": true,
+      "turns": 171,
+      "seconds": 26.0767578,
+      "equivalentReferenceEndpointSha256": "a51410de5ec9e5b9b0b357265e5e69f20771287e22eb6bcd8e2abf0ffa4acdbf",
+      "elapsedYears": 1000.2414627027628,
+      "initial": {
+        "years": 0,
+        "largest": 4236,
+        "population": 63652,
+        "fields": 3,
+        "canals": 3,
+        "personYears": 0,
+        "foodConsumed": 0,
+        "foodHarvest": 0
+      },
+      "final": {
+        "years": 1000.2414627027628,
+        "largest": 8223,
+        "population": 134898,
+        "fields": 3,
+        "canals": 3,
+        "personYears": 600322.6417339351,
+        "foodConsumed": 2401290.5669357404,
+        "foodHarvest": 2467335.6121551828
+      },
+      "peakLargest": 8223,
+      "largestSlopeLast200PerCentury": 12.78749724771694,
+      "newIrrigatedFields": 0,
+      "trajectorySha256": "c0f3fe14a58f4418c98c30ab0099ab695276f1947f6cad254ec8e971ab18fed5"
+    },
+    {
+      "seed": 11,
+      "arm": "annual-fixed",
+      "checkpointSha256": "19f0e3eaad53cb1f1d0c0213abb2f95b2a293d3949984c07fe3a5d9dd7eca283",
+      "finalSha256": "bf059eb680180dde669e839a3d51c52f640e7d4d5d0dd22c9696f3ae98a48924",
+      "legacyParity": null,
+      "saveContinuation": true,
+      "turns": 127,
+      "seconds": 15.7306917,
+      "equivalentReferenceEndpointSha256": "bf059eb680180dde669e839a3d51c52f640e7d4d5d0dd22c9696f3ae98a48924",
+      "elapsedYears": 1003.8336880610251,
+      "initial": {
+        "years": 0,
+        "largest": 4236,
+        "population": 63652,
+        "fields": 3,
+        "canals": 3,
+        "personYears": 0,
+        "foodConsumed": 0,
+        "foodHarvest": 0
+      },
+      "final": {
+        "years": 1003.8336880610251,
+        "largest": 8207,
+        "population": 131884,
+        "fields": 3,
+        "canals": 3,
+        "personYears": 1042906.433770307,
+        "foodConsumed": 4171624.7034691917,
+        "foodHarvest": 4411950.041641455
+      },
+      "peakLargest": 8221,
+      "largestSlopeLast200PerCentury": 1.01644514671822,
+      "newIrrigatedFields": 0,
+      "trajectorySha256": "e807de01c347b37a05635d4c8e850e758b077e3910aacaa85b9c0d411ca54d2e"
+    },
+    {
+      "seed": 11,
+      "arm": "legacy",
+      "checkpointSha256": "19f0e3eaad53cb1f1d0c0213abb2f95b2a293d3949984c07fe3a5d9dd7eca283",
+      "finalSha256": "c3ebd8403cd1eccfcba3ef0ea593c7ff48e645a04113eb19ad8f13fad0a9e0e0",
+      "legacyParity": true,
+      "saveContinuation": true,
+      "turns": 171,
+      "seconds": 26.3191909,
+      "equivalentReferenceEndpointSha256": "c3ebd8403cd1eccfcba3ef0ea593c7ff48e645a04113eb19ad8f13fad0a9e0e0",
+      "elapsedYears": 1000.2414627027628,
+      "initial": {
+        "years": 0,
+        "largest": 4236,
+        "population": 63652,
+        "fields": 3,
+        "canals": 3,
+        "personYears": 0,
+        "foodConsumed": 0,
+        "foodHarvest": 0
+      },
+      "final": {
+        "years": 1000.2414627027628,
+        "largest": 7939,
+        "population": 107110,
+        "fields": 3,
+        "canals": 3,
+        "personYears": 479557.50862475403,
+        "foodConsumed": 1910298.0795483612,
+        "foodHarvest": 1904880.9162676644
+      },
+      "peakLargest": 7939,
+      "largestSlopeLast200PerCentury": 310.15313424477546,
+      "newIrrigatedFields": 0,
+      "trajectorySha256": "379151bbb41e812aa549d194b3a1203b0dbe089ff127c3558c641746d17de2f4"
+    },
+    {
+      "seed": 23,
+      "arm": "annual",
+      "checkpointSha256": "16aaa21a2f887fac5e2dd2eedde234cbe77cbc6825ea50863a678359b7748600",
+      "finalSha256": "e8dd7751b6486552ccabf816a007e1f7d01932428208075843e8e38c6392ac83",
+      "legacyParity": null,
+      "saveContinuation": true,
+      "turns": 171,
+      "seconds": 12.2728747,
+      "equivalentReferenceEndpointSha256": "e8dd7751b6486552ccabf816a007e1f7d01932428208075843e8e38c6392ac83",
+      "elapsedYears": 1000.2414627027628,
+      "initial": {
+        "years": 0,
+        "largest": 3878,
+        "population": 30093,
+        "fields": 4,
+        "canals": 5,
+        "personYears": 0,
+        "foodConsumed": 0,
+        "foodHarvest": 0
+      },
+      "final": {
+        "years": 1000.2414627027628,
+        "largest": 7521,
+        "population": 60569,
+        "fields": 5,
+        "canals": 6,
+        "personYears": 268965.70120935043,
+        "foodConsumed": 1075326.153176442,
+        "foodHarvest": 1100344.963524241
+      },
+      "peakLargest": 8231,
+      "largestSlopeLast200PerCentury": 26.81250004186044,
+      "newIrrigatedFields": 1,
+      "trajectorySha256": "8fa86066f47984aba24e380ba9e98e12e4942f222d06a8b011e304186bb93f8f"
+    },
+    {
+      "seed": 23,
+      "arm": "annual-fixed",
+      "checkpointSha256": "16aaa21a2f887fac5e2dd2eedde234cbe77cbc6825ea50863a678359b7748600",
+      "finalSha256": "9a018133765e611aa2dd6a531a196b6d2cdb11d2ccfb2ec595450de39fada8aa",
+      "legacyParity": null,
+      "saveContinuation": true,
+      "turns": 127,
+      "seconds": 10.1649257,
+      "equivalentReferenceEndpointSha256": "9a018133765e611aa2dd6a531a196b6d2cdb11d2ccfb2ec595450de39fada8aa",
+      "elapsedYears": 1003.8336880610251,
+      "initial": {
+        "years": 0,
+        "largest": 3878,
+        "population": 30093,
+        "fields": 4,
+        "canals": 5,
+        "personYears": 0,
+        "foodConsumed": 0,
+        "foodHarvest": 0
+      },
+      "final": {
+        "years": 1003.8336880610251,
+        "largest": 7534,
+        "population": 63072,
+        "fields": 5,
+        "canals": 6,
+        "personYears": 499070.91143132455,
+        "foodConsumed": 1996018.0296328564,
+        "foodHarvest": 2068751.4514088593
+      },
+      "peakLargest": 8237,
+      "largestSlopeLast200PerCentury": 0.012975895490019738,
+      "newIrrigatedFields": 1,
+      "trajectorySha256": "6039bd1b6f24bb17e9cac62e6175520091caf43b4d51844b670202f7698674b0"
+    },
+    {
+      "seed": 23,
+      "arm": "legacy",
+      "checkpointSha256": "16aaa21a2f887fac5e2dd2eedde234cbe77cbc6825ea50863a678359b7748600",
+      "finalSha256": "ee71a7df0544907032cf2128c08852a54461747f187a4e0cb0a0efe3dbf5880a",
+      "legacyParity": true,
+      "saveContinuation": true,
+      "turns": 171,
+      "seconds": 12.6916644,
+      "equivalentReferenceEndpointSha256": "ee71a7df0544907032cf2128c08852a54461747f187a4e0cb0a0efe3dbf5880a",
+      "elapsedYears": 1000.2414627027628,
+      "initial": {
+        "years": 0,
+        "largest": 3878,
+        "population": 30093,
+        "fields": 4,
+        "canals": 5,
+        "personYears": 0,
+        "foodConsumed": 0,
+        "foodHarvest": 0
+      },
+      "final": {
+        "years": 1000.2414627027628,
+        "largest": 7389,
+        "population": 48069,
+        "fields": 4,
+        "canals": 5,
+        "personYears": 216447.39740760636,
+        "foodConsumed": 858870.559922904,
+        "foodHarvest": 858346.9214111847
+      },
+      "peakLargest": 7389,
+      "largestSlopeLast200PerCentury": 960.670437833293,
+      "newIrrigatedFields": 0,
+      "trajectorySha256": "b217bfbaf35128e456bb99561b0592f3753104d07984ce6ea50b1f656753eebd"
+    },
+    {
+      "seed": 47,
+      "arm": "annual",
+      "checkpointSha256": "ae707b488d4cbe65d6d35b3f0c90647c47fb38e4d4c2d354316c6cb5aae0de1d",
+      "finalSha256": "96072f45dbc2b0c7282e2ae14075f3a1177a0b3ddc2e3de3eec6cdd494e5d832",
+      "legacyParity": null,
+      "saveContinuation": true,
+      "turns": 171,
+      "seconds": 18.7818465,
+      "equivalentReferenceEndpointSha256": "96072f45dbc2b0c7282e2ae14075f3a1177a0b3ddc2e3de3eec6cdd494e5d832",
+      "elapsedYears": 1000.2414627027628,
+      "initial": {
+        "years": 0,
+        "largest": 4425,
+        "population": 42833,
+        "fields": 9,
+        "canals": 11,
+        "personYears": 0,
+        "foodConsumed": 0,
+        "foodHarvest": 0
+      },
+      "final": {
+        "years": 1000.2414627027628,
+        "largest": 8216,
+        "population": 81397,
+        "fields": 9,
+        "canals": 11,
+        "personYears": 362283.79727126966,
+        "foodConsumed": 1447071.5486623468,
+        "foodHarvest": 1472274.2842188892
+      },
+      "peakLargest": 8298,
+      "largestSlopeLast200PerCentury": 2.025331454644754,
+      "newIrrigatedFields": 0,
+      "trajectorySha256": "e45513190f6f850cd829489bfc5232802282691f9646202fdb82f5abf9778da8"
+    },
+    {
+      "seed": 47,
+      "arm": "annual-fixed",
+      "checkpointSha256": "ae707b488d4cbe65d6d35b3f0c90647c47fb38e4d4c2d354316c6cb5aae0de1d",
+      "finalSha256": "94395d225deebe25c3fcd3de71fee2f870ad08a739fadc54acb03b25c6eca603",
+      "legacyParity": null,
+      "saveContinuation": true,
+      "turns": 127,
+      "seconds": 17.5434442,
+      "equivalentReferenceEndpointSha256": "94395d225deebe25c3fcd3de71fee2f870ad08a739fadc54acb03b25c6eca603",
+      "elapsedYears": 1003.8336880610251,
+      "initial": {
+        "years": 0,
+        "largest": 4425,
+        "population": 42833,
+        "fields": 9,
+        "canals": 11,
+        "personYears": 0,
+        "foodConsumed": 0,
+        "foodHarvest": 0
+      },
+      "final": {
+        "years": 1003.8336880610251,
+        "largest": 8454,
+        "population": 80863,
+        "fields": 9,
+        "canals": 11,
+        "personYears": 639594.2733799567,
+        "foodConsumed": 2558376.1998894745,
+        "foodHarvest": 2644583.140183657
+      },
+      "peakLargest": 8454,
+      "largestSlopeLast200PerCentury": 0.034602387973386,
+      "newIrrigatedFields": 0,
+      "trajectorySha256": "d094310faf04af8d3225b0e95359625ede8e8011ae06469fcb291516022c6e08"
+    },
+    {
+      "seed": 47,
+      "arm": "legacy",
+      "checkpointSha256": "ae707b488d4cbe65d6d35b3f0c90647c47fb38e4d4c2d354316c6cb5aae0de1d",
+      "finalSha256": "bea9e80a7a6fb9c22f534e8b5140fb7c5f0bc1d04e1c5e6e0656cb506932d41c",
+      "legacyParity": true,
+      "saveContinuation": true,
+      "turns": 171,
+      "seconds": 17.8542751,
+      "equivalentReferenceEndpointSha256": "bea9e80a7a6fb9c22f534e8b5140fb7c5f0bc1d04e1c5e6e0656cb506932d41c",
+      "elapsedYears": 1000.2414627027628,
+      "initial": {
+        "years": 0,
+        "largest": 4425,
+        "population": 42833,
+        "fields": 9,
+        "canals": 11,
+        "personYears": 0,
+        "foodConsumed": 0,
+        "foodHarvest": 0
+      },
+      "final": {
+        "years": 1000.2414627027628,
+        "largest": 7485,
+        "population": 67628,
+        "fields": 9,
+        "canals": 11,
+        "personYears": 300664.08359152504,
+        "foodConsumed": 1201439.1389418538,
+        "foodHarvest": 1218957.7174318074
+      },
+      "peakLargest": 8450,
+      "largestSlopeLast200PerCentury": -258.6189303115229,
+      "newIrrigatedFields": 0,
+      "trajectorySha256": "470d638d67b6333662c2f814dfb3de61d46a1266000f6e917789d49aa27678b4"
+    },
+    {
+      "seed": 101,
+      "arm": "annual",
+      "checkpointSha256": "b97f69a3646d7a610a6d8b30e0eecdb7636fa7af5fdbeb296e0cc2de3dd10178",
+      "finalSha256": "fa47bd4066adeb637157b2f3eee4dd31d7e1fe098d7c1bd669ca59726afa34d6",
+      "legacyParity": null,
+      "saveContinuation": true,
+      "turns": 171,
+      "seconds": 37.2454719,
+      "equivalentReferenceEndpointSha256": "fa47bd4066adeb637157b2f3eee4dd31d7e1fe098d7c1bd669ca59726afa34d6",
+      "elapsedYears": 1000.2414627027628,
+      "initial": {
+        "years": 0,
+        "largest": 4363,
+        "population": 80592,
+        "fields": 12,
+        "canals": 16,
+        "personYears": 0,
+        "foodConsumed": 0,
+        "foodHarvest": 0
+      },
+      "final": {
+        "years": 1000.2414627027628,
+        "largest": 8237,
+        "population": 151824,
+        "fields": 12,
+        "canals": 16,
+        "personYears": 674092.7816812389,
+        "foodConsumed": 2691554.554370436,
+        "foodHarvest": 2753800.692090486
+      },
+      "peakLargest": 8316,
+      "largestSlopeLast200PerCentury": 2.396906978921341,
+      "newIrrigatedFields": 0,
+      "trajectorySha256": "6c1788370d5baf069bc09e1e3d38f02c23d5f957775de5ebf5dc18ae4eefdb07"
+    },
+    {
+      "seed": 101,
+      "arm": "annual-fixed",
+      "checkpointSha256": "b97f69a3646d7a610a6d8b30e0eecdb7636fa7af5fdbeb296e0cc2de3dd10178",
+      "finalSha256": "1e28c3bea55a501abdde828eafe393899117b52ae4a4206315f2c55a74a91e1c",
+      "legacyParity": null,
+      "saveContinuation": true,
+      "turns": 127,
+      "seconds": 29.425526,
+      "equivalentReferenceEndpointSha256": "1e28c3bea55a501abdde828eafe393899117b52ae4a4206315f2c55a74a91e1c",
+      "elapsedYears": 1003.8336880610251,
+      "initial": {
+        "years": 0,
+        "largest": 4363,
+        "population": 80592,
+        "fields": 12,
+        "canals": 16,
+        "personYears": 0,
+        "foodConsumed": 0,
+        "foodHarvest": 0
+      },
+      "final": {
+        "years": 1003.8336880610251,
+        "largest": 8229,
+        "population": 150648,
+        "fields": 12,
+        "canals": 16,
+        "personYears": 1192025.00971212,
+        "foodConsumed": 4767988.921965722,
+        "foodHarvest": 4878258.92185511
+      },
+      "peakLargest": 8313,
+      "largestSlopeLast200PerCentury": -1.8728542490595286,
+      "newIrrigatedFields": 0,
+      "trajectorySha256": "5624c76578bdb0a157d31530ac5a2a08832b2d911d835809ab20b8bf49140957"
+    },
+    {
+      "seed": 101,
+      "arm": "legacy",
+      "checkpointSha256": "b97f69a3646d7a610a6d8b30e0eecdb7636fa7af5fdbeb296e0cc2de3dd10178",
+      "finalSha256": "15852ad71ceb86de07fd239f39682f60fe0c8e23afca89190e040440b7faab55",
+      "legacyParity": true,
+      "saveContinuation": true,
+      "turns": 171,
+      "seconds": 47.0855585,
+      "equivalentReferenceEndpointSha256": "15852ad71ceb86de07fd239f39682f60fe0c8e23afca89190e040440b7faab55",
+      "elapsedYears": 1000.2414627027628,
+      "initial": {
+        "years": 0,
+        "largest": 4363,
+        "population": 80592,
+        "fields": 12,
+        "canals": 16,
+        "personYears": 0,
+        "foodConsumed": 0,
+        "foodHarvest": 0
+      },
+      "final": {
+        "years": 1000.2414627027628,
+        "largest": 8130,
+        "population": 125387,
+        "fields": 13,
+        "canals": 17,
+        "personYears": 557986.9679063754,
+        "foodConsumed": 2224442.2543238406,
+        "foodHarvest": 2245836.3181951805
+      },
+      "peakLargest": 8130,
+      "largestSlopeLast200PerCentury": 1188.0282945190677,
+      "newIrrigatedFields": 1,
+      "trajectorySha256": "2f496885cce1fa06db5250af0f033fbc2046163f7e5ca99053f2aa5d42017314"
+    },
+    {
+      "seed": 1729,
+      "arm": "annual",
+      "checkpointSha256": "964349c479e8b0487eb840a286c66b2b3af1f71e1fdaeb9205380528316d6f5e",
+      "finalSha256": "c5df7afce990699d4c75ef2fcace5474c27d87a12e24c72c77d35f17549ebaf5",
+      "legacyParity": null,
+      "saveContinuation": true,
+      "turns": 171,
+      "seconds": 9.8116507,
+      "equivalentReferenceEndpointSha256": "c5df7afce990699d4c75ef2fcace5474c27d87a12e24c72c77d35f17549ebaf5",
+      "elapsedYears": 1000.2414627027624,
+      "initial": {
+        "years": 0,
+        "largest": 3988,
+        "population": 26441,
+        "fields": 6,
+        "canals": 9,
+        "personYears": 0,
+        "foodConsumed": 0,
+        "foodHarvest": 0
+      },
+      "final": {
+        "years": 1000.2414627027624,
+        "largest": 7509,
+        "population": 54311,
+        "fields": 6,
+        "canals": 9,
+        "personYears": 241754.28568078595,
+        "foodConsumed": 966725.2148657413,
+        "foodHarvest": 999855.4912089974
+      },
+      "peakLargest": 7775,
+      "largestSlopeLast200PerCentury": -2.26349256660987,
+      "newIrrigatedFields": 0,
+      "trajectorySha256": "011ef94b8ab0b4093decd5d620cb9d1e2920b0bbabe82c48e22f9ddd58fe0035"
+    },
+    {
+      "seed": 1729,
+      "arm": "annual-fixed",
+      "checkpointSha256": "964349c479e8b0487eb840a286c66b2b3af1f71e1fdaeb9205380528316d6f5e",
+      "finalSha256": "8045c6342357d444c5231b17bd6dea3b6e34d4d76dadc630f577bf0c569f30bf",
+      "legacyParity": null,
+      "saveContinuation": true,
+      "turns": 127,
+      "seconds": 8.9527245,
+      "equivalentReferenceEndpointSha256": "8045c6342357d444c5231b17bd6dea3b6e34d4d76dadc630f577bf0c569f30bf",
+      "elapsedYears": 1003.8336880610251,
+      "initial": {
+        "years": 0,
+        "largest": 3988,
+        "population": 26441,
+        "fields": 6,
+        "canals": 9,
+        "personYears": 0,
+        "foodConsumed": 0,
+        "foodHarvest": 0
+      },
+      "final": {
+        "years": 1003.8336880610251,
+        "largest": 7792,
+        "population": 54198,
+        "fields": 6,
+        "canals": 9,
+        "personYears": 428516.66639878775,
+        "foodConsumed": 1714066.5572109725,
+        "foodHarvest": 1807408.6846471091
+      },
+      "peakLargest": 7792,
+      "largestSlopeLast200PerCentury": 0.0,
+      "newIrrigatedFields": 0,
+      "trajectorySha256": "f5036540496cf9725d26bfe7aa53ccf25331eea27f18e8432f635d5dbd24da79"
+    },
+    {
+      "seed": 1729,
+      "arm": "legacy",
+      "checkpointSha256": "964349c479e8b0487eb840a286c66b2b3af1f71e1fdaeb9205380528316d6f5e",
+      "finalSha256": "c4fd2db994c72be7bb5b919eb74cbed2d71882b236cda2b4882f04ba3a7303ec",
+      "legacyParity": true,
+      "saveContinuation": true,
+      "turns": 171,
+      "seconds": 9.9785335,
+      "equivalentReferenceEndpointSha256": "c4fd2db994c72be7bb5b919eb74cbed2d71882b236cda2b4882f04ba3a7303ec",
+      "elapsedYears": 1000.2414627027624,
+      "initial": {
+        "years": 0,
+        "largest": 3988,
+        "population": 26441,
+        "fields": 6,
+        "canals": 9,
+        "personYears": 0,
+        "foodConsumed": 0,
+        "foodHarvest": 0
+      },
+      "final": {
+        "years": 1000.2414627027624,
+        "largest": 6937,
+        "population": 42883,
+        "fields": 6,
+        "canals": 9,
+        "personYears": 188964.13261474294,
+        "foodConsumed": 755856.5304589717,
+        "foodHarvest": 767465.029483219
+      },
+      "peakLargest": 6938,
+      "largestSlopeLast200PerCentury": 129.8844520163012,
+      "newIrrigatedFields": 0,
+      "trajectorySha256": "dff3aab0580cbfb8ba72ea39bee76cc956c7c1ae8bfd026b20a52919ddbe348f"
+    }
+  ],
+  "note": "Matched continuation from original year-1000 full-treatment saves; tail slopes track the changing maximum village, not a fixed village. Concurrent timings are not a performance benchmark."
+}

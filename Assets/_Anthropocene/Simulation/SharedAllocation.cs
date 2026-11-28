@@ -162,26 +162,27 @@ namespace Anthropocene.Simulation
                     double terminalCapital = CultivationEconomy.Decay(cfg, start, op, Math.Max(years, n.PlanningHorizonYears));
                     if (cache == null || !fixedLand.TryGetValue(fixedKey, out var forecast))
                     {
-                        // A land tile's accessible availability is its projected opening stock.
-                        double request = cache != null ? Math.Max(0, opening.Food)
+                        // Annual supply includes within-horizon renewal even on cache misses.
+                        double request = cache != null && !cfg.AnnualLandFoodEnabled ? Math.Max(0, opening.Food)
                             : LazyEcology.AccessibleAvailability(world, id, world.Days, cfg.TurnDays, op, Mean(years));
                         var current = FoodHorizonForecast.Tile(world, id, world.Days, cfg.TurnDays,
                             new[] { new Demand { Tile = id, Entity = camp.Id, Kind = "Gathering", Food = request } }, Mean(years), end, op, false, opening);
-                        // Conservative repeatable refill: an emptied food pool at the
-                        // horizon's mean retained capital. No gross renewal is sold.
+                        // Repeatable support from an empty reserve at retained
+                        // capital; annual flow is still capped by harvesting labor.
                         var empty = opening; empty.Food = 0; empty.CultivationCapital = Mean(Math.Max(years, n.PlanningHorizonYears));
                         empty.PotentialFood = Math.Max(0, current.ClosingBiomass - current.ClosingFood);
                         var refill = FoodHorizonForecast.Tile(world, id, world.Days, cfg.TurnDays, null,
                             empty.CultivationCapital, terminalCapital, op, false, empty);
+                        double refillFood = FoodHorizonForecast.RefillSupply(world, id, refill);
                         double harvestWork = 0;
                         if (cropRate && footprintTiles.Contains(id))
                         {
-                            var capacity = new EcologyCapacity(world, tile, empty, season);
+                            var capacity = EcologyCapacity.Boundary(world, tile, empty, season);
                             double crop = tile.CultivationOperator >= 0 && tile.CultivationOperator != camp.Id ? 0 : Math.Max(0, capacity.Food - capacity.WildFood);
                             double cropShare = capacity.Food > 0 ? crop / capacity.Food : 0;
-                            harvestWork = refill.ClosingFood * ((1 - cropShare) / futureWildRate + cropShare / (cfg.FarmerProductivity * ploughHarvest));
+                            harvestWork = refillFood * ((1 - cropShare) / futureWildRate + cropShare / (cfg.FarmerProductivity * ploughHarvest));
                         }
-                        forecast = (current.HumanFoodReceipts, refill.ClosingFood, refill.ClosingBiomass, harvestWork);
+                        forecast = (current.HumanFoodReceipts, refillFood, refill.ClosingBiomass, harvestWork);
                         TileForecasts += 2;
                         if (cache != null) fixedLand[fixedKey] = forecast;
                     }

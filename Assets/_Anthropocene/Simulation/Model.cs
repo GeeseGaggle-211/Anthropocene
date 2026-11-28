@@ -28,6 +28,8 @@ namespace Anthropocene.Simulation
         // Absent/null is legacy fixed timing. Enabled only by an explicit new-game profile.
         [System.Runtime.Serialization.OptionalField] public SmoothCalendarSettings SmoothCalendar;
         [System.Runtime.Serialization.OptionalField] public CivicGovernanceSettings Civic;
+        // Experimental annual-mean land flow. Absent/false preserves legacy harvest-first saves.
+        [System.Runtime.Serialization.OptionalField] public bool AnnualLandFoodEnabled;
         public SimulationConfig()
         {
             double referenceYears = Neolithic.ReferenceTurnYears;
@@ -41,6 +43,7 @@ namespace Anthropocene.Simulation
             var defaults = new SimulationConfig(); Neolithic = defaults.Neolithic;
             SmoothCalendar = null;
             Civic = null;
+            AnnualLandFoodEnabled = false;
             // Older saves retain abstract altitude calibration and their stored climate.
             ElevationMetersPerUnit = 0; LapseRateCPerKm = defaults.LapseRateCPerKm;
             DrainageTerrainEnabled = false;
@@ -312,6 +315,8 @@ namespace Anthropocene.Simulation
             Neolithic.Validate();
             Agriculture?.Validate();
             Civic?.Validate();
+            if (AnnualLandFoodEnabled && DemographicModel != DemographicModel.PhysicalMortalityV1)
+                throw new ArgumentException("Annual land food requires physical person-year demography.");
             if (double.IsNaN(LandFoodRegeneration) || double.IsInfinity(LandFoodRegeneration)
                 || LandFoodRegeneration < 0 || LandFoodRegeneration >= 1)
                 throw new ArgumentException("Invalid land food regeneration fraction.");

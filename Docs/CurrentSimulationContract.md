@@ -10,6 +10,19 @@ Implementation evidence is not itself a new design approval. The index is a navi
 and conflict-resolution aid. The linked normative documents and accepted issue
 contracts remain the rule sources.
 
+## Opt-in annual land food (November 2026)
+
+[AnnualLandFood.md](AnnualLandFood.md) defines the experimental
+`AnnualLandFoodEnabled` mode and `AnnualLandFoodOpeningConfig.json`. Cultivated
+renewal supplies finite harvest claims during the horizon; unmet demand draws
+from the slower natural reserve, with analytical depletion and same-turn shortage.
+Four annual-mean profiles replace the harvest-first boundary in this mode only.
+Physical demography continues to debit actual person-years. Forecasts, planner
+availability, passive recovery, capacities and invariants share the same model.
+The saved flag defaults false, including in old saves; observation layouts and
+the shipped opening remain unchanged. Validation: `AnnualLandFoodChecks`
+(`--annual-land-food-only`) and the matched continuation experiment in that document.
+
 ## Opt-in civic governance (November 2026)
 
 [CivicGovernance.md](CivicGovernance.md) implements the opt-in civic and

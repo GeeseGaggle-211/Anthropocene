@@ -1,5 +1,7 @@
 # Paleolithic completion and ecology foundation
 
+> Annual land food experiment (28 November 2026): the harvest-first statements below describe the default and legacy mode. With `AnnualLandFoodEnabled`, [AnnualLandFood.md](AnnualLandFood.md) supersedes those land transitions: cultivated annual flow supplies harvest before slower reserve drawdown, all under fixed annual-mean forcing. Inactive projection, forecasts and endpoint capacities follow that same analytical transition.
+
 > Current-contract annotation (27 September 2026): Authority/navigation: use the current contract index to distinguish approved one-horizon/prior-cohort rules, shipped m=63/R=16 calibration, inherited save behavior and open cadence/Elder questions. Stored LandCondition is frozen under current land uses; retained coefficients do not establish an ecological equilibrium or authorize forest-maintenance discounts. See [CurrentSimulationContract.md](CurrentSimulationContract.md).
 
 This replaces Milestone 3 ecology and ownership rules. The reconciled [Drive plan](https://docs.google.com/document/d/1bghyyEUw55bhM0NQRyzHP6RlfU5JM6LV/edit), particularly section 14, and the user decisions in [EcologyImplementationPlan.md](EcologyImplementationPlan.md) are authoritative. Starvation has two player turns of grace; subsistence shares are balance targets, not quotas. The historical DesignSpec.txt is unchanged.

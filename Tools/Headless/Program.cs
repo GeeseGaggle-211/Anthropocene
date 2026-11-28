@@ -361,6 +361,7 @@ internal static class Program
         if (args.Contains("--foundation-only")) { Console.WriteLine("PASS: " + FoundationChecks.Run() + " foundation assertions"); return 0; }
         if (args.Contains("--issue25-ecology-only")) { Issue25EcologyChecks.Run(args); return 0; }
         if (args.Contains("--issue27-ecology-only")) { Issue27EcologyChecks.Run(); return 0; }
+        if (args.Contains("--annual-land-food-only")) { AnnualLandFoodChecks.Run(); return 0; }
         if (args.Contains("--issue26-forecast-only")) { Issue26ForecastChecks.Run(); return 0; }
         if (args.Contains("--issue28-food-timebase-only")) { Issue28FoodTimebaseChecks.Run(); return 0; }
         var tradeProbe = args.FirstOrDefault(a => a.StartsWith("--trade-probe=", StringComparison.Ordinal));
@@ -453,6 +454,7 @@ internal static class Program
                 new ParallelChecks.Entry { Name = "FarmFoodPhaseChecks", Run = () => FarmFoodPhaseChecks.Run() },
                 new ParallelChecks.Entry { Name = "CultivationCacheChecks", Run = () => CultivationCacheChecks.Run() },
                 new ParallelChecks.Entry { Name = "AgriculturalTechnologyChecks", Run = () => AgriculturalTechnologyChecks.Run() },
+                new ParallelChecks.Entry { Name = "AnnualLandFoodChecks", Run = () => AnnualLandFoodChecks.Run() },
                 new ParallelChecks.Entry { Name = "CivicGovernanceChecks", Run = () => CivicGovernanceChecks.Run() },
                 new ParallelChecks.Entry { Name = "HorizonCultivationChecks", Run = () => HorizonCultivationChecks.Run() },
                 new ParallelChecks.Entry { Name = "HorizonEcologyChecks", Run = () => HorizonEcologyChecks.Run() },

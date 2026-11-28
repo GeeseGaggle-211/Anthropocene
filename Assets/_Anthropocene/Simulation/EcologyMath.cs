@@ -10,6 +10,20 @@ namespace Anthropocene.Simulation
     }
     public static class EcologyMath
     {
+        // Cultivated yield is a flow, not a refill of the slow natural reserve.
+        // Harvest renewal first; draw the residual from dS/dt = r(K-S)-demand.
+        // Unused yield expires and is explicitly balanced as overflow.
+        public static StockFlow RenewableHarvest(double initial, double capacity,
+            double recoveryPerDay, double renewalPerDay, double requestPerDay, double days)
+        {
+            double renewal = Math.Max(0, renewalPerDay);
+            double usedRate = Math.Min(renewal, Math.Max(0, requestPerDay));
+            var reserve = Stock(initial, capacity, recoveryPerDay,
+                Math.Max(0, requestPerDay - usedRate), days);
+            return new StockFlow(reserve.Stock, reserve.Realized + usedRate * days,
+                reserve.Unmet, reserve.Recharge + renewal * days,
+                reserve.Overflow + (renewal - usedRate) * days, reserve.DepletionDays);
+        }
         // Mean of exp(-rate*t) over a horizon. This is a closed-form coefficient,
         // independent of the number of climate seasons in that horizon.
         public static double MeanExponential(double rate, double days)

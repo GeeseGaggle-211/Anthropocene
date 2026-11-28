@@ -198,8 +198,10 @@ namespace Anthropocene.Simulation
             {
                 var tile = w.Tiles[id];
                 var view = LazyEcology.ProjectEcology(w, id, Math.Max(w.Days, tile.LastEcologyUpdateDays));
-                var capacity = new EcologyCapacity(w, tile, view, season);
+                var capacity = EcologyCapacity.Boundary(w, tile, view, season);
                 double available = Math.Min(Math.Max(0, view.Food), capacity.Food);
+                if (cfg.AnnualLandFoodEnabled)
+                    available += (capacity.Food * capacity.FoodRate + capacity.ManagedFlow) * cfg.TurnDays;
                 double crop = tile.CultivationOperator >= 0 && tile.CultivationOperator != camp.Id
                     ? 0 : Math.Max(0, capacity.Food - capacity.WildFood);
                 double cropShare = capacity.Food > 0 ? crop / capacity.Food : 0;

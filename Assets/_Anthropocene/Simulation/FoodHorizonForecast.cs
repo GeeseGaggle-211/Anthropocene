@@ -61,6 +61,18 @@ namespace Anthropocene.Simulation
 
     public static class FoodHorizonForecast
     {
+        // For an unharvested annual land forecast, compare accessible endpoint
+        // reserve plus recurring crop yield. Yield is potential supply here;
+        // only funded, finite claims can turn it into actual food receipts.
+        internal static double InvestmentSupply(WorldState w, int tile, FoodTileForecast forecast)
+            => forecast.ClosingFood + (w.Config.AnnualLandFoodEnabled && w.Tiles[tile].Land
+                ? forecast.GrossManagedFoodInput : 0);
+        // With an empty reserve and constant annual forcing, a demand of r*K+g
+        // is exactly realizable without further stock depletion. This is the
+        // repeatable supply used by the settlement supervisor, before labor caps.
+        internal static double RefillSupply(WorldState w, int tile, FoodTileForecast forecast)
+            => w.Config.AnnualLandFoodEnabled && w.Tiles[tile].Land
+                ? forecast.GrossNaturalFoodInput + forecast.GrossManagedFoodInput : forecast.ClosingFood;
         private sealed class RecoveryProfileCounter
         {
             public int Count;
@@ -68,8 +80,8 @@ namespace Anthropocene.Simulation
         }
         // The current policy compares an annualized next-boundary food gain
         // against one build cost plus its existing PlanningHorizonYears operation
-        // weight. Those costs are explicit caller inputs, not ecological source
-        // terms. This is a single transition; it assumes no later re-harvest.
+        // weight. Annual land also values recurring cultivated yield. Those
+        // costs are explicit caller inputs, not ecological source terms.
         public static FoodInvestmentForecast Investment(WorldState snapshot, int tileId,
             double startDays, double durationDays, double beforeCapital,
             double afterMeanCapital, double afterEndCapital, double operatingFraction,
@@ -88,7 +100,7 @@ namespace Anthropocene.Simulation
             var after = Tile(snapshot, tileId, startDays, durationDays,
                 null, afterMeanCapital, afterEndCapital, operatingFraction, true,
                 openingEcology, aquaticOverlay: aquaticOverlay);
-            double gain = after.ClosingFood - before.ClosingFood;
+            double gain = InvestmentSupply(snapshot, tileId, after) - InvestmentSupply(snapshot, tileId, before);
             return new FoodInvestmentForecast
             {
                 Before = before, After = after,
@@ -159,6 +171,10 @@ namespace Anthropocene.Simulation
                 aquaticOverlay: closingOverlay);
             forecast.ClosingFoodCapacity = Math.Min(closingCapacity.Food,
                 forecast.ClosingBiomass);
+            if (snapshot.Config.AnnualLandFoodEnabled && snapshot.Tiles[tileId].Land)
+                forecast.ClosingFoodCapacity = Math.Min(forecast.ClosingBiomass,
+                    new HorizonEcologyCapacity(snapshot, snapshot.Tiles[tileId], result.View,
+                        result.View.Days, snapshot.Config.DaysPerYear).Food);
             forecast.FoodAtCapacity = forecast.ClosingFoodCapacity > 0 &&
                 forecast.ClosingFood >= forecast.ClosingFoodCapacity -
                     1e-8 * Math.Max(1, forecast.ClosingFoodCapacity);

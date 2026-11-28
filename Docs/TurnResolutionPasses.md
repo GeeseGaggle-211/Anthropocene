@@ -6,6 +6,14 @@ calibration; its 80 agricultural barriers are historical, not a required
 implementation pattern. See [TurnHorizonRefactor.md](TurnHorizonRefactor.md)
 for the equations, duration inventory, validation and performance evidence.
 
+The opt-in [annual land food experiment](AnnualLandFood.md) changes only the
+land stock transition and its forecasts/capacities: resource resolution consumes
+cultivated renewal during the horizon before debiting the slower natural reserve.
+Depletion limits receipts within that horizon. The default harvest-first wording
+in the table below remains the compatibility rule when `AnnualLandFoodEnabled`
+is false. Claim locking, one tile integration, canonical commits and the subsequent
+person-year demographic food debit keep their existing pass boundaries.
+
 One WEGO decision creates one authoritative transition from the committed
 start to the committed end of `TurnRecord.Duration`. `TurnHorizon` captures
 that duration in days, years, legacy reference intervals and practice scale.

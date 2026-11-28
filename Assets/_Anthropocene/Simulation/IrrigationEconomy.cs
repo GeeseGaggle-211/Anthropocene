@@ -321,7 +321,8 @@ namespace Anthropocene.Simulation
                 var supplied = afterWater.Fields[field.Tile];
                 var before = FoodHorizonForecast.Tile(w, field.Tile, w.Days, w.Config.TurnDays, operatingFraction: 1, irrigationOverlay: old);
                 var after = FoodHorizonForecast.Tile(w, field.Tile, w.Days, w.Config.TurnDays, operatingFraction: 1, irrigationOverlay: supplied);
-                gain += after.ClosingFood - before.ClosingFood;
+                gain += FoodHorizonForecast.InvestmentSupply(w, field.Tile, after)
+                    - FoodHorizonForecast.InvestmentSupply(w, field.Tile, before);
             }
             return Math.Max(0, gain) / years;
         }

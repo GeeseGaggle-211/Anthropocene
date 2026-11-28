@@ -151,6 +151,7 @@ internal static class Program
 
     private static void Main(string[] args)
     {
+        if (args.Contains("--annual-food-experiment")) { AnnualFoodExperiment.Run(args); return; }
         if (args.Contains("--audit-inspect")) { CivicAudit.Inspect(args); return; }
         if (args.Contains("--audit-duration-probe")) { CivicAudit.DurationProbe(args); return; }
         if (args.Contains("--audit")) { CivicAudit.Run(args); return; }
